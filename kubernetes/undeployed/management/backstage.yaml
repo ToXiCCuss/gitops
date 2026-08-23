@@ -1,0 +1,215 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backstage
+  namespace: argocd
+spec:
+  destination:
+    namespace: backstage
+    server: https://kubernetes.default.svc
+  project: default
+  sources:
+    - repoURL: 'ghcr.io/backstage/charts'
+      targetRevision:  2.7.0
+      chart: backstage
+      plugin:
+        env:
+          - name: HELM_VALUES
+            value: |
+              
+              backstage:
+                replicas: 1
+                image:
+                  registry: harbor.vpn.rjst.de
+                  repository: dev/rjst-backstage
+                  tag: 1.0.0
+                # -- Extra app configuration files to inline into command arguments
+                extraAppConfig: []
+              
+                # -- Deployment sidecars
+                extraContainers: []
+              
+                # -- Backstage container environment variables
+                extraEnvVars: []
+              
+                # -- Backstage container environment variables from existing ConfigMaps
+                extraEnvVarsCM: []
+              
+                # -- Backstage container environment variables from existing Secrets
+                extraEnvVarsSecrets: []
+              
+                # -- Backstage container additional ports
+                extraPorts: []
+              
+                # -- Backstage container additional volume mounts
+                extraVolumeMounts: []
+              
+                # -- Backstage container additional volumes
+                extraVolumes: []
+              
+                # -- Backstage container init containers
+                initContainers: []
+              
+                # -- Directory containing the backstage installation
+                installDir: /app
+              
+                # -- Resource requests/limits
+                # <br /> Ref: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#resource-requests-and-limits-of-pod-and-container
+                # <!-- E.g.
+                # resources:
+                #   limits:
+                #     memory: 1Gi
+                #     cpu: 1000m
+                #   requests:
+                #     memory: 250Mi
+                #     cpu: 100m -->
+                resources: {}
+              
+                # -- Readiness Probe
+                # Ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes
+                # <!-- E.g.
+                # readinessProbe:
+                #   failureThreshold: 3
+                #   httpGet:
+                #     path: /.backstage/health/v1/readiness
+                #     port: 7007
+                #     scheme: HTTP
+                #   initialDelaySeconds: 30
+                #   periodSeconds: 10
+                #   successThreshold: 2
+                #   timeoutSeconds: 2
+                readinessProbe:
+                  httpGet:
+                    path: /.backstage/health/v1/readiness
+                    port: 7007
+                    scheme: HTTP
+              
+                # -- Liveness Probe
+                # Ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes
+                # <!-- E.g.
+                # livenessProbe:
+                #   failureThreshold: 3
+                #   httpGet:
+                #     path: /.backstage/health/v1/liveness
+                #     port: 7007
+                #     scheme: HTTP
+                #   initialDelaySeconds: 60
+                #   periodSeconds: 10
+                #   successThreshold: 1
+                #   timeoutSeconds: 2
+                livenessProbe:
+                  httpGet:
+                    path: /.backstage/health/v1/liveness
+                    port: 7007
+                    scheme: HTTP
+              
+                # -- Startup Probe
+                # Ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes
+                # <!-- E.g.
+                # startupProbe:
+                #   failureThreshold: 3
+                #   httpGet:
+                #     path: /.backstage/health/v1/liveness
+                #     port: 7007
+                #     scheme: HTTP
+                #   initialDelaySeconds: 60
+                #   periodSeconds: 10
+                #   successThreshold: 1
+                #   timeoutSeconds: 2
+                startupProbe:
+                  httpGet:
+                    path: /.backstage/health/v1/liveness
+                    port: 7007
+                    scheme: HTTP
+              
+                # -- Security settings for a Pod.
+                #  The security settings that you specify for a Pod apply to all Containers in the Pod.
+                # <br /> Ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
+                podSecurityContext: {}
+              
+                # -- Security settings for a Container.
+                # <br /> Ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container
+                containerSecurityContext: {}
+              
+                # Allows to define the appConfig as a multiline string that generates a ConfigMap
+                # automatically, not requiring to have it pre provisioned as with the extraAppConfig key.
+                # DO NOT USE if you need to put sensitive data in the appConfig.
+                # E.g:
+                # appConfig:
+                #   app:
+                #     baseUrl: https://somedomain.tld
+                # -- Generates ConfigMap and configures it in the Backstage pods
+                appConfig: {}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: backstage
+  namespace: backstage
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "backstage.vpn.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: backstage-cert
+        mode: SIMPLE
+      hosts:
+        - "backstage.vpn.rjst.de"
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: backstage-cert
+  namespace: istio-system
+spec:
+  secretName: backstage-cert
+  issuerRef:
+    name: self-issuer
+    kind: ClusterIssuer
+  commonName: "backstage.vpn.rjst.de"
+  dnsNames:
+    - "backstage.vpn.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: backstage
+  namespace: backstage
+spec:
+  hosts:
+    - "backstage.vpn.rjst.de"
+  gateways:
+    - backstage
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: backstage
+            port:
+              number: 7007

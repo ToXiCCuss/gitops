@@ -1,0 +1,17 @@
+---
+docker_hosts:
+   - netbird
+   - docker01
+   - ansible01
+
+mariadb_hosts:
+   - ansible01
+
+postgresql_hosts:
+   - ansible01
+
+mongodb_hosts:
+   - ansible01
+
+node_exporter_hosts:
+   - ansible01

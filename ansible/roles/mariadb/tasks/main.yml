@@ -1,0 +1,19 @@
+---
+- name: Install mariadb-server
+  apt:
+    name: mariadb-server
+    state: present
+    update_cache: yes
+
+- name: Configure bind-address in 50-server.cnf
+  lineinfile:
+    path: /etc/mysql/mariadb.conf.d/50-server.cnf
+    regexp: '^bind-address.*'
+    line: "bind-address            = {{ mariadb_bind_address }}"
+  notify: restart mariadb
+
+- name: Ensure MariaDB service is enabled and running
+  service:
+    name: mariadb
+    state: started
+    enabled: true

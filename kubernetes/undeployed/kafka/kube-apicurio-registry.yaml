@@ -1,0 +1,75 @@
+apiVersion: registry.apicur.io/v1
+kind: ApicurioRegistry
+metadata:
+  name: example-apicurioregistry-mem
+  namespace: kafka
+spec:
+  configuration:
+    persistence: "mem"
+
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: apicurio-registry
+  namespace: kafka
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "apicurio-registry.vpn.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: apicurio-registry-cert
+        mode: SIMPLE
+      hosts:
+        - "apicurio-registry.vpn.rjst.de"
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apicurio-registry-cert
+  namespace: istio-system
+spec:
+  secretName: apicurio-registry-cert
+  issuerRef:
+    name: self-issuer
+    kind: ClusterIssuer
+  commonName: "apicurio-registry.vpn.rjst.de"
+  dnsNames:
+    - "apicurio-registry.vpn.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: apicurio-registry
+  namespace: kafka
+spec:
+  hosts:
+    - "apicurio-registry.vpn.rjst.de"
+  gateways:
+    - apicurio-registry
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: example-apicurioregistry-mem-service
+            port:
+              number: 8080

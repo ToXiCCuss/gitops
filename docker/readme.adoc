@@ -1,0 +1,65 @@
+= GitOps Docker
+
+== Apps Übersicht
+
+[cols="1,1,1", options="header"]
+|===
+| App | Arcane Ready | .env benötigt
+
+| arcane
+| ❌
+| ✅
+
+| cadvisor
+| ❌
+| ❌
+
+| conan-exiles
+| ❌
+| ❌
+
+| databasus
+| ❌
+| ❌
+
+| dockhand
+| ❌
+| ❌
+
+| duplicati
+| ✅
+| ✅
+
+| palworld
+| ❌
+| ❌
+
+| pelican
+| ❌
+| ❌
+
+| postgresql
+| ✅
+| ✅
+
+| seaweedfs
+| ❌
+| ❌
+
+| uptime-kuma
+| ❌
+| ❌
+
+|===
+
+== Setup Arcane
+
+* Clone this repository to your local machine.
+* Add in arcane folder override.env with the following content and replace the values with your own:
++
+----
+APP_URL=https://arcane.vpn.rjst.de
+ENCRYPTION_KEY=default-encryption-key
+JWT_SECRET=default-jwt-secret
+----
+* docker-compose up -d in the arcane folder

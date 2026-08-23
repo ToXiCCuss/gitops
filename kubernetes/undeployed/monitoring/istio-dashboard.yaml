@@ -1,0 +1,106 @@
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: jaeger
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "jaeger.vpn.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: jaeger
+  namespace: istio-system
+spec:
+  hosts:
+    - "jaeger.vpn.rjst.de"
+  gateways:
+    - jaeger
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: tracing
+            port:
+              number: 80
+
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: kiali
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "kiali.vpn.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: kiali-cert
+        mode: SIMPLE
+      hosts:
+        - "kiali.vpn.rjst.de"
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kiali-cert
+  namespace: istio-system
+spec:
+  secretName: kiali-cert
+  issuerRef:
+    name: self-issuer
+    kind: ClusterIssuer
+  commonName: "kiali.vpn.rjst.de"
+  dnsNames:
+    - "kiali.vpn.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: kiali
+  namespace: istio-system
+spec:
+  hosts:
+    - "kiali.vpn.rjst.de"
+  gateways:
+    - kiali
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: kiali
+            port:
+              number: 20001
+

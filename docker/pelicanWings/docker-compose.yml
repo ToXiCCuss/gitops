@@ -1,0 +1,32 @@
+services:
+  wings:
+    container_name: pelican_wings
+    image: ghcr.io/pelican-dev/wings:latest@sha256:7df5d70959c717c1aa783e1c50beeba6d1ad3fe99343d9231a392fb0c6454cf4
+    restart: always
+    networks:
+      - wings0
+    ports:
+      - "8080:8080"
+      - "2022:2022"
+    environment:
+      TZ: "Europe/Berlin"
+      WINGS_UID: 988
+      WINGS_GID: 988
+      WINGS_USERNAME: pelican
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "/var/lib/docker/containers/:/var/lib/docker/containers/"
+      - "/etc/ssl/certs:/etc/ssl/certs:ro"
+      - "/etc/pelican/:/etc/pelican/"
+      - "/var/lib/pelican/:/var/lib/pelican/"
+      - "/var/log/pelican/:/var/log/pelican/"
+      - "/tmp/pelican/:/tmp/pelican/"
+networks:
+  wings0:
+    name: wings0
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "172.21.0.0/16"
+    driver_opts:
+      com.docker.network.bridge.name: wings0

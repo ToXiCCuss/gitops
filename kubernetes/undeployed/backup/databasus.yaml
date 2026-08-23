@@ -1,0 +1,98 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: databasus
+  namespace: argocd
+spec:
+  destination:
+    namespace: databasus
+    server: https://kubernetes.default.svc
+  project: default
+  sources:
+    - repoURL: 'ghcr.io/databasus/charts'
+      targetRevision:  3.42.0
+      chart: databasus
+      plugin:
+        env:
+          - name: HELM_VALUES
+            value: |
+              resources:
+                requests:
+                  memory: "0Gi"
+                  cpu: "0m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: databasus
+  namespace: databasus
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "databasus.vpn.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: databasus-cert
+        mode: SIMPLE
+      hosts:
+        - "databasus.vpn.rjst.de"
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: databasus-cert
+  namespace: istio-system
+spec:
+  secretName: databasus-cert
+  issuerRef:
+    name: self-issuer
+    kind: ClusterIssuer
+  commonName: "databasus.vpn.rjst.de"
+  dnsNames:
+    - "databasus.vpn.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: databasus
+  namespace: databasus
+spec:
+  hosts:
+    - "databasus.vpn.rjst.de"
+  gateways:
+    - databasus
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: databasus-service
+            port:
+              number: 4005

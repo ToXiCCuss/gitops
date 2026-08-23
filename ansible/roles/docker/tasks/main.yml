@@ -1,0 +1,75 @@
+---
+- name: Install prerequisite packages for Docker repository
+  apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+    update_cache: yes
+
+- name: Create keyrings directory
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Docker GPG key
+  get_url:
+    url: "https://download.docker.com/linux/debian/gpg"
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+    force: false
+
+- name: Determine dpkg architecture
+  command: dpkg --print-architecture
+  register: dpkg_architecture
+  changed_when: false
+
+- name: Add Docker apt repository
+  apt_repository:
+    repo: >-
+      deb [arch={{ dpkg_architecture.stdout }} signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+    update_cache: yes
+
+- name: Install Docker packages
+  apt:
+    name: "{{ docker_packages }}"
+    state: present
+    update_cache: yes
+
+- name: Configure Docker daemon options (/etc/docker/daemon.json)
+  template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart docker
+
+- name: Ensure Docker service is enabled and running
+  service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Ensure configured Docker networks exist
+  community.docker.docker_network:
+    name: "{{ item.name }}"
+    driver: "{{ item.driver | default('bridge') }}"
+    state: present
+  loop: "{{ docker_networks }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: docker_networks | length > 0
+
+- name: Add users to the docker group
+  user:
+    name: "{{ item }}"
+    groups: docker
+    append: true
+  loop: "{{ docker_users }}"
+  when: docker_users | length > 0

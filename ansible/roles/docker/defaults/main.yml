@@ -1,0 +1,21 @@
+---
+# Benutzer, die zur Gruppe "docker" hinzugefügt werden sollen
+# (damit sie Docker ohne sudo verwenden können)
+docker_users: []
+
+# Zu installierende Docker-Pakete
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+# Inhalt von /etc/docker/daemon.json (als YAML-Dict, wird zu JSON konvertiert)
+docker_daemon_options:
+  live-restore: true
+
+# Docker-Netzwerke, die auf Docker-Hosts vorhanden sein sollen
+docker_networks:
+  - name: proxy
+    driver: bridge

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    ":prConcurrentLimitNone",
+    ":prHourlyLimitNone"
+  ],
+  "argocd": {
+    "managerFilePatterns": [
+      "kubernetes/helm/.+\\.yaml$/",
+      "kubernetes/core/.+\\.yaml$/"
+    ]
+  },
+  "kubernetes": {
+    "managerFilePatterns": [
+      "kubernetes/kubectl/.+\\.yaml$/",
+      "kubernetes/argocd-values.yaml"
+    ]
+  }
+}

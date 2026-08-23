@@ -1,0 +1,48 @@
+---
+- name: Install postgresql-common
+  apt:
+    name:
+      - postgresql-common
+      - sudo
+    state: present
+    update_cache: yes
+
+- name: Add official PGDG repository
+  command: /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+  args:
+    creates: /etc/apt/sources.list.d/pgdg.list
+
+- name: Install PostgreSQL and extensions
+  apt:
+    name:
+      - "postgresql-{{ postgresql_version }}"
+      - "postgresql-{{ postgresql_version }}-cron"
+      - "postgresql-{{ postgresql_version }}-partman"
+    state: present
+    update_cache: yes
+
+- name: Configure shared_preload_libraries
+  lineinfile:
+    path: "{{ postgresql_conf }}"
+    regexp: '^#?shared_preload_libraries\s*='
+    line: "shared_preload_libraries = 'pg_partman_bgw'"
+  notify: restart postgresql
+
+- name: Configure listen_addresses
+  lineinfile:
+    path: "{{ postgresql_conf }}"
+    regexp: '^#?listen_addresses\s*='
+    line: "listen_addresses = '*'"
+  notify: restart postgresql
+
+- name: Allow external access in pg_hba.conf
+  lineinfile:
+    path: "{{ postgresql_hba_conf }}"
+    line: "host    all             all             0.0.0.0/0               scram-sha-256"
+  notify: restart postgresql
+
+- name: Ensure PostgreSQL service is enabled and running
+  service:
+    name: postgresql
+    state: started
+    enabled: true

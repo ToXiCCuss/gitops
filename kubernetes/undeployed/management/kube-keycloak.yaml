@@ -1,0 +1,195 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+  labels:
+    istio-injection: enabled
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "keycloak.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: keycloak-cert
+        mode: SIMPLE
+      hosts:
+        - "keycloak.rjst.de"
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: keycloak-cert
+  namespace: istio-system
+spec:
+  secretName: keycloak-cert
+  issuerRef:
+    name: letsencrypt
+    kind: ClusterIssuer
+  commonName: "keycloak.rjst.de"
+  dnsNames:
+    - "keycloak.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  hosts:
+    - "keycloak.rjst.de"
+  gateways:
+    - keycloak
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: keycloak
+            port:
+              number: 8080
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app: keycloak
+spec:
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: http
+      name: http
+  selector:
+    app: keycloak
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: keycloak
+  name: keycloak-discovery
+  namespace: keycloak
+spec:
+  selector:
+    app: keycloak
+  clusterIP: None
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app: keycloak
+  annotations:
+    avp.kubernetes.io/path: "argocd/data/keycloak"
+spec:
+  serviceName: keycloak-discovery
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.6.3@sha256:5fdbf2dbb5897cc34e82de49d13e23db011f9925089dbc555fc095f2c8bc1dac
+          args: ["start"]
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: "admin"
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              value: "admin"
+            - name: KC_PROXY_HEADERS
+              value: "xforwarded"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_HOSTNAME_STRICT
+              value: "true"
+            - name: KC_HOSTNAME
+              value: "keycloak.rjst.de"
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: 'KC_CACHE'
+              value: 'ispn'
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: KC_CACHE_EMBEDDED_NETWORK_BIND_ADDRESS
+              value: '$(POD_IP)'
+            - name: 'KC_DB_URL_DATABASE'
+              value: 'keycloak'
+            - name: 'KC_DB_URL_HOST'
+              value: 'docker01.vpn.rjst.de'
+            - name: 'KC_DB'
+              value: 'postgres'
+            - name: 'KC_DB_PASSWORD'
+              value: '<postgresql.password>'
+            - name: 'KC_DB_USERNAME'
+              value: '<postgresql.username>'
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: jgroups
+              containerPort: 7800
+            - name: jgroups-fd
+              containerPort: 57800
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: 9000
+            periodSeconds: 1
+            failureThreshold: 600
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 9000
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 2000Mi
+            requests:
+              cpu: 500m
+              memory: 1700Mi

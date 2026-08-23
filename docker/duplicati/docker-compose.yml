@@ -1,0 +1,13 @@
+services:
+  duplicati:
+    image: duplicati/duplicati:2.3.0.4-stable@sha256:01f8cb81ad7d548b7ceec61d696bb5d27d8057fee0ddee37c2b8a0ff1f1729f7
+    container_name: duplicati
+    volumes:
+      - /root/docker/duplicati:/data
+      - /:/source
+    ports:
+      - "8200:8200"
+    env_file:
+      - "default.env"
+      - ".env"
+    restart: unless-stopped

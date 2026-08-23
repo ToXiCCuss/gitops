@@ -1,0 +1,8 @@
+---
+# Timezone
+server_timezone: "Europe/Berlin"
+
+# Automatic security updates
+unattended_upgrades_enabled: true
+unattended_upgrades_reboot: false
+unattended_upgrades_reboot_time: "04:00"

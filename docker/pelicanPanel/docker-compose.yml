@@ -1,0 +1,29 @@
+services:
+  panel:
+    container_name: pelican_panel
+    image: ghcr.io/pelican-dev/panel:v1.0.0-beta37@sha256:3844fad517fcb865fb8a9cafa06304feefffbfa79f26a8986bc8e05aa247a1b5
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    volumes:
+      - pelican_data:/pelican-data
+      - pelican_logs:/var/www/html/storage/logs
+    environment:
+      XDG_DATA_HOME: "/pelican-data"
+      APP_TIMEZONE: Europe/Berlin
+      APP_URL: "https://webinterface.proxy.rjst.de"
+      BEHIND_PROXY: "true"
+      TRUSTED_PROXIES: "100.67.0.0/16"
+      APP_DEBUG: "false"
+      APP_ENV: "production"
+    ports:
+      - "80:80"
+
+volumes:
+  pelican_data:
+    name: pelican_panel_data
+  pelican_logs:
+    name: pelican_panel_logs

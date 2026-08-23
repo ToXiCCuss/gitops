@@ -1,0 +1,18 @@
+- Infrastruktur:
+    - Pelican Panel:
+        icon: pelican-panel.png
+        href: https://webinterface.proxy.rjst.de
+        description: Game Server Management
+        siteMonitor: https://webinterface.proxy.rjst.de
+
+    - Arcane:
+        icon: arcane.png
+        href: https://arcane01.proxy.rjst.de
+        description: Docker Management
+        siteMonitor: https://arcane01.proxy.rjst.de
+
+    - NetBird:
+        icon: netbird.png
+        href: https://proxy.rjst.de/
+        description: Zero Trust VPN & Proxy
+        siteMonitor: https://proxy.rjst.de

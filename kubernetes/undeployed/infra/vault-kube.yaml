@@ -1,0 +1,82 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: vault
+  namespace: vault
+spec:
+  hosts:
+    - "vault.vpn.rjst.de"
+  gateways:
+    - vault
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: vault
+            port:
+              number: 8200
+
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: vault
+  namespace: vault
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "vault.vpn.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: vault-cert
+        mode: SIMPLE
+      hosts:
+        - "vault.vpn.rjst.de"
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-cert
+  namespace: istio-system
+spec:
+  secretName: vault-cert
+  issuerRef:
+    name: self-issuer
+    kind: ClusterIssuer
+  commonName: "vault.vpn.rjst.de"
+  dnsNames:
+    - "vault.vpn.rjst.de"
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  namespace: vault
+  name: vault-unsealer-config
+  labels:
+    vault-unsealer.bakito.net/stateful-set: vault
+  annotations:
+    avp.kubernetes.io/path: "argocd/data/vault"
+type: Opaque
+stringData:
+  unsealKey1: <unsealKey1>
+  unsealKey2: <unsealKey2>
+  unsealKey3: <unsealKey3>
+  unsealKey4: <unsealKey4>
+  unsealKey5: <unsealKey5>

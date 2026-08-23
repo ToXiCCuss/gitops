@@ -1,0 +1,30 @@
+---
+- name: Install required system packages
+  apt:
+    name:
+      - unattended-upgrades
+      - btop
+      - jq
+      - curl
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ server_timezone }}"
+
+# --- Unattended Upgrades ---
+- name: Configure Unattended-Upgrades
+  template:
+    src: 50unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+  when: unattended_upgrades_enabled
+
+- name: Enable automatic update checks
+  copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+  when: unattended_upgrades_enabled

@@ -1,0 +1,14 @@
+services:
+  arcane:
+    image: ghcr.io/getarcaneapp/manager:v2.8.1@sha256:2425b5a3780c32b743d6229c5dd4ec245e9fe42f897e0d0c3f6276eed3873a5d
+    container_name: arcane
+    ports:
+      - '3552:3552'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /root/docker/arcane/data:/app/data
+      - /root/docker/arcane/backups:/backups
+    env_file:
+      - "default.env"
+      - "override.env"
+    restart: unless-stopped

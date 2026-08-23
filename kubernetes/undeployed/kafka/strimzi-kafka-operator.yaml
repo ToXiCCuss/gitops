@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: strimzi-kafka-operator
+  namespace: argocd
+spec:
+  destination:
+    namespace: kafka
+    server: https://kubernetes.default.svc
+  project: default
+  sources:
+    - repoURL: 'quay.io/strimzi-helm'
+      path: 'strimzi-kafka-operator'
+      targetRevision: 1.0.0
+      chart: strimzi-kafka-operator
+      plugin:
+        name: argocd-vault-plugin-helm
+        env:
+          - name: HELM_VALUES
+            value: |
+              replicas: 1
+              resources:
+                limits:
+                  memory: 384Mi
+                  cpu: 1000m
+                requests:
+                  memory: 0Mi
+                  cpu: 0m
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

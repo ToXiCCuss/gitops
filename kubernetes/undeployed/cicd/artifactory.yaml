@@ -1,0 +1,110 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: artifactory
+  namespace: argocd
+spec:
+  destination:
+    namespace: artifactory
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://charts.jfrog.io
+    chart: artifactory-oss
+    targetRevision: 107.146.12
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            artifactory:
+              artifactory:
+                resources:
+                  requests:
+                    memory: "0Mi"
+                    cpu: "0"
+                  limits:
+                    memory: "4Gi"
+                    cpu: "1"
+              postgresql:
+                enabled: false
+              database:
+                type: postgresql
+                driver: org.postgresql.Driver
+                url: "jdbc:postgresql://docker01.vpn.rjst.de:5432/artifactory"
+                user: <path:argocd/data/artifactory#postgresql.user>
+                password: <path:argocd/data/artifactory#postgresql.password>
+              nginx:
+                enabled: false
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: artifactory
+  namespace: artifactory
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "artifactory.vpn.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: artifactory-cert
+        mode: SIMPLE
+      hosts:
+        - "artifactory.vpn.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: artifactory
+  namespace: artifactory
+spec:
+  hosts:
+    - "artifactory.vpn.rjst.de"
+  gateways:
+    - artifactory
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: artifactory
+            port:
+              number: 8082
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: artifactory-cert
+  namespace: istio-system
+spec:
+  secretName: artifactory-cert
+  issuerRef:
+    name: self-issuer
+    kind: ClusterIssuer
+  commonName: "artifactory.vpn.rjst.de"
+  dnsNames:
+    - "artifactory.vpn.rjst.de"

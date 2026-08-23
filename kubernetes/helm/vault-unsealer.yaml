@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-unsealer
+  namespace: argocd
+spec:
+  destination:
+    namespace: vault
+    server: https://kubernetes.default.svc
+  project: default
+  sources:
+    - repoURL: 'ghcr.io/bakito/helm-charts'
+      path: 'vault-unsealer'
+      targetRevision: 0.4.1
+      chart: vault-unsealer
+      plugin:
+        name: argocd-vault-plugin-helm
+        env:
+          - name: HELM_VALUES
+            value: |
+              resources:
+                requests:
+                  cpu: 0m
+                  memory: 0Mi
+                limits:
+                  cpu: 200m
+                  memory: 512Mi
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

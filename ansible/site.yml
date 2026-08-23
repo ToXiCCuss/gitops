@@ -1,0 +1,41 @@
+---
+- name: Base configuration on all servers
+  hosts: all
+  become: true
+  roles:
+    - base
+
+- name: Install Node Exporter (only on hosts listed in node_exporter_hosts)
+  hosts: all
+  become: true
+  roles:
+    - role: node_exporter
+      when: ansible_hostname in node_exporter_hosts
+
+- name: Install Docker (only on hosts listed in docker_hosts)
+  hosts: all
+  become: true
+  roles:
+    - role: docker
+      when: ansible_hostname in docker_hosts
+
+- name: Install MariaDB (only on hosts listed in mariadb_hosts)
+  hosts: all
+  become: true
+  roles:
+    - role: mariadb
+      when: ansible_hostname in mariadb_hosts
+
+- name: Install PostgreSQL (only on hosts listed in postgresql_hosts)
+  hosts: all
+  become: true
+  roles:
+    - role: postgresql
+      when: ansible_hostname in postgresql_hosts
+
+- name: Install MongoDB (only on hosts listed in mongodb_hosts)
+  hosts: all
+  become: true
+  roles:
+    - role: mongodb
+      when: ansible_hostname in mongodb_hosts

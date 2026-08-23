@@ -1,0 +1,45 @@
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: ingress-policy-vpn
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      app: istio-ingressgateway
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            ipBlocks:
+              - "10.42.0.0/16"
+              - "10.8.0.0/24"
+      to:
+        - operation:
+            hosts:
+              - "*.vpn.rjst.de"
+
+---
+
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: ingress-policy-public
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      app: istio-ingressgateway
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            ipBlocks: [ "0.0.0.0/0"]
+      to:
+        - operation:
+            hosts:
+              - "microcks.rjst.de"
+              - "keycloak.rjst.de"
+              - "rjst.de"
+              - "www.rjst.de"
+              - "trek.rjst.de"

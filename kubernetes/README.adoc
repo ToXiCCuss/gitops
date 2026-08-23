@@ -1,0 +1,25 @@
+= GitOps Kubernetes
+:sectnums:
+
+== Setup
+
+=== K3d
+----
+k3d cluster create local --no-lb --k3s-arg "--disable=traefik@server:0"
+k3d cluster delete local
+----
+
+=== ArgoCD
+
+----
+helm repo add argo https://argoproj.github.io/argo-helm
+helm install argocd argo/argo-cd -n argocd --values argocd-values.yaml --create-namespace
+helm upgrade argocd argo/argo-cd -n argocd --values argocd-values.yaml
+----
+
+Folders as app:
+
+. cdrs
+. core
+. helm
+. kubectl

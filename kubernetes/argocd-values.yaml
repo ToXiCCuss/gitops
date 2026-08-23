@@ -1,0 +1,236 @@
+global:
+  logging:
+    format: json
+    level: info
+
+configs:
+  params:
+    server.insecure: true
+  cm:
+    resource.exclusions: |
+      ### Internal Kubernetes resources excluded reduce the number of watched events
+      - apiGroups:
+        - coordination.k8s.io
+        kinds:
+        - Lease
+      ### Internal Kubernetes Authz/Authn resources excluded reduce the number of watched events
+      - apiGroups:
+        - authentication.k8s.io
+        - authorization.k8s.io
+        kinds:
+        - SelfSubjectReview
+        - TokenReview
+        - LocalSubjectAccessReview
+        - SelfSubjectAccessReview
+        - SelfSubjectRulesReview
+        - SubjectAccessReview
+      ### Intermediate Certificate Request excluded reduce the number of watched events
+      - apiGroups:
+        - certificates.k8s.io
+        kinds:
+        - CertificateSigningRequest
+      - apiGroups:
+        - cert-manager.io
+        kinds:
+        - CertificateRequest
+      ### Cilium internal resources excluded reduce the number of watched events and UI Clutter
+      - apiGroups:
+        - cilium.io
+        kinds:
+        - CiliumIdentity
+        - CiliumEndpoint
+        - CiliumEndpointSlice
+      ### Kyverno intermediate and reporting resources excluded reduce the number of watched events and improve performance
+      - apiGroups:
+        - kyverno.io
+        - reports.kyverno.io
+        - wgpolicyk8s.io
+        kinds:
+        - PolicyReport
+        - ClusterPolicyReport
+        - EphemeralReport
+        - ClusterEphemeralReport
+        - AdmissionReport
+        - ClusterAdmissionReport
+        - BackgroundScanReport
+        - ClusterBackgroundScanReport
+        - UpdateRequest
+controller:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 2Gi
+    requests:
+      cpu: 0
+      memory: 0
+
+dex:
+  enabled: false
+
+server:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 0
+      memory: 0
+
+applicationSet:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 0
+      memory: 0
+
+redis:
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 0
+      memory: 0
+notifications:
+  enabled: false
+
+
+repoServer:
+  volumes:
+    - configMap:
+        name: cmp-plugin
+      name: cmp-plugin
+    - name: custom-tools
+      emptyDir: {}
+  initContainers:
+    - name: download-tools
+      image: registry.access.redhat.com/ubi8@sha256:034885f6a649b578f906a262df8f5d6e34e8d4266cca1d39fddc37fe7e30af5b
+      env:
+        - name: AVP_VERSION
+          value: 1.16.1
+      command: [sh, -c]
+      args:
+        - >-
+          curl -L https://github.com/argoproj-labs/argocd-vault-plugin/releases/download/v$(AVP_VERSION)/argocd-vault-plugin_$(AVP_VERSION)_linux_amd64 -o argocd-vault-plugin &&
+          chmod +x argocd-vault-plugin &&
+          mv argocd-vault-plugin /custom-tools/
+      volumeMounts:
+        - mountPath: /custom-tools
+          name: custom-tools
+  extraContainers:
+    - name: avp
+      command: [/var/run/argocd/argocd-cmp-server]
+      image: registry.access.redhat.com/ubi8@sha256:034885f6a649b578f906a262df8f5d6e34e8d4266cca1d39fddc37fe7e30af5b
+      env:
+        - name: ARGOCD_ENV_VAULT_ADDR
+          value: "http://vault.vault:8200"
+        - name: ARGOCD_ENV_AVP_AUTH_TYPE
+          value: "k8s"
+        - name: ARGOCD_ENV_AVP_K8S_ROLE
+          value: argocd
+        - name: ARGOCD_ENV_AVP_TYPE
+          value : vault
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+      volumeMounts:
+        - mountPath: /var/run/argocd
+          name: var-files
+        - mountPath: /home/argocd/cmp-server/plugins
+          name: plugins
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /home/argocd/cmp-server/config/plugin.yaml
+          subPath: avp.yaml
+          name: cmp-plugin
+        - name: custom-tools
+          subPath: argocd-vault-plugin
+          mountPath: /usr/local/bin/argocd-vault-plugin
+    - name: avp-helm
+      command: [/var/run/argocd/argocd-cmp-server]
+      image: quay.io/argoproj/argocd:v3.4.3@sha256:b6d161b4984c4bffb8c02250252fdd17f23fa4e2aa25fada0e606e1fa08d2348
+      env:
+        - name: ARGOCD_ENV_VAULT_ADDR
+          value: "http://vault.vault:8200"
+        - name: ARGOCD_ENV_AVP_AUTH_TYPE
+          value: "k8s"
+        - name: ARGOCD_ENV_AVP_K8S_ROLE
+          value: argocd
+        - name: ARGOCD_ENV_AVP_TYPE
+          value : vault
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+      volumeMounts:
+        - mountPath: /var/run/argocd
+          name: var-files
+        - mountPath: /home/argocd/cmp-server/plugins
+          name: plugins
+        - mountPath: /tmp
+          name: tmp
+
+        # Register plugins into sidecar
+        - mountPath: /home/argocd/cmp-server/config/plugin.yaml
+          subPath: avp-helm.yaml
+          name: cmp-plugin
+
+        # Important: Mount tools into $PATH
+        - name: custom-tools
+          subPath: argocd-vault-plugin
+          mountPath: /usr/local/bin/argocd-vault-plugin
+
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: cmp-plugin
+      namespace: argocd
+    data:
+      avp.yaml: |
+        apiVersion: argoproj.io/v1alpha1
+        kind: ConfigManagementPlugin
+        metadata:
+          name: argocd-vault-plugin
+          namespace: argocd
+        spec:
+          allowConcurrency: true
+          discover:
+            find:
+              command:
+                - sh
+                - "-c"
+                - "find . -name '*.yaml' ! -name '*values.yaml' | xargs -I {} grep \"<path\\|avp\\.kubernetes\\.io\" {} | grep ."
+          generate:
+            command:
+              - sh
+              - "-c"
+              - "for file in $(find . -type f -name '*.yaml' ! -name 'values.yaml' ! -path '*/statics/*'); do argocd-vault-plugin generate --verbose-sensitive-output \"$file\"; done"
+          lockRepo: false
+      avp-helm.yaml: |
+        apiVersion: argoproj.io/v1alpha1
+        kind: ConfigManagementPlugin
+        metadata:
+          name: argocd-vault-plugin-helm
+        spec:
+          allowConcurrency: true
+          discover:
+            find:
+              command:
+                - sh
+                - "-c"
+                - "find . -name 'Chart.yaml' && find . -name 'values.yaml'"
+          generate:
+            command:
+              - bash
+              - "-c"
+              - |
+                HELM_OUTPUT=$(helm template $ARGOCD_APP_NAME -n $ARGOCD_APP_NAMESPACE --include-crds -f <(echo "$ARGOCD_ENV_HELM_VALUES") .)
+                SKIP_VAULT=$(echo "$ARGOCD_ENV_HELM_VALUES" | grep -i "skipVaultPlugin" | grep -i "true" || true)
+                if [[ -z "$SKIP_VAULT" ]]; then
+                  echo "$HELM_OUTPUT" | argocd-vault-plugin generate -
+                else
+                  echo "$HELM_OUTPUT"
+                fi
+          lockRepo: false

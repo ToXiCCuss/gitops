@@ -1,0 +1,110 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: akhq
+  namespace: argocd
+spec:
+  destination:
+    namespace: kafka
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://akhq.io
+    targetRevision: 0.27.0
+    chart: akhq
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            configuration:
+              akhq:
+                connections:
+                  dev-cluster:
+                    properties:
+                      bootstrap.servers: "dev-cluster-kafka-bootstrap:9092"
+                    schema-registry:
+                      url: "http://example-apicurioregistry-mem-service:8080/apis/ccompat/v6"
+                      type: "confluent"
+            resources:
+              limits:
+                cpu: 4
+                memory: 1Gi
+              requests:
+                cpu: 0m
+                memory: 0Mi
+
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: akhq
+  namespace: kafka
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "akhq.vpn.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: akhq-cert
+        mode: SIMPLE
+      hosts:
+        - "akhq.vpn.rjst.de"
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: akhq-cert
+  namespace: istio-system
+spec:
+  secretName: akhq-cert
+  issuerRef:
+    name: self-issuer
+    kind: ClusterIssuer
+  commonName: "akhq.vpn.rjst.de"
+  dnsNames:
+    - "akhq.vpn.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: akhq
+  namespace: kafka
+spec:
+  hosts:
+    - "akhq.vpn.rjst.de"
+  gateways:
+    - akhq
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: akhq
+            port:
+              number: 80

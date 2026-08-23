@@ -1,0 +1,106 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: harbor
+  namespace: argocd
+spec:
+  destination:
+    namespace: harbor
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://helm.goharbor.io
+    targetRevision: 1.19.1
+    chart: harbor
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            expose:
+              type: clusterIP
+              tls:
+                enabled: false
+            externalURL: https://harbor.vpn.rjst.de
+            harborAdminPassword: <path:argocd/data/harbor#admin.password>
+            database:
+              type: external
+              external:
+                host: "docker01.vpn.rjst.de"
+                username: <path:argocd/data/harbor#database.username>
+                password: <path:argocd/data/harbor#database.password>
+                coreDatabase: "harbor"
+              maxIdleConns: 1
+              maxOpenConns: 10
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: harbor-core
+  namespace: harbor
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "harbor.vpn.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: harbor-cert
+        mode: SIMPLE
+      hosts:
+        - "harbor.vpn.rjst.de"
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: harbor-cert
+  namespace: istio-system
+spec:
+  secretName: harbor-cert
+  issuerRef:
+    name: self-issuer
+    kind: ClusterIssuer
+  commonName: "harbor.vpn.rjst.de"
+  dnsNames:
+    - "harbor.vpn.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: harbor-core
+  namespace: harbor
+spec:
+  hosts:
+    - "harbor.vpn.rjst.de"
+  gateways:
+    - harbor-core
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: harbor
+            port:
+              number: 80

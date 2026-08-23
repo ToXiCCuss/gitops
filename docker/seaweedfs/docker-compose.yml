@@ -1,0 +1,14 @@
+services:
+  seaweedfs:
+    env_file:
+      - ".env"
+    image: chrislusf/seaweedfs@sha256:43b768cd62b00d132439cda881b93fd1adebf1b315e996e794087743821d771d
+    container_name: seaweedfs
+    ports:
+      - "8333:8333"
+      - "23646:23646"
+      - "8888:8888"
+    restart: unless-stopped
+    volumes:
+      - "/root/docker/seaweedfs:/data"
+

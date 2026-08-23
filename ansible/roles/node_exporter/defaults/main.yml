@@ -1,0 +1,7 @@
+---
+# Port node_exporter listens on (default of the Debian "prometheus-node-exporter" package)
+node_exporter_port: 9100
+
+# Name of the package and service
+node_exporter_package_name: prometheus-node-exporter
+node_exporter_service_name: prometheus-node-exporter

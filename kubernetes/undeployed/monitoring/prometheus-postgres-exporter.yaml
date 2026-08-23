@@ -1,0 +1,68 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-postgres-exporter
+  namespace: argocd
+spec:
+  destination:
+    namespace: prometheus
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus-postgres-exporter
+    targetRevision: 8.0.0
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            serviceMonitor:
+              enabled: true
+              namespace: prometheus
+              interval: 30s
+              labels:
+                release: prometheus
+              metricRelabelings:
+                - sourceLabels: [server]
+                  targetLabel: instance
+            resources:
+              requests:
+                cpu: 0m
+                memory: 0Mi
+              limits:
+                cpu: 200m
+                memory: 128Mi
+            config:
+              datasource:
+                host: 'docker01.vpn.rjst.de'
+                user: <path:argocd/data/prometheus#postgresql.username>
+                password: <path:argocd/data/prometheus#postgresql.password>
+                port: "5432"
+                database: 'postgres'
+              logFormat: "json"
+              extraArgs:
+                - --collector.replication
+                - --collector.replication_slot
+                - --collector.stat_wal_receiver
+                - --collector.wal
+            
+                # Performance
+                - --collector.stat_statements
+                - --collector.stat_activity_autovacuum
+                - --collector.long_running_transactions
+                - --collector.process_idle
+            
+                # Tabellen & I/O
+                - --collector.statio_user_indexes
+                - --collector.stat_checkpointer
+            
+                # Postmaster (PG-Prozess-Start, Crashes)
+                - --collector.postmaster
+            
+                # Wrap-around Schutz (wichtig bei alten Transaktionen)
+                - --collector.database_wraparound
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

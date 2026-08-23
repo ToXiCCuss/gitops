@@ -1,0 +1,64 @@
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "argocd.vpn.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: argocd-cert
+        mode: SIMPLE
+      hosts:
+        - "argocd.vpn.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  hosts:
+    - "argocd.vpn.rjst.de"
+  gateways:
+    - argocd
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: argocd-server
+            port:
+              number: 80
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: argocd-cert
+  namespace: istio-system
+spec:
+  secretName: argocd-cert
+  issuerRef:
+    name: self-issuer
+    kind: ClusterIssuer
+  commonName: "argocd.vpn.rjst.de"
+  dnsNames:
+    - "argocd.vpn.rjst.de"

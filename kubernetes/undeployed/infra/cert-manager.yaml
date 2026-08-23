@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+spec:
+  destination:
+    namespace: cert-manager
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    targetRevision: v1.20.2
+    chart: cert-manager
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            crds:
+              enabled: false
+            resources:
+              requests:
+                cpu: "0"
+                memory: "0Mi"
+              limits:
+                cpu: "500m"
+                memory: "256Mi"
+            webhook:
+              resources:
+                requests:
+                  cpu: "0"
+                  memory: "0Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "256Mi"
+            cainjector:
+              resources:
+                requests:
+                  cpu: "0"
+                  memory: "0Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "256Mi"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,4 @@
+---
+postgresql_version: 18
+postgresql_conf: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+postgresql_hba_conf: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"

@@ -1,0 +1,357 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus
+  namespace: argocd
+spec:
+  destination:
+    namespace: prometheus
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 86.2.0
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            crds:
+              enabled: false
+            fullnameOverride: prometheus
+            defaultRules:
+              create: false
+            alertmanager:
+              enabled: false
+            grafana:
+              enabled: true
+              fullnameOverride: grafana
+              defaultDashboardsEnabled: false
+              defaultDashboardsTimezone: Europe/Berlin
+              serviceMonitor:
+                enabled: true
+              adminPassword: <path:argocd/data/prometheus#password>
+              sidecar:
+                dashboards:
+                  enabled: true
+                  searchNamespace: ALL
+              dashboardProviders:
+                dashboardproviders.yaml:
+                  apiVersion: 1
+                  providers:
+                    - name: vm
+                      orgId: 1
+                      folder: "VM"
+                      type: file
+                      options:
+                        path: /var/lib/grafana/dashboards/vm
+                    - name: docker
+                      orgId: 1
+                      folder: "Docker"
+                      type: file
+                      options:
+                        path: /var/lib/grafana/dashboards/docker
+                    - name: grafana-dashboards-kubernetes
+                      orgId: 1
+                      folder: "Kubernete"
+                      type: file
+                      disableDeletion: true
+                      editable: true
+                      options:
+                        path: /var/lib/grafana/dashboards/grafana-dashboards-kubernetes
+                    - name: dbs
+                      orgId: 1
+                      folder: "Databases"
+                      type: file
+                      options:
+                        path: /var/lib/grafana/dashboards/database
+                    - name: sb
+                      orgId: 1
+                      folder: "Spring Boot"
+                      type: file
+                      options:
+                        path: /var/lib/grafana/dashboards/sb
+              dashboards:
+                vm:
+                  node-exporter-full:
+                    gnetId: 1860
+                    revision: 42
+                  node-exporter-cluster:
+                    gnetId: 22413
+                    revision: 6
+                docker:
+                  cdAvisor:
+                    gnetId: 21361
+                    revision: 1
+                    datasource: prometheus
+                grafana-dashboards-kubernetes:
+                  k8s-system-api-server:
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-system-api-server.json
+                    token: ''
+                  k8s-system-coredns:
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-system-coredns.json
+                    token: ''
+                  k8s-views-global:
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-views-global.json
+                    token: ''
+                  k8s-views-namespaces:
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-views-namespaces.json
+                    token: ''
+                  k8s-views-nodes:
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-views-nodes.json
+                    token: ''
+                  k8s-views-pods:
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-views-pods.json
+                    token: ''
+                dbs:
+                  postgresql:
+                    gnetId: 24298
+                    revision: 5
+                  mysql-quickstart:
+                    gnetId: 14057
+                    revision: 1
+                    datasource: prometheus
+                sb:
+                  cache:
+                    gnetId: 21303
+                    revision: 1
+                    datasource: prometheus
+                  hikari:
+                    gnetId: 20729
+                    revision: 8
+                    datasource: prometheus
+                  hikari:
+                    gnetId: 20729
+                    revision: 8
+                    datasource: prometheus
+            kubeApiServer:
+              enabled: true
+            kubelet:
+              enabled: true
+              serviceMonitor:
+                metricRelabelings:
+                  - action: replace
+                    sourceLabels:
+                      - node
+                    targetLabel: instance
+            kubeControllerManager:
+              enabled: true
+              endpoints:
+                - 87.106.142.165
+            coreDns:
+              enabled: true
+            kubeDns:
+              enabled: false
+            kubeEtcd:
+              enabled: true
+              endpoints:
+                - 87.106.142.165
+            kubeScheduler:
+              enabled: true
+              endpoints:
+                - 87.106.142.165
+            kubeProxy:
+              enabled: true
+              endpoints:
+                - 87.106.142.165
+            kubeStateMetrics:
+              enabled: true
+            kube-state-metrics:
+              fullnameOverride: kube-state-metrics
+              selfMonitor:
+                enabled: true
+              resources:
+                limits:
+                  memory: 100Mi
+                  cpu: 250m
+              prometheus:
+                monitor:
+                  enabled: true
+                  relabelings:
+                    - action: replace
+                      regex: (.*)
+                      replacement: $1
+                      sourceLabels:
+                        - __meta_kubernetes_pod_node_name
+                      targetLabel: kubernetes_node
+            nodeExporter:
+              enabled: true
+              resources:
+                limits:
+                  memory: 100Mi
+                  cpu: 250m
+              serviceMonitor:
+                relabelings:
+                  - action: replace
+                    regex: (.*)
+                    replacement: $1
+                    sourceLabels:
+                      - __meta_kubernetes_pod_node_name
+                    targetLabel: kubernetes_node
+            prometheus-node-exporter:
+              fullnameOverride: node-exporter
+              podLabels:
+                jobLabel: node-exporter
+              extraArgs:
+                - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+                - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$
+              prometheus:
+                monitor:
+                  enabled: true
+                  relabelings:
+                    - action: replace
+                      regex: (.*)
+                      replacement: $1
+                      sourceLabels:
+                        - __meta_kubernetes_pod_node_name
+                      targetLabel: kubernetes_node
+            prometheusOperator:
+              enabled: true
+              resources:
+                limits:
+                  memory: 100Mi
+                  cpu: 500m
+            prometheus:
+              podMonitor:
+                enabled: true
+              enabled: true
+              prometheusSpec:
+                replicas: 1
+                replicaExternalLabelName: "replica"
+                ruleSelectorNilUsesHelmValues: false
+                serviceMonitorSelectorNilUsesHelmValues: false
+                podMonitorSelectorNilUsesHelmValues: false
+                probeSelectorNilUsesHelmValues: false
+                retention: 30d
+                storageSpec:
+                  volumeClaimTemplate:
+                    spec:
+                      storageClassName: local-path
+                      resources:
+                        requests:
+                          storage: 100Gi
+                retentionSize: "50GB"
+                enableAdminAPI: true
+                walCompression: true
+                scrapeInterval: 30s
+                evaluationInterval: 30s
+                resources:
+                  limits:
+                    memory: 4Gi
+                    cpu: 1
+                additionalScrapeConfigs: |
+                  - job_name: cadvisor-docker
+                    scrape_interval: 30s
+                    metrics_path: /metrics
+                    static_configs:
+                      - targets:
+                          - docker01.vpn.rjst.de:8080
+                    relabel_configs:
+                      - target_label: job
+                        replacement: cadvisor-docker
+                  - job_name: istiod
+                    scrape_interval: 30s
+                    kubernetes_sd_configs:
+                      - namespaces:
+                          names:
+                            - istio-system
+                        role: endpoints
+                    relabel_configs:
+                      - action: keep
+                        regex: istiod;http-monitoring
+                        source_labels:
+                          - __meta_kubernetes_service_name
+                          - __meta_kubernetes_endpoint_port_name
+                  - job_name: envoy-stats
+                    scrape_interval: 30s
+                    kubernetes_sd_configs:
+                      - role: pod
+                    metrics_path: /stats/prometheus
+                    relabel_configs:
+                      - action: keep
+                        regex: .*-envoy-prom
+                        source_labels:
+                          - __meta_kubernetes_pod_container_port_name
+                  - job_name: node-exporter
+                    scrape_interval: 30s
+                    metrics_path: /metrics
+                    static_configs:
+                      - targets:
+                          - docker01.vpn.rjst.de:9100
+                    relabel_configs:
+                      - target_label: job
+                        replacement: node-exporter
+            thanosRuler:
+              enabled: false
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: prometheus
+  namespace: prometheus
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "grafana.vpn.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: prometheus-cert
+        mode: SIMPLE
+      hosts:
+        - "grafana.vpn.rjst.de"
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: prometheus-cert
+  namespace: istio-system
+spec:
+  secretName: prometheus-cert
+  issuerRef:
+    name: self-issuer
+    kind: ClusterIssuer
+  commonName: "grafana.vpn.rjst.de"
+  dnsNames:
+    - "grafana.vpn.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: prometheus
+  namespace: prometheus
+spec:
+  hosts:
+    - "grafana.vpn.rjst.de"
+  gateways:
+    - prometheus
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: grafana
+            port:
+              number: 80
+

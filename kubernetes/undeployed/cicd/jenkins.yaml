@@ -1,0 +1,156 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jenkins
+  namespace: argocd
+spec:
+  destination:
+    namespace: jenkins
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://charts.jenkins.io/
+    chart: jenkins
+    targetRevision: 5.9.22
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            controller:
+              jenkinsUrl: "https://jenkins.vpn.rjst.de"
+              admin:
+                password: <path:argocd/data/jenkins#password>
+              resources:
+                requests:
+                  cpu: "0"
+                  memory: "0"
+                limits:
+                  cpu: "1"
+                  memory: "2Gi"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "jenkins.vpn.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        credentialName: jenkins-cert
+        mode: SIMPLE
+      hosts:
+        - "jenkins.vpn.rjst.de"
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: jenkins-cert
+  namespace: istio-system
+spec:
+  secretName: jenkins-cert
+  issuerRef:
+    name: self-issuer
+    kind: ClusterIssuer
+  commonName: "jenkins.vpn.rjst.de"
+  dnsNames:
+    - "jenkins.vpn.rjst.de"
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  hosts:
+    - "jenkins.vpn.rjst.de"
+  gateways:
+    - jenkins
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: jenkins
+            port:
+              number: 8080
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: maven-repo-pvc
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 25Gi
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: maven-settings-secret
+  namespace: jenkins
+type: Opaque
+stringData:
+  settings.xml: |
+    <settings>
+        <servers>
+            <server>
+                <id>local-rjst</id>
+                <username>XXX</username>
+                <password>XXX</password>
+                <configuration>
+                    <httpConfiguration>
+                        <all>
+                            <connectionTimeout>120000</connectionTimeout>
+                            <readTimeout>120000</readTimeout>
+                        </all>
+                    </httpConfiguration>
+                </configuration>
+            </server>
+        </servers>
+    </settings>
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ca-secret
+  namespace: jenkins
+  annotations:
+    avp.kubernetes.io/path: "argocd/data/ca"
+type: Opaque
+data:
+  ca.pem: <ca.crt>
