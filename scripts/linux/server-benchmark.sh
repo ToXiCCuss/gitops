@@ -84,18 +84,18 @@ REPORT_FILE="benchmark_report_$(date +%Y%m%d_%H%M%S).txt"
 
     # 7. IO Bench: Optimiert für DB & Gameserver (4K Blocks, 4 Threads, Cache disabled)
     echo ""
-    echo "7. IO Benchmark (Random Read/Write, 4K, 4 Threads, 60s, Direct I/O)"
+    echo "7. IO Benchmark (Random Read/Write, 4K, 4 Threads, 20s, Direct I/O)"
     echo "----------------------------------------"
     echo "Vorbereitung..."
     sysbench fileio --file-total-size=1G prepare > /dev/null
-    IO_OUT=$(sysbench fileio --file-total-size=1G --file-test-mode=rndrw --file-block-size=4K --threads=4 --file-extra-flags=direct --time=60 run)
+    IO_OUT=$(sysbench fileio --file-total-size=1G --file-test-mode=rndrw --file-block-size=4K --threads=4 --file-extra-flags=direct --time=20 run)
     echo "$IO_OUT"
     echo "Bereinigung..."
     sysbench fileio --file-total-size=1G cleanup > /dev/null
 
     # 8. FIO Multi-Blocksize Disk Speed Test (4k, 64k, 512k, 1m)
     echo ""
-    echo "8. FIO Multi-Blocksize Benchmark (4k, 64k, 512k, 1m - Direct I/O, 70/30 R/W)"
+    echo "8. FIO Multi-Blocksize Benchmark (4k, 64k, 512k, 1m - Direct I/O, 70/30 R/W, 15s)"
     echo "----------------------------------------"
     if [ ! -d "/root/fiotest" ]; then
         echo "Erstelle Verzeichnis /root/fiotest..."
@@ -112,8 +112,8 @@ REPORT_FILE="benchmark_report_$(date +%Y%m%d_%H%M%S).txt"
     BLOCK_SIZES=("4k" "64k" "512k" "1m")
     for BS in "${BLOCK_SIZES[@]}"; do
         echo ">> Teste Blockgröße: $BS..."
-        BS_OUT=$(fio --name="bench_$BS" --directory=/root/fiotest --size=2G \
-          --time_based --runtime=30s --ramp_time=5s \
+        BS_OUT=$(fio --name="bench_$BS" --directory=/root/fiotest --size=1G \
+          --time_based --runtime=15s --ramp_time=3s \
           --ioengine=libaio --direct=1 --bs="$BS" --iodepth=32 \
           --rw=randrw --rwmixread=70 --numjobs=4 --group_reporting)
         echo "$BS_OUT"
@@ -134,15 +134,64 @@ REPORT_FILE="benchmark_report_$(date +%Y%m%d_%H%M%S).txt"
 
     # 9. FIO IO Bench: DB Sync Simulation (fsync=1)
     echo ""
-    echo "9. FIO IO Benchmark (DB Sync Simulation, 4K, 4G, 120s, Direct I/O, fsync=1)"
+    echo "9. FIO IO Benchmark (DB Sync Simulation, 4K, 2G, 30s, Direct I/O, fsync=1)"
     echo "----------------------------------------"
-    FIO_FSYNC_OUT=$(fio --name=sustained_randrw_fsync --directory=/root/fiotest --size=4G \
-      --time_based --runtime=120s --ramp_time=10s \
+    FIO_FSYNC_OUT=$(fio --name=sustained_randrw_fsync --directory=/root/fiotest --size=2G \
+      --time_based --runtime=30s --ramp_time=5s \
       --ioengine=libaio --direct=1 --bs=4k --iodepth=32 \
       --rw=randrw --rwmixread=70 --numjobs=4 --group_reporting \
       --fsync=1)
     echo "$FIO_FSYNC_OUT"
     rm -rf /root/fiotest/sustained_randrw_fsync*
+
+    # 10. FIO IO Bench: DB Commit-Latenz (4K, QD1, fdatasync=1)
+    echo ""
+    echo "10. FIO IO Benchmark (DB Commit-Latenz, 4K, QD1, 15s, Direct I/O, fdatasync=1)"
+    echo "----------------------------------------"
+    FIO_QD1_FSYNC_OUT=$(fio --name=qd1_fdatasync --directory=/root/fiotest --size=512M \
+      --time_based --runtime=15s --ramp_time=3s \
+      --ioengine=libaio --direct=1 --bs=4k --iodepth=1 \
+      --rw=write --numjobs=1 --group_reporting \
+      --fdatasync=1)
+    echo "$FIO_QD1_FSYNC_OUT"
+    rm -rf /root/fiotest/qd1_fdatasync*
+
+    # 11. FIO IO Bench: Parallele Sync-Writes (4K, QD4/QD16, fdatasync=1)
+    echo ""
+    echo "11. FIO IO Benchmark (Parallele Sync-Writes, 4K, QD4/QD16, 15s, Direct I/O, fdatasync=1)"
+    echo "----------------------------------------"
+    declare -A FIO_QDN_WRITE_BW
+    declare -A FIO_QDN_WRITE_IOPS
+    declare -A FIO_QDN_WRITE_LAT
+
+    QUEUE_DEPTHS=("4" "16")
+    for QD in "${QUEUE_DEPTHS[@]}"; do
+        echo ">> Teste Queue Depth: $QD..."
+        QDN_OUT=$(fio --name="qd${QD}_fdatasync" --directory=/root/fiotest --size=512M \
+          --time_based --runtime=15s --ramp_time=3s \
+          --ioengine=libaio --direct=1 --bs=4k --iodepth="$QD" \
+          --rw=write --numjobs=1 --group_reporting \
+          --fdatasync=1)
+        echo "$QDN_OUT"
+        rm -rf /root/fiotest/qd"${QD}"_fdatasync*
+
+        FIO_QDN_WRITE_IOPS["$QD"]=$(echo "$QDN_OUT" | grep "write:" | awk -F'[,=]' '{print $2}' | xargs)
+        FIO_QDN_WRITE_BW["$QD"]=$(echo "$QDN_OUT" | grep "write:" | awk -F'[,=]' '{print $4}' | xargs)
+        FIO_QDN_WRITE_LAT_UNIT=$(echo "$QDN_OUT" | grep -A 15 "write:" | grep -E "^\s+lat \(" | head -1 | awk -F'[()]' '{print $2}')
+        FIO_QDN_WRITE_LAT_AVG=$(echo "$QDN_OUT" | grep -A 15 "write:" | grep -E "^\s+lat \(" | head -1 | awk -F'avg=' '{print $2}' | awk -F',' '{print $1}' | xargs)
+        FIO_QDN_WRITE_LAT["$QD"]="${FIO_QDN_WRITE_LAT_AVG}${FIO_QDN_WRITE_LAT_UNIT}"
+    done
+
+    # 12. FIO IO Bench: 1M Sequential Write (Dauerlast)
+    echo ""
+    echo "12. FIO IO Benchmark (1M Sequential Write, Dauerlast, 20s, Direct I/O)"
+    echo "----------------------------------------"
+    FIO_SEQ_WRITE_OUT=$(fio --name=seq_write_1m --directory=/root/fiotest --size=2G \
+      --time_based --runtime=20s --ramp_time=3s \
+      --ioengine=libaio --direct=1 --bs=1m --iodepth=4 \
+      --rw=write --numjobs=1 --group_reporting)
+    echo "$FIO_SEQ_WRITE_OUT"
+    rm -rf /root/fiotest/seq_write_1m*
 
     # Werte extrahieren
     CPU_EPS=$(echo "$CPU_OUT" | grep "events per second:" | awk '{print $4}')
@@ -178,6 +227,21 @@ REPORT_FILE="benchmark_report_$(date +%Y%m%d_%H%M%S).txt"
     FIO_FSYNC_SYNC_AVG=$(echo "$FIO_FSYNC_OUT" | grep -E "^\s+sync \(" | head -1 | awk -F'avg=' '{print $2}' | awk -F',' '{print $1}' | xargs)
     FIO_FSYNC_SYNC_LAT="${FIO_FSYNC_SYNC_AVG}${FIO_FSYNC_SYNC_UNIT}"
 
+    FIO_QD1_WRITE_IOPS=$(echo "$FIO_QD1_FSYNC_OUT" | grep "write:" | awk -F'[,=]' '{print $2}' | xargs)
+    FIO_QD1_WRITE_BW=$(echo "$FIO_QD1_FSYNC_OUT" | grep "write:" | awk -F'[,=]' '{print $4}' | xargs)
+    FIO_QD1_WRITE_LAT_UNIT=$(echo "$FIO_QD1_FSYNC_OUT" | grep -A 15 "write:" | grep -E "^\s+lat \(" | head -1 | awk -F'[()]' '{print $2}')
+    FIO_QD1_WRITE_LAT_AVG=$(echo "$FIO_QD1_FSYNC_OUT" | grep -A 15 "write:" | grep -E "^\s+lat \(" | head -1 | awk -F'avg=' '{print $2}' | awk -F',' '{print $1}' | xargs)
+    FIO_QD1_WRITE_LAT="${FIO_QD1_WRITE_LAT_AVG}${FIO_QD1_WRITE_LAT_UNIT}"
+    FIO_QD1_SYNC_UNIT=$(echo "$FIO_QD1_FSYNC_OUT" | grep -E "^\s+sync \(" | head -1 | awk -F'[()]' '{print $2}')
+    FIO_QD1_SYNC_AVG=$(echo "$FIO_QD1_FSYNC_OUT" | grep -E "^\s+sync \(" | head -1 | awk -F'avg=' '{print $2}' | awk -F',' '{print $1}' | xargs)
+    FIO_QD1_SYNC_LAT="${FIO_QD1_SYNC_AVG}${FIO_QD1_SYNC_UNIT}"
+
+    FIO_SEQ_WRITE_IOPS=$(echo "$FIO_SEQ_WRITE_OUT" | grep "write:" | awk -F'[,=]' '{print $2}' | xargs)
+    FIO_SEQ_WRITE_BW=$(echo "$FIO_SEQ_WRITE_OUT" | grep "write:" | awk -F'[,=]' '{print $4}' | xargs)
+    FIO_SEQ_WRITE_LAT_UNIT=$(echo "$FIO_SEQ_WRITE_OUT" | grep -A 15 "write:" | grep -E "^\s+lat \(" | head -1 | awk -F'[()]' '{print $2}')
+    FIO_SEQ_WRITE_LAT_AVG=$(echo "$FIO_SEQ_WRITE_OUT" | grep -A 15 "write:" | grep -E "^\s+lat \(" | head -1 | awk -F'avg=' '{print $2}' | awk -F',' '{print $1}' | xargs)
+    FIO_SEQ_WRITE_LAT="${FIO_SEQ_WRITE_LAT_AVG}${FIO_SEQ_WRITE_LAT_UNIT}"
+
     echo ""
     echo "========================================"
     echo "ZUSAMMENFASSUNG (KOMPRIMIERT)"
@@ -203,6 +267,19 @@ REPORT_FILE="benchmark_report_$(date +%Y%m%d_%H%M%S).txt"
     echo "  - Read:         $FIO_FSYNC_READ_BW ($FIO_FSYNC_READ_IOPS IOPS, Lat: $FIO_FSYNC_READ_LAT)"
     echo "  - Write:        $FIO_FSYNC_WRITE_BW ($FIO_FSYNC_WRITE_IOPS IOPS, Lat: $FIO_FSYNC_WRITE_LAT)"
     echo "  - Disk Flush:   Durchschnittliche fsync-Latenz: $FIO_FSYNC_SYNC_LAT"
+    echo "----------------------------------------"
+    echo "FIO Commit-Latenz 4k QD1 (fdatasync=1, Single Outstanding Request):"
+    echo "  - Write:        $FIO_QD1_WRITE_BW ($FIO_QD1_WRITE_IOPS IOPS, Lat: $FIO_QD1_WRITE_LAT)"
+    echo "  - Disk Flush:   Durchschnittliche fdatasync-Latenz: $FIO_QD1_SYNC_LAT"
+    echo "----------------------------------------"
+    echo "FIO Parallele Sync-Writes 4k (fdatasync=1):"
+    for QD in "${QUEUE_DEPTHS[@]}"; do
+        printf "  - QD%-3s Write: %-10s (%-8s IOPS, Lat: %-8s)\n" \
+          "$QD" "${FIO_QDN_WRITE_BW[$QD]}" "${FIO_QDN_WRITE_IOPS[$QD]}" "${FIO_QDN_WRITE_LAT[$QD]}"
+    done
+    echo "----------------------------------------"
+    echo "FIO 1M Sequential Write (Dauerlast):"
+    echo "  - Write:        $FIO_SEQ_WRITE_BW ($FIO_SEQ_WRITE_IOPS IOPS, Lat: $FIO_SEQ_WRITE_LAT)"
     echo "========================================"
     echo ""
     echo "Benchmark abgeschlossen."
