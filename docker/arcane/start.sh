@@ -13,8 +13,8 @@ if [ ! -s "$ENV_FILE" ]; then
     }
 
     {
-        printf 'ENCRYPTION_KEY=%s\n' "$(openssl rand 32)"
-        printf 'JWT_SECRET=%s\n' "$(openssl rand 32)"
+        printf 'ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 32)"
+        printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)"
     } > "$ENV_FILE"
 
     printf 'Secrets were generated once in %s.\n' "$ENV_FILE"
