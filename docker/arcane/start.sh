@@ -16,6 +16,11 @@ if ! docker network inspect external_net >/dev/null 2>&1; then
     printf 'Network %s was created.\n' "external_net"
 fi
 
+if [ -s "$ENV_FILE" ] && ! grep -Eq '^ENCRYPTION_KEY=[0-9a-f]{64}$' "$ENV_FILE"; then
+    printf 'Existing %s contains invalid (non-hex) secrets, regenerating it.\n' "$ENV_FILE" >&2
+    rm -f "$ENV_FILE"
+fi
+
 if [ ! -s "$ENV_FILE" ]; then
     command -v openssl >/dev/null 2>&1 || {
         printf '%s\n' 'Error: openssl is required to generate the secrets.' >&2
