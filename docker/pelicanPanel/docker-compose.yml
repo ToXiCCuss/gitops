@@ -19,16 +19,11 @@ services:
       TRUSTED_PROXIES: "100.67.0.0/16"
       APP_DEBUG: "false"
       APP_ENV: "production"
-    networks:
-      - external_net
+    ports:
+      - "80:80"
 
 volumes:
   pelican_data:
     name: pelican_panel_data
   pelican_logs:
     name: pelican_panel_logs
-
-networks:
-  external_net:
-    name: external_net
-    external: true

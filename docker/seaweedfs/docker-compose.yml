@@ -11,11 +11,4 @@ services:
     restart: unless-stopped
     volumes:
       - "/root/docker/seaweedfs:/data"
-    networks:
-      - internal_net
-
-networks:
-  internal_net:
-    name: internal_net
-    external: true
 
