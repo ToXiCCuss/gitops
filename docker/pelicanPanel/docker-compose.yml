@@ -19,8 +19,6 @@ services:
       TRUSTED_PROXIES: "100.67.0.0/16"
       APP_DEBUG: "false"
       APP_ENV: "production"
-    ports:
-      - "80:80"
     networks:
       - external_net
 
