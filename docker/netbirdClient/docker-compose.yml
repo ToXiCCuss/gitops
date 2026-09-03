@@ -26,7 +26,7 @@ volumes:
 networks:
   internal_net:
     name: internal_net
-    internal: true
+    external: true
   external_net:
     name: external_net
     external: true

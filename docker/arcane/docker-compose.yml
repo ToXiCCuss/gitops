@@ -18,4 +18,4 @@ services:
 networks:
   internal_net:
     name: internal_net
-    internal: true
+    external: true
