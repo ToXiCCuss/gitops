@@ -5,5 +5,12 @@ services:
     restart: unless-stopped
     volumes:
       - /root/docker/uptime-kuma:/app/data
-    ports:
-      - "3001:3001"
+#    ports:
+#      - "3001:3001"
+    networks:
+      - internal_net
+
+networks:
+  internal_net:
+    name: internal_net
+    internal: true

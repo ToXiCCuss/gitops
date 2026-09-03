@@ -5,6 +5,7 @@ services:
     restart: always
     networks:
       - wings0
+      - external_net
     ports:
       - "8080:8080"
       - "2022:2022"
@@ -30,3 +31,6 @@ networks:
         - subnet: "172.21.0.0/16"
     driver_opts:
       com.docker.network.bridge.name: wings0
+  external_net:
+    name: external_net
+    external: true

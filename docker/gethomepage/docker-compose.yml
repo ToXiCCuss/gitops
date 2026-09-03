@@ -12,3 +12,10 @@ services:
       HOMEPAGE_ALLOWED_HOSTS: overview.proxy.rjst.de
       PUID: 1000
       PGID: 1000
+    networks:
+      - external_net
+
+networks:
+  external_net:
+    name: external_net
+    external: true

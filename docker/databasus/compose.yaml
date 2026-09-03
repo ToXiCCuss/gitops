@@ -7,3 +7,10 @@ services:
     volumes:
       - /root/docker/databasus:/databasus-data
     restart: unless-stopped
+    networks:
+      - internal_net
+
+networks:
+  internal_net:
+    name: internal_net
+    internal: true

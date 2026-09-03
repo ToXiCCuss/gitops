@@ -22,3 +22,10 @@ services:
     command:
       - '--housekeeping_interval=10s'
       - '--docker_only=true'
+    networks:
+      - internal_net
+
+networks:
+  internal_net:
+    name: internal_net
+    internal: true

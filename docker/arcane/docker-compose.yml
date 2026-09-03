@@ -12,3 +12,10 @@ services:
       - "default.env"
       - "override.env"
     restart: unless-stopped
+    networks:
+      - internal_net
+
+networks:
+  internal_net:
+    name: internal_net
+    internal: true

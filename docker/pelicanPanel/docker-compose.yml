@@ -21,9 +21,16 @@ services:
       APP_ENV: "production"
     ports:
       - "80:80"
+    networks:
+      - external_net
 
 volumes:
   pelican_data:
     name: pelican_panel_data
   pelican_logs:
     name: pelican_panel_logs
+
+networks:
+  external_net:
+    name: external_net
+    external: true
