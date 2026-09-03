@@ -7,12 +7,12 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ENV_FILE="$SCRIPT_DIR/override.env"
 
 if ! docker network inspect internal_net >/dev/null 2>&1; then
-    docker network create --internal --subnet 172.30.0.0/24 internal_net
+    docker network create --internal --subnet 172.40.0.0/24 internal_net
     printf 'Network %s was created.\n' "internal_net"
 fi
 
 if ! docker network inspect external_net >/dev/null 2>&1; then
-    docker network create --subnet 172.31.0.0/24 external_net
+    docker network create --subnet 172.41.0.0/24 external_net
     printf 'Network %s was created.\n' "external_net"
 fi
 
