@@ -20,7 +20,7 @@ services:
       APP_DEBUG: "false"
       APP_ENV: "production"
     ports:
-      - "80:80"
+      - "81:80"
 
 volumes:
   pelican_data:
