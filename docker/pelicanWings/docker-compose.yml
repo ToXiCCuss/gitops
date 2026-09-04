@@ -1,11 +1,10 @@
 services:
   wings:
     container_name: pelican_wings
-    image: ghcr.io/pelican-dev/wings:latest
+    image: ghcr.io/pelican/wings:v1.0.0-beta29
     restart: always
     networks:
       - wings0
-      - external_net
     ports:
       - "8080:8080"
       - "2022:2022"
@@ -28,6 +27,3 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.name: wings0
-  external_net:
-    name: external_net
-    external: true
