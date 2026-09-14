@@ -2,7 +2,7 @@ services:
   seaweedfs:
     env_file:
       - ".env"
-    image: chrislusf/seaweedfs@sha256:43b768cd62b00d132439cda881b93fd1adebf1b315e996e794087743821d771d
+    image: chrislusf/seaweedfs@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     container_name: seaweedfs
     ports:
       - "8333:8333"
