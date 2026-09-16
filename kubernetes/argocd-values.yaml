@@ -106,7 +106,7 @@ repoServer:
       emptyDir: {}
   initContainers:
     - name: download-tools
-      image: registry.access.redhat.com/ubi8@sha256:034885f6a649b578f906a262df8f5d6e34e8d4266cca1d39fddc37fe7e30af5b
+      image: registry.access.redhat.com/ubi8@sha256:f62cf5375e9e17dbb719ab70d6ab3abfe83445a2ed31d46580b70ee2f0440617
       env:
         - name: AVP_VERSION
           value: 1.16.1
@@ -122,7 +122,7 @@ repoServer:
   extraContainers:
     - name: avp
       command: [/var/run/argocd/argocd-cmp-server]
-      image: registry.access.redhat.com/ubi8@sha256:034885f6a649b578f906a262df8f5d6e34e8d4266cca1d39fddc37fe7e30af5b
+      image: registry.access.redhat.com/ubi8@sha256:f62cf5375e9e17dbb719ab70d6ab3abfe83445a2ed31d46580b70ee2f0440617
       env:
         - name: ARGOCD_ENV_VAULT_ADDR
           value: "http://vault.vault:8200"
