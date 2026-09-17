@@ -1,0 +1,9 @@
+services:
+  web:
+    image: nginx:alpine
+    container_name: freewar-css
+    restart: unless-stopped
+    ports:
+      - "9000:80"
+    volumes:
+      - "/root/freewar-css:/usr/share/nginx/html:ro"
