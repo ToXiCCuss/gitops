@@ -1,6 +1,6 @@
 services:
   duplicati:
-    image: duplicati/duplicati:2.3.0.4-stable@sha256:01f8cb81ad7d548b7ceec61d696bb5d27d8057fee0ddee37c2b8a0ff1f1729f7
+    image: duplicati/duplicati:2.4.0.0-stable@sha256:eb0c1298a1974048332745b393897ae3cc1c20258e4fc26a796f2b5d75eb6218
     container_name: duplicati
     volumes:
       - /root/docker/duplicati:/data
