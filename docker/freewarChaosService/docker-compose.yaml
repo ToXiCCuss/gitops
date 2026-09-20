@@ -1,6 +1,6 @@
 services:
   freewar-chaos-service:
-    image: freewar-chaos-service:0.0.1-SNAPSHOT
+    image: freewar-chaos-service:1.0.0
     container_name: freewar-chaos-service
     restart: unless-stopped
     ports:
