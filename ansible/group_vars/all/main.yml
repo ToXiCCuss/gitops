@@ -1,8 +1,6 @@
 ---
 docker_hosts:
-   - netbird
    - docker01
-   - docker02
    - ansible01
 
 mariadb_hosts:
@@ -10,6 +8,7 @@ mariadb_hosts:
 
 postgresql_hosts:
    - ansible01
+   - docker01
 
 mongodb_hosts:
    - ansible01
