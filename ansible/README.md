@@ -6,7 +6,7 @@ Install Ansible and Git on Debian:
 
 ```bash
 sudo apt update
-sudo apt install -y ansible git
+sudo apt install -y ansible git && git clone https://github.com/ToXiCCuss/gitops.git
 ```
 
 Then switch to the repository and install the required collections:
