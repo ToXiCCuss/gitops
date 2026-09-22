@@ -6,3 +6,9 @@ server_timezone: "Europe/Berlin"
 unattended_upgrades_enabled: true
 unattended_upgrades_reboot: false
 unattended_upgrades_reboot_time: "04:00"
+
+# SSH: key-only login for root. Password login is only disabled
+# when at least one key is configured (prevents lockout).
+ssh_authorized_keys: []
+# true = remove all keys from authorized_keys that are not listed here
+ssh_authorized_keys_exclusive: false

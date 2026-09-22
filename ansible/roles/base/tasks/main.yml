@@ -34,3 +34,27 @@
       APT::Periodic::Update-Package-Lists "1";
       APT::Periodic::Unattended-Upgrade "1";
   when: unattended_upgrades_enabled
+
+# --- SSH hardening (key-only) ---
+- name: Deploy SSH public keys for root
+  ansible.posix.authorized_key:
+    user: root
+    key: "{{ ssh_authorized_keys | join('\n') }}"
+    exclusive: "{{ ssh_authorized_keys_exclusive }}"
+  when: ssh_authorized_keys | length > 0
+
+# 00- prefix: sshd uses the first value found, so this must win over
+# e.g. 50-cloud-init.conf which may set PasswordAuthentication yes
+- name: Disable SSH password authentication
+  copy:
+    dest: /etc/ssh/sshd_config.d/00-hardening.conf
+    content: |
+      PubkeyAuthentication yes
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+      AuthenticationMethods publickey
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  when: ssh_authorized_keys | length > 0
+  notify: restart sshd
