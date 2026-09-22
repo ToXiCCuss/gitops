@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: platform
+  name: infra
   namespace: argocd
 spec:
   destination:
@@ -11,10 +11,9 @@ spec:
   source:
     repoURL: https://github.com/ToXiCCuss/gitops.git
     targetRevision: master
-    path: kubernetes
+    path: kubernetes/infra
     directory:
       recurse: true
-      exclude: "argocd-values.yaml,undeployed/**"
   syncPolicy:
     automated:
       prune: true
