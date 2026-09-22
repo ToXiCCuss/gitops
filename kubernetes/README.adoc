@@ -17,9 +17,22 @@ helm install argocd argo/argo-cd -n argocd --values argocd-values.yaml --create-
 helm upgrade argocd argo/argo-cd -n argocd --values argocd-values.yaml
 ----
 
-Folders as app:
+Each top-level folder is its own independently deployable ArgoCD app-of-apps
+(`kube-app-<name>.yaml`), so a domain can be bootstrapped on its own via
+`kubectl apply -f kubernetes/kube-app-<name>.yaml`:
 
-. cdrs
-. core
-. helm
-. kubectl
+. infra (cert-manager, vault, ClusterIssuers, Istio security policies, NetBird operator)
+. monitoring (Prometheus, exporters, Istio dashboards)
+. cicd (Harbor, Artifactory, Jenkins)
+. management (Backstage, Microcks, Keycloak)
+. kafka (Strimzi, Apicurio Registry, AKHQ)
+. backup (Databasus)
+. spring
+
+Sync-wave annotations (`argocd.argoproj.io/sync-wave`) order resources
+*within* a domain (e.g. cert-manager before the ClusterIssuer that needs it),
+but not across domains — `infra` must be deployed and healthy before the
+others, since they all rely on its ClusterIssuer and cert-manager. Istio
+itself and ArgoCD's own installation are deliberately kept outside of
+GitOps (`istioctl` / `helm install` per above), since both carry too much
+blast radius for automated sync.
