@@ -11,24 +11,26 @@ spec:
       name: letsencrypt
     solvers:
       - dns01:
-          cloudflare:
-            email: robert.stenzhorn@web.de
-            apiTokenSecretRef:
-              name: ca-letsencrypt-secret
-              key: token
+          webhook:
+            groupName: acme.hetzner.com
+            solverName: hetzner
+            config:
+              tokenSecretKeyRef:
+                name: hetzner-secret
+                key: api-token
 
 ---
 
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ca-letsencrypt-secret
+  name: hetzner-secret
   namespace: cert-manager
   annotations:
     avp.kubernetes.io/path: "argocd/data/ca"
 type: Opaque
 stringData:
-  token: <cloudflare.token>
+  api-token: <hetzner.token>
 
 ---
 
