@@ -1,0 +1,7 @@
+---
+# Setup key for joining the NetBird network (from the NetBird dashboard).
+# Must be overridden per host/group via ansible-vault or --extra-vars, never committed in plain text.
+netbird_setup_key: ""
+
+# Management URL for self-hosted NetBird. Leave empty to use NetBird Cloud.
+netbird_management_url: ""
