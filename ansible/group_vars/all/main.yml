@@ -15,3 +15,6 @@ mongodb_hosts:
 
 node_exporter_hosts:
    - ansible01
+
+# Add hostnames here once netbird_setup_key is provided (ansible-vault or --extra-vars)
+netbird_hosts: []
