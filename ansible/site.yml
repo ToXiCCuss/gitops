@@ -39,3 +39,10 @@
   roles:
     - role: mongodb
       when: ansible_hostname in mongodb_hosts
+
+- name: Install NetBird (only on hosts listed in netbird_hosts)
+  hosts: all
+  become: true
+  roles:
+    - role: netbird
+      when: ansible_hostname in netbird_hosts

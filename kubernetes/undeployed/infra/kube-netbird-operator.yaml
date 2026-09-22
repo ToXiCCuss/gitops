@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: netbird-operator
+  namespace: argocd
+spec:
+  destination:
+    namespace: netbird
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: oci://ghcr.io/netbirdio/helm-charts
+    targetRevision: 0.8.0
+    chart: netbird-operator
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            operator:
+              resources:
+                requests:
+                  cpu: "0"
+                  memory: "0Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "256Mi"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: netbird-mgmt-api-key
+  namespace: netbird
+  annotations:
+    avp.kubernetes.io/path: "argocd/data/netbird"
+type: Opaque
+stringData:
+  NB_API_KEY: <api_key>
