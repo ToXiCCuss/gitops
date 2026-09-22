@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: harbor
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   destination:
     namespace: harbor
@@ -45,6 +47,8 @@ kind: Gateway
 metadata:
   name: harbor-core
   namespace: harbor
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   selector:
     istio: ingressgateway
@@ -74,6 +78,8 @@ kind: Certificate
 metadata:
   name: harbor-cert
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   secretName: harbor-cert
   issuerRef:
@@ -90,6 +96,8 @@ kind: VirtualService
 metadata:
   name: harbor-core
   namespace: harbor
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   hosts:
     - "harbor.vpn.rjst.de"

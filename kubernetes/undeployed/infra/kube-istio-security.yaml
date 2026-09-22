@@ -3,6 +3,8 @@ kind: AuthorizationPolicy
 metadata:
   name: ingress-policy-vpn
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   selector:
     matchLabels:
@@ -26,6 +28,8 @@ kind: AuthorizationPolicy
 metadata:
   name: ingress-policy-public
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   selector:
     matchLabels:

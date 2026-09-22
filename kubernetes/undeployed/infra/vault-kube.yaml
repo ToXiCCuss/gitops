@@ -3,6 +3,8 @@ kind: VirtualService
 metadata:
   name: vault
   namespace: vault
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   hosts:
     - "vault.vpn.rjst.de"
@@ -24,6 +26,8 @@ kind: Gateway
 metadata:
   name: vault
   namespace: vault
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   selector:
     istio: ingressgateway
@@ -53,6 +57,8 @@ kind: Certificate
 metadata:
   name: vault-cert
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   secretName: vault-cert
   issuerRef:
@@ -72,6 +78,7 @@ metadata:
   labels:
     vault-unsealer.bakito.net/stateful-set: vault
   annotations:
+    argocd.argoproj.io/sync-wave: "1"
     avp.kubernetes.io/path: "argocd/data/vault"
 type: Opaque
 stringData:

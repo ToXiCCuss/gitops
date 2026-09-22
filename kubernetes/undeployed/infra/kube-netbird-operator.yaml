@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: netbird-operator
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   destination:
     namespace: netbird
@@ -39,6 +41,7 @@ metadata:
   name: netbird-mgmt-api-key
   namespace: netbird
   annotations:
+    argocd.argoproj.io/sync-wave: "1"
     avp.kubernetes.io/path: "argocd/data/netbird"
 type: Opaque
 stringData:

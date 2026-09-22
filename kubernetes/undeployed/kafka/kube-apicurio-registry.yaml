@@ -3,6 +3,8 @@ kind: ApicurioRegistry
 metadata:
   name: example-apicurioregistry-mem
   namespace: kafka
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   configuration:
     persistence: "mem"
@@ -15,6 +17,8 @@ kind: Gateway
 metadata:
   name: apicurio-registry
   namespace: kafka
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   selector:
     istio: ingressgateway
@@ -43,6 +47,8 @@ kind: Certificate
 metadata:
   name: apicurio-registry-cert
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   secretName: apicurio-registry-cert
   issuerRef:
@@ -59,6 +65,8 @@ kind: VirtualService
 metadata:
   name: apicurio-registry
   namespace: kafka
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   hosts:
     - "apicurio-registry.vpn.rjst.de"

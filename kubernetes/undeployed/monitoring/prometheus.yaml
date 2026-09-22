@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: prometheus
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   destination:
     namespace: prometheus
@@ -295,6 +297,8 @@ kind: Gateway
 metadata:
   name: prometheus
   namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   selector:
     istio: ingressgateway
@@ -324,6 +328,8 @@ kind: Certificate
 metadata:
   name: prometheus-cert
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   secretName: prometheus-cert
   issuerRef:
@@ -340,6 +346,8 @@ kind: VirtualService
 metadata:
   name: prometheus
   namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   hosts:
     - "grafana.vpn.rjst.de"

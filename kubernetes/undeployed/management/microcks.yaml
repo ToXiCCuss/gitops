@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: microcks
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   destination:
     namespace: microcks
@@ -417,6 +419,8 @@ kind: Gateway
 metadata:
   name: microcks
   namespace: microcks
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   selector:
     istio: ingressgateway
@@ -446,6 +450,8 @@ kind: Certificate
 metadata:
   name: microcks-cert
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   secretName: microcks-cert
   issuerRef:
@@ -462,6 +468,8 @@ kind: VirtualService
 metadata:
   name: microcks
   namespace: microcks
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   hosts:
     - "microcks.rjst.de"
@@ -484,6 +492,7 @@ metadata:
   name: microcks-mongodb-connection
   namespace: microcks
   annotations:
+    argocd.argoproj.io/sync-wave: "3"
     avp.kubernetes.io/path: "argocd/data/microcks"
 type: Opaque
 stringData:
