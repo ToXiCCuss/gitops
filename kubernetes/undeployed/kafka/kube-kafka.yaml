@@ -3,6 +3,8 @@ kind: KafkaNodePool
 metadata:
   name: dual-role
   namespace: kafka
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
   labels:
     strimzi.io/cluster: dev-cluster
 spec:
@@ -24,6 +26,8 @@ kind: Kafka
 metadata:
   namespace: kafka
   name: dev-cluster
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
 spec:
   kafka:
     version: 4.2.0
@@ -54,6 +58,8 @@ kind: PodMonitor
 metadata:
   name: cluster-operator-metrics
   namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
   labels:
     app: strimzi
 spec:
@@ -72,6 +78,8 @@ kind: PodMonitor
 metadata:
   name: entity-operator-metrics
   namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
   labels:
     app: strimzi
 spec:
@@ -90,6 +98,8 @@ kind: PodMonitor
 metadata:
   name: kafka-resources-metrics
   namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
   labels:
     app: strimzi
 spec:

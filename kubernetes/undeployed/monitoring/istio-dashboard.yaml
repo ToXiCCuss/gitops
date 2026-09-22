@@ -3,6 +3,8 @@ kind: Gateway
 metadata:
   name: jaeger
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   selector:
     istio: ingressgateway
@@ -21,6 +23,8 @@ kind: VirtualService
 metadata:
   name: jaeger
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   hosts:
     - "jaeger.vpn.rjst.de"
@@ -44,6 +48,8 @@ kind: Gateway
 metadata:
   name: kiali
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   selector:
     istio: ingressgateway
@@ -73,6 +79,8 @@ kind: Certificate
 metadata:
   name: kiali-cert
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   secretName: kiali-cert
   issuerRef:
@@ -89,6 +97,8 @@ kind: VirtualService
 metadata:
   name: kiali
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   hosts:
     - "kiali.vpn.rjst.de"

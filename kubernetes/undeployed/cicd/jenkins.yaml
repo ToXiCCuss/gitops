@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: jenkins
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   destination:
     namespace: jenkins
@@ -41,6 +43,8 @@ kind: Gateway
 metadata:
   name: jenkins
   namespace: jenkins
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   selector:
     istio: ingressgateway
@@ -69,6 +73,8 @@ kind: Certificate
 metadata:
   name: jenkins-cert
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   secretName: jenkins-cert
   issuerRef:
@@ -85,6 +91,8 @@ kind: VirtualService
 metadata:
   name: jenkins
   namespace: jenkins
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   hosts:
     - "jenkins.vpn.rjst.de"
@@ -107,6 +115,8 @@ kind: PersistentVolumeClaim
 metadata:
   name: maven-repo-pvc
   namespace: jenkins
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   accessModes:
     - ReadWriteOnce
@@ -121,6 +131,8 @@ kind: Secret
 metadata:
   name: maven-settings-secret
   namespace: jenkins
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 type: Opaque
 stringData:
   settings.xml: |
@@ -150,6 +162,7 @@ metadata:
   name: ca-secret
   namespace: jenkins
   annotations:
+    argocd.argoproj.io/sync-wave: "3"
     avp.kubernetes.io/path: "argocd/data/ca"
 type: Opaque
 data:

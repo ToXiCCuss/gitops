@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: databasus
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   destination:
     namespace: databasus
@@ -37,6 +39,8 @@ kind: Gateway
 metadata:
   name: databasus
   namespace: databasus
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   selector:
     istio: ingressgateway
@@ -66,6 +70,8 @@ kind: Certificate
 metadata:
   name: databasus-cert
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   secretName: databasus-cert
   issuerRef:
@@ -82,6 +88,8 @@ kind: VirtualService
 metadata:
   name: databasus
   namespace: databasus
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   hosts:
     - "databasus.vpn.rjst.de"

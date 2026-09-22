@@ -3,6 +3,8 @@ kind: ClusterIssuer
 metadata:
   namespace: cert-manager
   name: letsencrypt
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   acme:
     email: robert.stenzhorn@web.de
@@ -27,6 +29,7 @@ metadata:
   name: hetzner-secret
   namespace: cert-manager
   annotations:
+    argocd.argoproj.io/sync-wave: "2"
     avp.kubernetes.io/path: "argocd/data/ca"
 type: Opaque
 stringData:
@@ -39,6 +42,8 @@ kind: ClusterIssuer
 metadata:
   name: self-issuer
   namespace: cert-manager
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   ca:
     secretName: ca-self-secret
@@ -51,6 +56,7 @@ metadata:
   name: ca-self-secret
   namespace: cert-manager
   annotations:
+    argocd.argoproj.io/sync-wave: "2"
     avp.kubernetes.io/path: "argocd/data/ca"
 type: Opaque
 data:

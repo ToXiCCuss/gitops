@@ -3,6 +3,8 @@ kind: Gateway
 metadata:
   name: argocd
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   selector:
     istio: ingressgateway
@@ -32,6 +34,8 @@ kind: VirtualService
 metadata:
   name: argocd
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   hosts:
     - "argocd.vpn.rjst.de"
@@ -54,6 +58,8 @@ kind: Certificate
 metadata:
   name: argocd-cert
   namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   secretName: argocd-cert
   issuerRef:
