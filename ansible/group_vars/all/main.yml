@@ -19,3 +19,7 @@ node_exporter_hosts:
 # Add hostnames here once netbird_setup_key is provided (ansible-vault or --extra-vars)
 netbird_hosts:
    - k8sdev01
+
+# SSH public keys for root (key-only login, password login gets disabled)
+ssh_authorized_keys:
+   - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ557k6uQaq3TV0Li8Y3+S3tOgQUPU6y0IM8E/TWSJGA robert@pc"
