@@ -51,8 +51,6 @@ spec:
     namespace: netbird
   serviceRef:
     name: jenkins
-  groups:
-    - name: All
 
 ---
 

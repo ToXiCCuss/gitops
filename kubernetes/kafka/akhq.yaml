@@ -59,5 +59,3 @@ spec:
     namespace: netbird
   serviceRef:
     name: akhq
-  groups:
-    - name: All
