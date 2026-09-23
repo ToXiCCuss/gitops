@@ -94,7 +94,7 @@ if ($result.sealed) {
 }
 Write-Ok "Vault is unsealed."
 
-Write-Step "Seeding vault-unsealer-config Secret via kubectl (bypasses AVP for this one bootstrap secret)"
+Write-Step "Writing the vault-unsealer-config Secret manifest (bypasses AVP for this one bootstrap secret)"
 $keyLines = for ($i = 0; $i -lt $keys.Count; $i++) { "  unsealKey$($i+1): $($keys[$i])" }
 $secretYaml = @"
 apiVersion: v1
@@ -108,16 +108,10 @@ type: Opaque
 stringData:
 $($keyLines -join "`n")
 "@
-$kubectl = Get-Command kubectl -ErrorAction SilentlyContinue
-if ($kubectl) {
-    $secretYaml | kubectl apply -f -
-    Write-Ok "vault-unsealer-config applied."
-} else {
-    $yamlFile = Join-Path $PSScriptRoot "vault-unsealer-config-$stamp.yaml"
-    $secretYaml | Out-File -FilePath $yamlFile -Encoding utf8
-    Write-Warn2 "kubectl not found on PATH - wrote the Secret manifest to $yamlFile, apply it yourself:"
-    Write-Warn2 "  kubectl apply -f `"$yamlFile`""
-}
+$yamlFile = Join-Path $PSScriptRoot "vault-unsealer-config-$stamp.yaml"
+$secretYaml | Out-File -FilePath $yamlFile -Encoding utf8
+Write-Ok "Wrote the Secret manifest to $yamlFile"
+Write-Warn2 "Review it, then apply it yourself:  kubectl apply -f `"$yamlFile`""
 
 Write-Step "Writing the same unseal keys into Vault's own KV store (argocd/data/vault) for future reference"
 $headers = @{ "X-Vault-Token" = $rootToken }
