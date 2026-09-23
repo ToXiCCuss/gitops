@@ -34,73 +34,18 @@ spec:
 
 ---
 
-apiVersion: networking.istio.io/v1
-kind: Gateway
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
 metadata:
   name: databasus
   namespace: databasus
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  selector:
-    istio: ingressgateway
-  servers:
-    - port:
-        number: 80
-        name: http
-        protocol: HTTP
-      hosts:
-        - "databasus.vpn.rjst.de"
-      tls:
-        httpsRedirect: true
-    - port:
-        number: 443
-        name: https
-        protocol: HTTPS
-      tls:
-        credentialName: databasus-cert
-        mode: SIMPLE
-      hosts:
-        - "databasus.vpn.rjst.de"
-
----
-
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: databasus-cert
-  namespace: istio-system
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  secretName: databasus-cert
-  issuerRef:
-    name: self-issuer
-    kind: ClusterIssuer
-  commonName: "databasus.vpn.rjst.de"
-  dnsNames:
-    - "databasus.vpn.rjst.de"
-
----
-
-apiVersion: networking.istio.io/v1
-kind: VirtualService
-metadata:
-  name: databasus
-  namespace: databasus
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  hosts:
-    - "databasus.vpn.rjst.de"
-  gateways:
-    - databasus
-  http:
-    - match:
-        - uri:
-            prefix: /
-      route:
-        - destination:
-            host: databasus-service
-            port:
-              number: 4005
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: databasus-service
+  groups:
+    - name: All

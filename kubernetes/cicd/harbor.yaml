@@ -22,7 +22,7 @@ spec:
               type: clusterIP
               tls:
                 enabled: false
-            externalURL: https://harbor.vpn.rjst.de
+            externalURL: http://harbor.proxy.rjst.de
             harborAdminPassword: <path:argocd/data/harbor#admin.password>
             database:
               type: external
@@ -42,73 +42,18 @@ spec:
 
 ---
 
-apiVersion: networking.istio.io/v1
-kind: Gateway
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
 metadata:
-  name: harbor-core
+  name: harbor
   namespace: harbor
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  selector:
-    istio: ingressgateway
-  servers:
-    - port:
-        number: 80
-        name: http
-        protocol: HTTP
-      hosts:
-        - "harbor.vpn.rjst.de"
-      tls:
-        httpsRedirect: true
-    - port:
-        number: 443
-        name: https
-        protocol: HTTPS
-      tls:
-        credentialName: harbor-cert
-        mode: SIMPLE
-      hosts:
-        - "harbor.vpn.rjst.de"
-
----
-
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: harbor-cert
-  namespace: istio-system
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  secretName: harbor-cert
-  issuerRef:
-    name: self-issuer
-    kind: ClusterIssuer
-  commonName: "harbor.vpn.rjst.de"
-  dnsNames:
-    - "harbor.vpn.rjst.de"
-
----
-
-apiVersion: networking.istio.io/v1
-kind: VirtualService
-metadata:
-  name: harbor-core
-  namespace: harbor
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  hosts:
-    - "harbor.vpn.rjst.de"
-  gateways:
-    - harbor-core
-  http:
-    - match:
-        - uri:
-            prefix: /
-      route:
-        - destination:
-            host: harbor
-            port:
-              number: 80
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: harbor
+  groups:
+    - name: All

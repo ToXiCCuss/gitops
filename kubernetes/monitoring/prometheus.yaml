@@ -292,74 +292,19 @@ spec:
     syncOptions:
       - CreateNamespace=true
 ---
-apiVersion: networking.istio.io/v1
-kind: Gateway
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
 metadata:
-  name: prometheus
+  name: grafana
   namespace: prometheus
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  selector:
-    istio: ingressgateway
-  servers:
-    - port:
-        number: 80
-        name: http
-        protocol: HTTP
-      hosts:
-        - "grafana.vpn.rjst.de"
-      tls:
-        httpsRedirect: true
-    - port:
-        number: 443
-        name: https
-        protocol: HTTPS
-      tls:
-        credentialName: prometheus-cert
-        mode: SIMPLE
-      hosts:
-        - "grafana.vpn.rjst.de"
-
----
-
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: prometheus-cert
-  namespace: istio-system
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  secretName: prometheus-cert
-  issuerRef:
-    name: self-issuer
-    kind: ClusterIssuer
-  commonName: "grafana.vpn.rjst.de"
-  dnsNames:
-    - "grafana.vpn.rjst.de"
-
----
-
-apiVersion: networking.istio.io/v1
-kind: VirtualService
-metadata:
-  name: prometheus
-  namespace: prometheus
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  hosts:
-    - "grafana.vpn.rjst.de"
-  gateways:
-    - prometheus
-  http:
-    - match:
-        - uri:
-            prefix: /
-      route:
-        - destination:
-            host: grafana
-            port:
-              number: 80
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: grafana
+  groups:
+    - name: All
 
