@@ -66,7 +66,20 @@ helm install argocd argo/argo-cd -n argocd --values argocd-values.yaml --create-
 The `avp-helm`/`avp` ArgoCD CMP plugins read secrets from Vault at sync time —
 if a path is missing, that Application's manifests simply fail to render.
 Populate these *before* syncing `infra` (paths are Vault KV v2, under
-`argocd/data/...`):
+`argocd/data/...`).
+
+Two PowerShell scripts in `scripts/vault/` automate this against a fresh
+Vault (port-forward it first: `kubectl port-forward -n vault svc/vault 8200:8200`):
+
+----
+# One-time only, right after infra deploys a fresh, uninitialized Vault:
+.\scripts\vault\init-vault.ps1 -VaultAddr http://127.0.0.1:8200
+
+# Generates the app-internal passwords + self-signed CA, and prompts for
+# the values that can't be generated (Hetzner/NetBird tokens, docker01 DB
+# credentials). Safe to re-run - blank answers never overwrite existing data.
+.\scripts\vault\generate-secrets.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <root-token-from-init>
+----
 
 [cols="1,2"]
 |===
