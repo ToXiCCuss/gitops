@@ -34,31 +34,3 @@ metadata:
 type: Opaque
 stringData:
   api-token: <hetzner.token>
-
----
-
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: self-issuer
-  namespace: cert-manager
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  ca:
-    secretName: ca-self-secret
-
----
-
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ca-self-secret
-  namespace: cert-manager
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-    avp.kubernetes.io/path: "argocd/data/ca"
-type: Opaque
-data:
-  tls.crt:  <ca.crt>
-  tls.key:  <ca.key>
