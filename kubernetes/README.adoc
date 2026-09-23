@@ -3,12 +3,6 @@
 
 == Setup
 
-=== K3d
-----
-k3d cluster create local --no-lb --k3s-arg "--disable=traefik@server:0"
-k3d cluster delete local
-----
-
 === ArgoCD
 
 ----
@@ -93,10 +87,6 @@ Vault (port-forward it first: `kubectl port-forward -n vault svc/vault 8200:8200
 |`argocd/data/netbird`
 |`api_key` (NetBird Management API personal access token)
 
-|`argocd/data/vault`
-|`unsealKey1` .. `unsealKey5` (Vault's own unseal keys — see the note below,
-these can't come from Vault itself on a first install)
-
 |`argocd/data/prometheus`
 |`password` (Grafana admin password)
 
@@ -113,13 +103,14 @@ these can't come from Vault itself on a first install)
 |`username`, `password` (MongoDB connection on `docker01`)
 |===
 
-NOTE: `argocd/data/vault` is circular on a *first* install — Vault must
-already be unsealed for AVP to read the unseal keys back out of it. On a
-fresh cluster, seed that one secret directly (bypassing AVP) once, using
-the keys Vault printed on `vault operator init` — `init-vault.ps1` below
-writes the manifest for you, review and `kubectl apply` it yourself; after
-that, Vault stays unsealed via `vault-unsealer` and the Vault-backed copy is
-just for reference/rotation.
+NOTE: Vault's own unseal keys (`argocd/data/vault`) aren't in the table
+above - they're circular on a *first* install (Vault must already be
+unsealed for AVP to read them back out of it), so they're not something
+you populate by hand. `init-vault.ps1` below creates them via
+`vault operator init`, unseals Vault, writes them into
+`argocd/data/vault` for reference, and writes the `vault-unsealer-config`
+Secret manifest for you to `kubectl apply` directly (bypassing AVP for
+that one bootstrap secret).
 
 === 3. Deploy the domains, in this order
 
