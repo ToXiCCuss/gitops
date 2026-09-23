@@ -36,3 +36,129 @@ others, since they all rely on its ClusterIssuer and cert-manager. Istio
 itself and ArgoCD's own installation are deliberately kept outside of
 GitOps (`istioctl` / `helm install` per above), since both carry too much
 blast radius for automated sync.
+
+== Deployment Guide
+
+=== 0. Prerequisites (outside of GitOps, done once manually)
+
+. Kubernetes cluster reachable, `kubectl`/`helm` configured against it.
+. Istio installed via `istioctl` (base + istiod + ingressgateway) — still
+  needed for the remaining public apps (`keycloak.rjst.de`, `microcks.rjst.de`,
+  `rjst.de`).
+. NetBird self-hosted server running (per the
+  https://docs.netbird.io/selfhosted/selfhosted-quickstart[quickstart script]),
+  reachable at `proxy.rjst.de`, with its own Traefik reverse proxy.
+. A NetBird personal access token (Management API scope) for the Kubernetes
+  operator.
+. HashiCorp Vault reachable at `http://vault.vault:8200` from the cluster
+  (bootstrapped as part of `infra`, see below — chicken-and-egg noted in
+  step 2).
+
+=== 1. Bootstrap ArgoCD
+
+----
+helm repo add argo https://argoproj.github.io/argo-helm
+helm install argocd argo/argo-cd -n argocd --values argocd-values.yaml --create-namespace
+----
+
+=== 2. Populate Vault secrets
+
+The `avp-helm`/`avp` ArgoCD CMP plugins read secrets from Vault at sync time —
+if a path is missing, that Application's manifests simply fail to render.
+Populate these *before* syncing `infra` (paths are Vault KV v2, under
+`argocd/data/...`):
+
+[cols="1,2"]
+|===
+|Vault path |Keys
+
+|`argocd/data/ca`
+|`hetzner.token` (Hetzner Cloud API token, DNS read/write), `ca.crt`, `ca.key` (self-signed root CA, PEM)
+
+|`argocd/data/netbird`
+|`api_key` (NetBird Management API personal access token)
+
+|`argocd/data/vault`
+|`unsealKey1` .. `unsealKey5` (Vault's own unseal keys — see the note below,
+these can't come from Vault itself on a first install)
+
+|`argocd/data/prometheus`
+|`password` (Grafana admin password)
+
+|`argocd/data/harbor`
+|`admin.password`, `database.username`, `database.password`
+
+|`argocd/data/jenkins`
+|`password` (Jenkins admin password)
+
+|`argocd/data/keycloak`
+|`postgresql.username`, `postgresql.password`
+
+|`argocd/data/microcks`
+|`username`, `password` (MongoDB connection on `docker01`)
+|===
+
+NOTE: `argocd/data/vault` is circular on a *first* install — Vault must
+already be unsealed for AVP to read the unseal keys back out of it. On a
+fresh cluster, seed that one secret directly with `kubectl apply` (bypassing
+AVP) once, using the keys Vault printed on `vault operator init`; after
+that, Vault stays unsealed via `vault-unsealer` and the Vault-backed copy is
+just for reference/rotation.
+
+=== 3. Deploy the domains, in this order
+
+----
+kubectl apply -f kubernetes/kube-app-infra.yaml       # 1. cert-manager, vault, ClusterIssuers, NetBird operator
+kubectl apply -f kubernetes/kube-app-monitoring.yaml  # 2. needed before kafka (PodMonitor CRDs)
+kubectl apply -f kubernetes/kube-app-kafka.yaml       # 3. onwards: order doesn't matter, all only need infra
+kubectl apply -f kubernetes/kube-app-cicd.yaml
+kubectl apply -f kubernetes/kube-app-management.yaml
+kubectl apply -f kubernetes/kube-app-backup.yaml
+kubectl apply -f kubernetes/kube-app-spring.yaml
+----
+
+Watch `infra` reach Healthy in the ArgoCD UI/CLI before applying the rest —
+nothing else will work without its ClusterIssuer and cert-manager.
+
+=== 4. NetBird dashboard configuration (manual, not in Git)
+
+. *DNS zone*: `DNS > Zones > Add Zone`, name `proxy.rjst.de` — must exist
+  *before* `infra` syncs the `NetworkRouter`
+  (`kubernetes/infra/kube-netbird-router.yaml`), otherwise the router fails.
+. Once `infra` is healthy, each app's `NetworkResource` (ArgoCD, Vault,
+  Grafana, Harbor, Jenkins, Backstage, AKHQ, Apicurio Registry, Databasus)
+  shows up under that zone as `<service>.<namespace>.proxy.rjst.de`.
+. *Groups & Access Policies*: create per your own scheme under
+  `Access Control`, and grant them access to the resources above — nothing
+  is reachable until a policy allows it (NetBird is deny-by-default).
+. *Traefik*: on the NetBird host, add a route per app
+  (`<app>.proxy.rjst.de → <service>.<namespace>.proxy.rjst.de:<port>`, see
+  the port table below) — managed manually outside this repo.
+
+[cols="1,2,1"]
+|===
+|App |Backend (NetBird-internal) |Port
+
+|ArgoCD |`argocd-server.argocd.proxy.rjst.de` |80
+|Vault |`vault.vault.proxy.rjst.de` |8200
+|Grafana |`grafana.prometheus.proxy.rjst.de` |80
+|Harbor |`harbor.harbor.proxy.rjst.de` |80
+|Jenkins |`jenkins.jenkins.proxy.rjst.de` |8080
+|Backstage |`backstage.backstage.proxy.rjst.de` |7007
+|AKHQ |`akhq.kafka.proxy.rjst.de` |80
+|Apicurio Registry |`example-apicurioregistry-mem-service.kafka.proxy.rjst.de` |8080
+|Databasus |`databasus-service.databasus.proxy.rjst.de` |4005
+|===
+
+=== 5. Verify
+
+----
+kubectl get applications -n argocd
+kubectl get clusterissuer
+kubectl get certificates -A
+kubectl get networkresources -A
+----
+
+All `Application` rows should show `Synced`/`Healthy`, and each
+`NetworkResource` should have a matching entry in the NetBird dashboard
+under the `proxy.rjst.de` zone.
