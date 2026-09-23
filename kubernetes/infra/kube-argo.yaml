@@ -11,5 +11,3 @@ spec:
     namespace: netbird
   serviceRef:
     name: argocd-server
-  groups:
-    - name: All

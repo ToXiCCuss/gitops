@@ -164,5 +164,3 @@ spec:
     namespace: netbird
   serviceRef:
     name: backstage
-  groups:
-    - name: All
