@@ -1,0 +1,10 @@
+apiVersion: netbird.io/v1alpha1
+kind: NetworkRouter
+metadata:
+  name: proxy
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  dnsZoneRef:
+    name: proxy.rjst.de

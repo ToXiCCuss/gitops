@@ -19,7 +19,7 @@ spec:
         - name: HELM_VALUES
           value: |
             controller:
-              jenkinsUrl: "https://jenkins.vpn.rjst.de"
+              jenkinsUrl: "http://jenkins.proxy.rjst.de"
               admin:
                 password: <path:argocd/data/jenkins#password>
               resources:
@@ -38,75 +38,21 @@ spec:
 
 ---
 
-apiVersion: networking.istio.io/v1
-kind: Gateway
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
 metadata:
   name: jenkins
   namespace: jenkins
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  selector:
-    istio: ingressgateway
-  servers:
-    - port:
-        number: 80
-        name: http
-        protocol: HTTP
-      hosts:
-        - "jenkins.vpn.rjst.de"
-      tls:
-        httpsRedirect: true
-    - port:
-        number: 443
-        name: https
-        protocol: HTTPS
-      tls:
-        credentialName: jenkins-cert
-        mode: SIMPLE
-      hosts:
-        - "jenkins.vpn.rjst.de"
----
-
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: jenkins-cert
-  namespace: istio-system
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  secretName: jenkins-cert
-  issuerRef:
-    name: self-issuer
-    kind: ClusterIssuer
-  commonName: "jenkins.vpn.rjst.de"
-  dnsNames:
-    - "jenkins.vpn.rjst.de"
-
----
-
-apiVersion: networking.istio.io/v1
-kind: VirtualService
-metadata:
-  name: jenkins
-  namespace: jenkins
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  hosts:
-    - "jenkins.vpn.rjst.de"
-  gateways:
-    - jenkins
-  http:
-    - match:
-        - uri:
-            prefix: /
-      route:
-        - destination:
-            host: jenkins
-            port:
-              number: 8080
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: jenkins
+  groups:
+    - name: All
 
 ---
 

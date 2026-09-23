@@ -22,7 +22,7 @@ spec:
               backstage:
                 replicas: 1
                 image:
-                  registry: harbor.vpn.rjst.de
+                  registry: harbor.proxy.rjst.de
                   repository: dev/rjst-backstage
                   tag: 1.0.0
                 # -- Extra app configuration files to inline into command arguments
@@ -151,73 +151,18 @@ spec:
 
 ---
 
-apiVersion: networking.istio.io/v1
-kind: Gateway
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
 metadata:
   name: backstage
   namespace: backstage
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  selector:
-    istio: ingressgateway
-  servers:
-    - port:
-        number: 80
-        name: http
-        protocol: HTTP
-      hosts:
-        - "backstage.vpn.rjst.de"
-      tls:
-        httpsRedirect: true
-    - port:
-        number: 443
-        name: https
-        protocol: HTTPS
-      tls:
-        credentialName: backstage-cert
-        mode: SIMPLE
-      hosts:
-        - "backstage.vpn.rjst.de"
-
----
-
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: backstage-cert
-  namespace: istio-system
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  secretName: backstage-cert
-  issuerRef:
-    name: self-issuer
-    kind: ClusterIssuer
-  commonName: "backstage.vpn.rjst.de"
-  dnsNames:
-    - "backstage.vpn.rjst.de"
-
----
-
-apiVersion: networking.istio.io/v1
-kind: VirtualService
-metadata:
-  name: backstage
-  namespace: backstage
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  hosts:
-    - "backstage.vpn.rjst.de"
-  gateways:
-    - backstage
-  http:
-    - match:
-        - uri:
-            prefix: /
-      route:
-        - destination:
-            host: backstage
-            port:
-              number: 7007
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: backstage
+  groups:
+    - name: All

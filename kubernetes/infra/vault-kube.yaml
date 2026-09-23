@@ -1,72 +1,18 @@
-apiVersion: networking.istio.io/v1
-kind: VirtualService
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
 metadata:
   name: vault
   namespace: vault
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  hosts:
-    - "vault.vpn.rjst.de"
-  gateways:
-    - vault
-  http:
-    - match:
-        - uri:
-            prefix: /
-      route:
-        - destination:
-            host: vault
-            port:
-              number: 8200
-
----
-apiVersion: networking.istio.io/v1
-kind: Gateway
-metadata:
-  name: vault
-  namespace: vault
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  selector:
-    istio: ingressgateway
-  servers:
-    - port:
-        number: 80
-        name: http
-        protocol: HTTP
-      hosts:
-        - "vault.vpn.rjst.de"
-      tls:
-        httpsRedirect: true
-    - port:
-        number: 443
-        name: https
-        protocol: HTTPS
-      tls:
-        credentialName: vault-cert
-        mode: SIMPLE
-      hosts:
-        - "vault.vpn.rjst.de"
-
----
-
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: vault-cert
-  namespace: istio-system
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  secretName: vault-cert
-  issuerRef:
-    name: self-issuer
-    kind: ClusterIssuer
-  commonName: "vault.vpn.rjst.de"
-  dnsNames:
-    - "vault.vpn.rjst.de"
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: vault
+  groups:
+    - name: All
 
 ---
 
