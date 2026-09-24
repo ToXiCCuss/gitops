@@ -1,0 +1,44 @@
+= NetBird account config (Terraform)
+
+Manages the self-hosted NetBird account-level things that have no
+Kubernetes CRD equivalent - currently just the `proxy.rjst.de` DNS zone.
+Groups and access policies live in Git as operator CRDs instead
+(`kubernetes/infra/kube-netbird-access.yaml`). This is the officially
+maintained provider (`registry.terraform.io/netbirdio/netbird`), separate
+from GitOps/ArgoCD - nothing here is applied automatically, you run it
+yourself.
+
+NOTE: don't add `netbird_reverse_proxy_service` resources for the internal
+apps. Provider v0.0.10 has no way to mark a service private (NetBird-only),
+so it would be reachable from the internet.
+
+== Setup
+
+----
+terraform -chdir=terraform init
+----
+
+== Token
+
+Never put the PAT in a `.tf` file or pass it with `-var` (ends up in shell
+history). The provider reads it natively from an env var:
+
+----
+$env:NB_PAT = "<your netbird PAT>"
+$env:NETBIRD_API_URL = "https://api.proxy.rjst.de"   # your self-hosted management API
+----
+
+`netbird_management_url` is still a required Terraform variable (the
+provider's own env var for it is `NETBIRD_API_URL`, so set both or neither) -
+pass it however you like:
+
+----
+terraform -chdir=terraform plan -var="netbird_management_url=https://api.proxy.rjst.de"
+----
+
+== Apply
+
+----
+terraform -chdir=terraform plan
+terraform -chdir=terraform apply
+----

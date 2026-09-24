@@ -20,17 +20,3 @@ spec:
               tokenSecretKeyRef:
                 name: hetzner-secret
                 key: api-token
-
----
-
-apiVersion: v1
-kind: Secret
-metadata:
-  name: hetzner-secret
-  namespace: cert-manager
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-    avp.kubernetes.io/path: "argocd/data/ca"
-type: Opaque
-stringData:
-  api-token: <hetzner.token>

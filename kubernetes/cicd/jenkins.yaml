@@ -51,6 +51,8 @@ spec:
     namespace: netbird
   serviceRef:
     name: jenkins
+  groups:
+    - name: kubernetes-services
 
 ---
 
@@ -97,17 +99,3 @@ stringData:
             </server>
         </servers>
     </settings>
-
----
-
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ca-secret
-  namespace: jenkins
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-    avp.kubernetes.io/path: "argocd/data/ca"
-type: Opaque
-data:
-  ca.pem: <ca.crt>

@@ -59,3 +59,5 @@ spec:
     namespace: netbird
   serviceRef:
     name: akhq
+  groups:
+    - name: kubernetes-services

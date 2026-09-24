@@ -25,3 +25,5 @@ spec:
     namespace: netbird
   serviceRef:
     name: example-apicurioregistry-mem-service
+  groups:
+    - name: kubernetes-services
