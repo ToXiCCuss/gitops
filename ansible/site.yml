@@ -46,3 +46,10 @@
   roles:
     - role: netbird
       when: ansible_hostname in netbird_hosts
+
+- name: Configure Harbor pull-through mirrors for k3s (only on hosts listed in k3s_hosts)
+  hosts: all
+  become: true
+  roles:
+    - role: k3s_registries
+      when: ansible_hostname in k3s_hosts

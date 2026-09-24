@@ -1,0 +1,11 @@
+mirrors:
+{% for registry in k3s_registries_mirrored %}
+  {{ registry }}:
+    endpoint:
+      - "https://{{ k3s_registries_harbor_host }}/v2/{{ registry }}"
+{% endfor %}
+configs:
+  "{{ k3s_registries_harbor_host }}":
+    auth:
+      username: {{ k3s_registries_harbor_username | to_json }}
+      password: {{ k3s_registries_harbor_password | to_json }}
