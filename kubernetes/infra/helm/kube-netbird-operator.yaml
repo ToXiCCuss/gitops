@@ -18,6 +18,8 @@ spec:
       env:
         - name: HELM_VALUES
           value: |
+            webhook:
+              failurePolicy: Ignore
             operator:
               resources:
                 requests:
