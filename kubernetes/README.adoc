@@ -25,11 +25,9 @@ kubernetes/<domain>/
 
 `<domain>-kubectl` waits until `<domain>-helm` is healthy, so operators and
 their CRDs exist before the custom resources that need them - that is the
-enforced ordering, no dry-run workarounds needed. `kubectl/` apps run with the
-AVP plugin (`argocd-vault-plugin`), so raw Secrets with an
-`avp.kubernetes.io/path` annotation are filled from Vault there. `helm/` apps
-are plain directory sources; their `<path:...>` values are resolved later, by
-the AVP Helm plugin of each child Application. Two rules follow from this:
+enforced ordering, no dry-run workarounds needed. Both are plain directory
+sources without AVP; the `<path:...>` values in a Helm app are resolved later,
+by the AVP Helm plugin of each child Application. Two rules follow from this:
 a Helm app must not depend on anything that lives in the same domain's
 `kubectl/` folder (it runs first), and a domain without Helm apps (`spring`)
 simply has no `helm/` folder.
@@ -203,9 +201,11 @@ Why the secrets are a separate app that comes first: some Helm apps need
 their Secret at start (the NetBird operator needs `netbird-mgmt-api-key`),
 but `helm/` runs before `kubectl/`, so those Secrets can't wait for the
 domain's `kubectl/` folder. `secrets` holds them (plus the namespaces they live
-in) and runs the AVP plugin. Secrets that are only needed by raw manifests
-could live in a `kubectl/` folder instead. Never put the AVP plugin on a
-`helm/` app: it would resolve every `<path:...>` in the child Applications'
+in) and is the only place that runs the AVP plugin, so *every* Secret that is
+filled from Vault lives there. Don't set the plugin on an app whose files
+contain no `<path` / `avp.kubernetes.io` marker: the plugin's discovery check
+finds nothing and ArgoCD fails with "could not find cmp-server plugin".
+Never put the AVP plugin on a `helm/` app: it would resolve every `<path:...>` in the child Applications'
 `HELM_VALUES` and write those passwords in plain text into the Application
 objects.
 
