@@ -113,20 +113,6 @@ $secretYaml | Out-File -FilePath $yamlFile -Encoding utf8
 Write-Ok "Wrote the Secret manifest to $yamlFile"
 Write-Warn2 "Review it, then apply it yourself:  kubectl apply -f `"$yamlFile`""
 
-Write-Step "Writing the same unseal keys into Vault's own KV store (argocd/data/vault) for future reference"
-$headers = @{ "X-Vault-Token" = $rootToken }
-$kvBody = @{
-    data = @{
-        unsealKey1 = $keys[0]
-        unsealKey2 = $keys[1]
-        unsealKey3 = $keys[2]
-        unsealKey4 = $keys[3]
-        unsealKey5 = $keys[4]
-    }
-} | ConvertTo-Json
-Invoke-RestMethod -Uri "$VaultAddr/v1/argocd/data/vault" -Method Post -Headers $headers -Body $kvBody -ContentType "application/json" | Out-Null
-Write-Ok "Stored at argocd/data/vault (this copy is for reference/rotation only - the live Secret already exists)."
-
 Write-Step "Done"
 Write-Warn2 "Next: run generate-secrets.ps1 with -VaultToken `"$rootToken`" (or a less-privileged token you create from it) to seed the remaining app secrets."
 Write-Warn2 "Consider revoking/rotating the root token afterwards and using a scoped policy instead."

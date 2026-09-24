@@ -15,13 +15,17 @@ Each top-level folder is its own independently deployable ArgoCD app-of-apps
 (`kube-app-<name>.yaml`), so a domain can be bootstrapped on its own via
 `kubectl apply -f kubernetes/kube-app-<name>.yaml`:
 
-. infra (cert-manager, vault, ClusterIssuer, Istio security policies, NetBird operator)
+. infra (cert-manager, ClusterIssuer, Istio security policies, NetBird operator)
 . monitoring (Prometheus, exporters, Istio dashboards)
 . cicd (Harbor, Artifactory, Jenkins) — before `management`, see below
 . management (Backstage, Microcks, Keycloak)
 . kafka (Strimzi, Apicurio Registry, AKHQ)
 . backup (Databasus)
 . spring
+
+`kube-vault.yaml` (Vault itself) sits at the top level, not inside any
+domain folder, and is applied standalone before `infra` — see the
+Deployment Guide below for why.
 
 Sync-wave annotations (`argocd.argoproj.io/sync-wave`) order resources
 *within* a domain (e.g. cert-manager before the ClusterIssuer that needs it),
@@ -46,9 +50,6 @@ automated sync.
   reachable at `proxy.rjst.de`, with its own Traefik reverse proxy.
 . A NetBird personal access token (Management API scope) for the Kubernetes
   operator.
-. HashiCorp Vault reachable at `http://vault.vault:8200` from the cluster
-  (bootstrapped as part of `infra`, see below — chicken-and-egg noted in
-  step 2).
 
 === 1. Bootstrap ArgoCD
 
@@ -57,32 +58,48 @@ helm repo add argo https://argoproj.github.io/argo-helm
 helm install argocd argo/argo-cd -n argocd --values argocd-values.yaml --create-namespace
 ----
 
-=== 2. Populate Vault secrets
+=== 2. Deploy Vault standalone
+
+----
+kubectl apply -f kubernetes/kube-vault.yaml
+----
+
+Vault is deliberately *not* part of the `infra` domain app — `infra` also
+contains AVP-dependent secrets (e.g. `netbird-mgmt-api-key`), and its very
+first sync would try to render all of them at once. If Vault were bundled
+in there too, that first sync would race against Vault not being unsealed
+yet. Deploying Vault on its own, first, and fully populating it (next
+step) *before* `infra` ever syncs sidesteps that entirely.
+
+=== 3. Populate Vault secrets
 
 The `avp-helm`/`avp` ArgoCD CMP plugins read secrets from Vault at sync time —
 if a path is missing, that Application's manifests simply fail to render.
 Populate these *before* syncing `infra` (paths are Vault KV v2, under
 `argocd/data/...`).
 
-Two PowerShell scripts in `scripts/vault/` automate this against a fresh
-Vault (port-forward it first: `kubectl port-forward -n vault svc/vault 8200:8200`):
+Two PowerShell scripts in `scripts/vault/` automate this against the Vault
+from step 2 (port-forward it first: `kubectl port-forward -n vault svc/vault 8200:8200`):
 
 ----
-# One-time only, right after infra deploys a fresh, uninitialized Vault:
+# One-time only, right after step 2 deploys a fresh, uninitialized Vault:
 .\scripts\vault\init-vault.ps1 -VaultAddr http://127.0.0.1:8200
 
-# Generates the app-internal passwords + self-signed CA, and prompts for
-# the values that can't be generated (Hetzner/NetBird tokens, docker01 DB
-# credentials). Safe to re-run - blank answers never overwrite existing data.
+# Generates the app-internal passwords, and prompts for the values that
+# can't be generated (Hetzner/NetBird tokens, docker01 DB credentials,
+# vault-backup secrets). Safe to re-run - blank answers never overwrite
+# existing data.
 .\scripts\vault\generate-secrets.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <root-token-from-init>
 ----
+
+The Hetzner API token is *not* in Vault — like `vault-unsealer-config`, the
+script writes a standalone `hetzner-secret` manifest instead, applied
+directly via `kubectl`, not GitOps/AVP. Review and apply it once
+`cert-manager` is up: `kubectl apply -f hetzner-secret-<timestamp>.yaml`.
 
 [cols="1,2"]
 |===
 |Vault path |Keys
-
-|`argocd/data/ca`
-|`hetzner.token` (Hetzner Cloud API token, DNS read/write), `ca.crt` (root CA cert Jenkins trusts, PEM)
 
 |`argocd/data/netbird`
 |`api_key` (NetBird Management API personal access token)
@@ -103,19 +120,53 @@ Vault (port-forward it first: `kubectl port-forward -n vault svc/vault 8200:8200
 |`username`, `password` (MongoDB connection on `docker01`)
 |===
 
-NOTE: Vault's own unseal keys (`argocd/data/vault`) aren't in the table
-above - they're circular on a *first* install (Vault must already be
-unsealed for AVP to read them back out of it), so they're not something
-you populate by hand. `init-vault.ps1` below creates them via
-`vault operator init`, unseals Vault, writes them into
-`argocd/data/vault` for reference, and writes the `vault-unsealer-config`
-Secret manifest for you to `kubectl apply` directly (bypassing AVP for
-that one bootstrap secret).
+NOTE: Vault's own unseal keys aren't in the table above and aren't stored
+in Vault at all - they're circular on a *first* install (Vault must already
+be unsealed for AVP to read them back out of it). `init-vault.ps1` above
+creates them via `vault operator init`, unseals Vault, and writes the
+`vault-unsealer-config` Secret manifest for you to `kubectl apply` directly
+(bypassing AVP for that one bootstrap secret). The keys are only ever in
+the local `vault-init-<timestamp>.txt` file it also writes - back that up
+somewhere safe and delete it from this machine afterwards.
 
-=== 3. Deploy the domains, in this order
+==== Optional: Kubernetes auth for runtime secret access
+
+`scripts/vault/configure-vault-auth.ps1` is infrastructure prep, not
+required for the deploy flow above — it enables Vault's `kubernetes` auth
+method, creates the `argocd`/`jenkins`/`dev`/`prod`/`backup` KV v2 engines,
+and writes policies + auth roles so that ArgoCD, Jenkins, the Spring apps
+(`dev`/`prod` namespaces), and the Vault backup CronJob (see below) can
+authenticate to Vault directly at runtime with their own ServiceAccount,
+instead of everything going through AVP at sync time. Only the backup
+CronJob actually uses this today — wiring up Jenkins/Spring (Vault Agent
+injector, Spring Cloud Vault, etc.) is a separate, later step, app by app.
+
+*This one is required* if you want `backup/kube-vault-backup.yaml` to
+work, since that CronJob authenticates via the `vault_backup` Kubernetes
+auth role this script creates.
 
 ----
-kubectl apply -f kubernetes/kube-app-infra.yaml       # 1. cert-manager, vault, ClusterIssuer, NetBird operator
+.\scripts\vault\configure-vault-auth.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <token>
+----
+
+==== Vault backups
+
+A `CronJob` (`kubernetes/backup/kube-vault-backup.yaml`, daily at 03:00)
+takes a Raft snapshot and pushes it to the same restic/pCloud repository
+your old Linux cron job used (`rclone:pCloud:/Backups/vault_pb`) — it
+replaces that cron entirely; remove it from the old host's crontab
+yourself, this repo can't reach that machine. It authenticates to Vault
+with its own ServiceAccount (`vault-backup-sa` in the `backup` namespace,
+Kubernetes auth, no static token), and reads the restic password + your
+`rclone.conf` (with the pCloud remote) from Vault at
+`backup/data/vault-backup` — set those via `generate-secrets.ps1`'s
+"Vault backup" prompt. `scripts/vault/vault_restore.sh` still works
+unchanged for restores, since it just reads from the same restic repo.
+
+=== 4. Deploy the domains, in this order
+
+----
+kubectl apply -f kubernetes/kube-app-infra.yaml       # 1. cert-manager, ClusterIssuer, NetBird operator
 kubectl apply -f kubernetes/kube-app-monitoring.yaml  # 2. needed before kafka (PodMonitor CRDs)
 kubectl apply -f kubernetes/kube-app-cicd.yaml        # 3. needed before management (Backstage pulls its image from Harbor)
 kubectl apply -f kubernetes/kube-app-kafka.yaml       # 4. onwards: order doesn't matter, all only need infra
@@ -127,20 +178,32 @@ kubectl apply -f kubernetes/kube-app-spring.yaml
 Watch `infra` reach Healthy in the ArgoCD UI/CLI before applying the rest —
 nothing else will work without its ClusterIssuer and cert-manager.
 
-=== 4. NetBird dashboard configuration (manual, not in Git)
+=== 5. NetBird configuration
 
-. *DNS zone*: `DNS > Zones > Add Zone`, name `proxy.rjst.de` — must exist
-  *before* `infra` syncs the `NetworkRouter`
+What lives in Git, and what doesn't:
+
+* *In Git, via the NetBird operator* (`kubernetes/infra/kube-netbird-access.yaml`,
+  applied with `infra`): the `kubernetes-services` and `kubernetes-clients`
+  groups, and one `NBPolicy` letting `kubernetes-clients` reach
+  `kubernetes-services` on the app ports. Every app's `NetworkResource` is in
+  `kubernetes-services`. If you add an app on a new port, add the port to the
+  policy. (`NBPolicy` takes group *names*, not IDs - if the policy stays
+  `Failed` after the first sync, check the status in `kubectl describe nbpolicy`.)
+* *In Git, via Terraform* (`terraform/`, run by hand): the `proxy.rjst.de` DNS
+  zone. It must exist *before* `infra` syncs the `NetworkRouter`
   (`kubernetes/infra/kube-netbird-router.yaml`), otherwise the router fails.
-. Once `infra` is healthy, each app's `NetworkResource` (ArgoCD, Vault,
-  Grafana, Harbor, Jenkins, Backstage, AKHQ, Apicurio Registry, Databasus)
-  shows up under that zone as `<service>.<namespace>.proxy.rjst.de`.
-. *Groups & Access Policies*: create per your own scheme under
-  `Access Control`, and grant them access to the resources above — nothing
-  is reachable until a policy allows it (NetBird is deny-by-default).
-. *Traefik*: on the NetBird host, add a route per app
-  (`<app>.proxy.rjst.de → <service>.<namespace>.proxy.rjst.de:<port>`, see
-  the port table below) — managed manually outside this repo.
+  Creating it in the dashboard (`DNS > Zones > Add Zone`) works just as well.
+* *By hand in the dashboard*: which peers/users are members of
+  `kubernetes-clients` - nothing is reachable until a peer is in that group
+  (NetBird is deny-by-default).
+* *Reverse proxy* (`<app>.proxy.rjst.de -> <service>.<namespace>.proxy.rjst.de:<port>`,
+  see the port table below): still manual, on the NetBird host. Do *not* create
+  these as services with the Terraform provider (v0.0.10): it can't mark a
+  service as private/NetBird-only, so they'd be reachable from the internet.
+
+Once `infra` is healthy, each app's `NetworkResource` (ArgoCD, Vault, Grafana,
+Harbor, Jenkins, Backstage, AKHQ, Apicurio Registry, Databasus) shows up under
+the zone as `<service>.<namespace>.proxy.rjst.de`.
 
 [cols="1,2,1"]
 |===
@@ -157,7 +220,7 @@ nothing else will work without its ClusterIssuer and cert-manager.
 |Databasus |`databasus-service.databasus.proxy.rjst.de` |4005
 |===
 
-=== 5. Verify
+=== 6. Verify
 
 ----
 kubectl get applications -n argocd

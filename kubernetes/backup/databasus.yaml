@@ -47,3 +47,5 @@ spec:
     namespace: netbird
   serviceRef:
     name: databasus-service
+  groups:
+    - name: kubernetes-services

@@ -305,3 +305,5 @@ spec:
     namespace: netbird
   serviceRef:
     name: grafana
+  groups:
+    - name: kubernetes-services

@@ -11,23 +11,5 @@ spec:
     namespace: netbird
   serviceRef:
     name: vault
-
----
-
-apiVersion: v1
-kind: Secret
-metadata:
-  namespace: vault
-  name: vault-unsealer-config
-  labels:
-    vault-unsealer.bakito.net/stateful-set: vault
-  annotations:
-    argocd.argoproj.io/sync-wave: "1"
-    avp.kubernetes.io/path: "argocd/data/vault"
-type: Opaque
-stringData:
-  unsealKey1: <unsealKey1>
-  unsealKey2: <unsealKey2>
-  unsealKey3: <unsealKey3>
-  unsealKey4: <unsealKey4>
-  unsealKey5: <unsealKey5>
+  groups:
+    - name: kubernetes-services

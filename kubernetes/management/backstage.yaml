@@ -164,3 +164,5 @@ spec:
     namespace: netbird
   serviceRef:
     name: backstage
+  groups:
+    - name: kubernetes-services
