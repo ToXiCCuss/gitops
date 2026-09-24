@@ -79,7 +79,7 @@ if a path is missing, that Application's manifests simply fail to render.
 Populate these *before* syncing `infra` (paths are Vault KV v2, under
 `argocd/data/...`).
 
-Two PowerShell scripts in `scripts/vault/` automate this against the Vault
+Three PowerShell scripts in `scripts/vault/` automate this against the Vault
 from step 2 (port-forward it first: `kubectl port-forward -n vault svc/vault 8200:8200`):
 
 ----
@@ -93,11 +93,13 @@ from step 2 (port-forward it first: `kubectl port-forward -n vault svc/vault 820
 .\scripts\vault\generate-secrets.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <root-token-from-init>
 ----
 
-The Hetzner API token is *not* in Vault — like `vault-unsealer-config`, the
-script applies it straight into the cluster as a standalone `hetzner-secret`
-via `kubectl` (current context is printed first), not GitOps/AVP. It creates
-the `cert-manager` namespace if it doesn't exist yet. Neither script writes
-anything to disk.
+The Hetzner API token is *not* in Vault, and neither script writes anything
+to disk:
+
+* Like `vault-unsealer-config`, it is applied straight into the cluster as a
+  standalone `hetzner-secret`, not through GitOps/AVP.
+* The script uses `kubectl` and prints the current context first.
+* It creates the `cert-manager` namespace if it doesn't exist yet.
 
 [cols="1,2"]
 |===
@@ -131,21 +133,23 @@ creates them via `vault operator init`, unseals Vault, and applies the
 keys are only printed to the console, once - it waits for Enter so you can
 copy them into your password manager. They are not saved anywhere else.
 
-==== Optional: Kubernetes auth for runtime secret access
+==== Kubernetes auth (required)
 
-`scripts/vault/configure-vault-auth.ps1` is infrastructure prep, not
-required for the deploy flow above — it enables Vault's `kubernetes` auth
-method, creates the `argocd`/`jenkins`/`dev`/`prod`/`backup` KV v2 engines,
-and writes policies + auth roles so that ArgoCD, Jenkins, the Spring apps
-(`dev`/`prod` namespaces), and the Vault backup CronJob (see below) can
-authenticate to Vault directly at runtime with their own ServiceAccount,
-instead of everything going through AVP at sync time. Only the backup
-CronJob actually uses this today — wiring up Jenkins/Spring (Vault Agent
-injector, Spring Cloud Vault, etc.) is a separate, later step, app by app.
+Run `scripts/vault/configure-vault-auth.ps1` once, after `init-vault.ps1`
+(it needs `kubectl` against the cluster and a Vault token with admin rights,
+e.g. the root token from init). It sets up everything that lets workloads
+authenticate to Vault directly with their own ServiceAccount:
 
-*This one is required* if you want `backup/kube-vault-backup.yaml` to
-work, since that CronJob authenticates via the `vault_backup` Kubernetes
-auth role this script creates.
+* Enables Vault's `kubernetes` auth method and configures it for this cluster.
+* Creates the `argocd`, `jenkins`, `dev`, `prod` and `backup` KV v2 engines.
+* Writes the policies and auth roles for ArgoCD, Jenkins, the Spring apps
+  (`dev`/`prod` namespaces) and the Vault backup CronJob.
+
+The Vault backup CronJob (`backup/kube-vault-backup.yaml`) depends on it: it
+logs in through the `vault_backup` role this script creates, so the backup
+fails without it. Jenkins and Spring don't read from Vault at runtime yet;
+wiring them up (Vault Agent injector, Spring Cloud Vault, etc.) is a separate,
+later step, app by app.
 
 ----
 .\scripts\vault\configure-vault-auth.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <token>
