@@ -1,0 +1,51 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: databasus
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  destination:
+    namespace: databasus
+    server: https://kubernetes.default.svc
+  project: default
+  sources:
+    - repoURL: 'ghcr.io/databasus/charts'
+      targetRevision:  3.42.0
+      chart: databasus
+      plugin:
+        env:
+          - name: HELM_VALUES
+            value: |
+              resources:
+                requests:
+                  memory: "0Gi"
+                  cpu: "0m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: databasus
+  namespace: databasus
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: databasus-service
+  groups:
+    - name: kubernetes-services

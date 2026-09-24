@@ -1,0 +1,63 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: akhq
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  destination:
+    namespace: kafka
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://akhq.io
+    targetRevision: 0.27.0
+    chart: akhq
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            configuration:
+              akhq:
+                connections:
+                  dev-cluster:
+                    properties:
+                      bootstrap.servers: "dev-cluster-kafka-bootstrap:9092"
+                    schema-registry:
+                      url: "http://example-apicurioregistry-mem-service:8080/apis/ccompat/v6"
+                      type: "confluent"
+            resources:
+              limits:
+                cpu: 4
+                memory: 1Gi
+              requests:
+                cpu: 0m
+                memory: 0Mi
+
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: akhq
+  namespace: kafka
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: akhq
+  groups:
+    - name: kubernetes-services
