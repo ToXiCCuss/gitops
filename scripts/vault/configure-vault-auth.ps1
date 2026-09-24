@@ -126,7 +126,9 @@ Write-Ok "auth/kubernetes/config written."
 Write-Step "Ensuring KV v2 secrets engines exist"
 $mounts = Invoke-RestMethod -Uri "$VaultAddr/v1/sys/mounts" -Method Get -Headers $Headers
 foreach ($engine in @("argocd", "jenkins", "dev", "prod", "backup")) {
-    if ($mounts.PSObject.Properties.Name -contains "$engine/") {
+    $mountNames = @($mounts.PSObject.Properties.Name)
+    if ($mounts.data) { $mountNames += @($mounts.data.PSObject.Properties.Name) }
+    if ($mountNames -contains "$engine/") {
         Write-Ok "$engine/ already mounted."
     } else {
         $body = @{ type = "kv-v2" } | ConvertTo-Json

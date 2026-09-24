@@ -51,6 +51,7 @@ automated sync.
 . A NetBird personal access token (Management API scope) for the Kubernetes
   operator.
 
+
 === 1. Bootstrap ArgoCD
 
 ----
@@ -93,9 +94,10 @@ from step 2 (port-forward it first: `kubectl port-forward -n vault svc/vault 820
 ----
 
 The Hetzner API token is *not* in Vault — like `vault-unsealer-config`, the
-script writes a standalone `hetzner-secret` manifest instead, applied
-directly via `kubectl`, not GitOps/AVP. Review and apply it once
-`cert-manager` is up: `kubectl apply -f hetzner-secret-<timestamp>.yaml`.
+script applies it straight into the cluster as a standalone `hetzner-secret`
+via `kubectl` (current context is printed first), not GitOps/AVP. It creates
+the `cert-manager` namespace if it doesn't exist yet. Neither script writes
+anything to disk.
 
 [cols="1,2"]
 |===
@@ -123,11 +125,11 @@ directly via `kubectl`, not GitOps/AVP. Review and apply it once
 NOTE: Vault's own unseal keys aren't in the table above and aren't stored
 in Vault at all - they're circular on a *first* install (Vault must already
 be unsealed for AVP to read them back out of it). `init-vault.ps1` above
-creates them via `vault operator init`, unseals Vault, and writes the
-`vault-unsealer-config` Secret manifest for you to `kubectl apply` directly
-(bypassing AVP for that one bootstrap secret). The keys are only ever in
-the local `vault-init-<timestamp>.txt` file it also writes - back that up
-somewhere safe and delete it from this machine afterwards.
+creates them via `vault operator init`, unseals Vault, and applies the
+`vault-unsealer-config` Secret straight into the cluster with `kubectl`
+(bypassing AVP for that one bootstrap secret). The root token and unseal
+keys are only printed to the console, once - it waits for Enter so you can
+copy them into your password manager. They are not saved anywhere else.
 
 ==== Optional: Kubernetes auth for runtime secret access
 
