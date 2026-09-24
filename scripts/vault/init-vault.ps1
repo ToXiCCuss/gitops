@@ -1,12 +1,14 @@
 <#
 .SYNOPSIS
     One-time Vault initialization: runs `vault operator init`, unseals Vault,
-    and seeds the vault-unsealer-config Secret directly via kubectl (bypassing
-    AVP, since Vault can't read its own unseal keys from itself before it's
-    unsealed the first time - see kubernetes/README.adoc).
+    and applies the vault-unsealer-config Secret directly via kubectl
+    (bypassing AVP, since Vault can't read its own unseal keys from itself
+    before it's unsealed the first time - see kubernetes/README.adoc).
+    Nothing is written to disk: the root token and unseal keys are only
+    shown in the console, and the Secret is piped straight into kubectl.
 
 .DESCRIPTION
-    Run this exactly once, right after the "infra" domain has deployed a
+    Run this exactly once, right after kube-vault.yaml has deployed a
     fresh, uninitialized Vault pod. Re-running against an already-initialized
     Vault is refused by Vault itself and this script will just exit.
 
@@ -64,23 +66,16 @@ $init = Invoke-RestMethod -Uri "$VaultAddr/v1/sys/init" -Method Put -Body $initB
 $keys = $init.keys
 $rootToken = $init.root_token
 
-$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$outFile = Join-Path $PSScriptRoot "vault-init-$stamp.txt"
-@"
-VAULT INITIALIZATION - $stamp
-==============================================================
-Root Token:  $rootToken
-
-Unseal Keys (need $SecretThreshold of $SecretShares to unseal):
-$(($keys | ForEach-Object { "  - $_" }) -join "`n")
-==============================================================
-KEEP THIS FILE OFFLINE (password manager / printed safe).
-Delete it from this machine once safely stored elsewhere.
-"@ | Out-File -FilePath $outFile -Encoding utf8
-
-Write-Ok "Root token and unseal keys written to: $outFile"
-Write-Warn2 "This is the ONLY time Vault will ever show you these. Save them now."
-Read-Host "Press Enter once you've backed up $outFile somewhere safe" | Out-Null
+Write-Host ""
+Write-Host "==============================================================" -ForegroundColor Yellow
+Write-Host "  Root Token:  $rootToken" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "  Unseal Keys (need $SecretThreshold of $SecretShares to unseal):" -ForegroundColor Yellow
+foreach ($k in $keys) { Write-Host "    - $k" -ForegroundColor Yellow }
+Write-Host "==============================================================" -ForegroundColor Yellow
+Write-Warn2 "This is the ONLY time Vault will ever show you these, and nothing is saved to disk."
+Write-Warn2 "Copy them into your password manager now."
+Read-Host "Press Enter once you've stored them safely" | Out-Null
 
 Write-Step "Unsealing Vault ($SecretThreshold of $SecretShares keys)"
 for ($i = 0; $i -lt $SecretThreshold; $i++) {
@@ -94,8 +89,8 @@ if ($result.sealed) {
 }
 Write-Ok "Vault is unsealed."
 
-Write-Step "Writing the vault-unsealer-config Secret manifest (bypasses AVP for this one bootstrap secret)"
-$keyLines = for ($i = 0; $i -lt $keys.Count; $i++) { "  unsealKey$($i+1): $($keys[$i])" }
+Write-Step "Applying the vault-unsealer-config Secret (bypasses AVP for this one bootstrap secret)"
+$keyLines = for ($i = 0; $i -lt $keys.Count; $i++) { "  unsealKey$($i+1): $($keys[$i] | ConvertTo-Json -Compress)" }
 $secretYaml = @"
 apiVersion: v1
 kind: Secret
@@ -108,11 +103,18 @@ type: Opaque
 stringData:
 $($keyLines -join "`n")
 "@
-$yamlFile = Join-Path $PSScriptRoot "vault-unsealer-config-$stamp.yaml"
-$secretYaml | Out-File -FilePath $yamlFile -Encoding utf8
-Write-Ok "Wrote the Secret manifest to $yamlFile"
-Write-Warn2 "Review it, then apply it yourself:  kubectl apply -f `"$yamlFile`""
+$applied = $false
+if (Get-Command kubectl -ErrorAction SilentlyContinue) {
+    Write-Ok "kubectl context: $(kubectl config current-context)"
+    $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $secretYaml | kubectl apply -f -
+    $applied = ($LASTEXITCODE -eq 0)
+}
+if (-not $applied) {
+    Write-Warn2 "Could not apply via kubectl. Apply this manifest yourself (it is not saved anywhere):"
+    Write-Host $secretYaml
+}
 
 Write-Step "Done"
-Write-Warn2 "Next: run generate-secrets.ps1 with -VaultToken `"$rootToken`" (or a less-privileged token you create from it) to seed the remaining app secrets."
+Write-Warn2 "Next: run generate-secrets.ps1 with -VaultToken <root token> (or a less-privileged token you create from it) to seed the remaining app secrets."
 Write-Warn2 "Consider revoking/rotating the root token afterwards and using a scoped policy instead."

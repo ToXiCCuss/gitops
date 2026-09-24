@@ -6,9 +6,10 @@
 .DESCRIPTION
     - Freely generatable secrets (Harbor/Jenkins/Grafana admin passwords)
       are generated locally and written straight to Vault.
-    - The Hetzner API token is written to a standalone Secret manifest
-      instead of Vault (like vault-unsealer-config) - it's applied directly
-      via kubectl, not GitOps/AVP, see kubernetes/infra/kube-clusterissuer.yaml.
+    - The Hetzner API token is applied straight into the cluster as a
+      standalone Secret instead of going to Vault (like vault-unsealer-config)
+      - via kubectl, not GitOps/AVP, see kubernetes/infra/kube-clusterissuer.yaml.
+    - Nothing is written to disk by this script.
     - The rest (NetBird PAT, the docker01 DB credentials for
       Harbor/Keycloak/Microcks, and the vault-backup CronJob's restic
       password + rclone.conf) go to Vault and are prompted for
@@ -64,8 +65,24 @@ function Get-VaultKV {
     return @{}
 }
 
+$script:EnsuredEngines = @{}
+function Confirm-KVEngine {
+    param([string]$Engine)
+    if ($script:EnsuredEngines.ContainsKey($Engine)) { return }
+    $mounts = Invoke-RestMethod -Uri "$VaultAddr/v1/sys/mounts" -Method Get -Headers $Headers
+    $names = @($mounts.PSObject.Properties.Name)
+    if ($mounts.data) { $names += @($mounts.data.PSObject.Properties.Name) }
+    if ($names -notcontains "$Engine/") {
+        $body = @{ type = "kv-v2" } | ConvertTo-Json
+        Invoke-RestMethod -Uri "$VaultAddr/v1/sys/mounts/$Engine" -Method Post -Headers $Headers -Body $body -ContentType "application/json" | Out-Null
+        Write-Ok "Created missing KV v2 engine '$Engine/'."
+    }
+    $script:EnsuredEngines[$Engine] = $true
+}
+
 function Set-VaultKV {
     param([string]$Path, [hashtable]$Data, [string]$Engine = "argocd")
+    Confirm-KVEngine -Engine $Engine
     $existing = Get-VaultKV -Path $Path -Engine $Engine
     $merged = @{}
     foreach ($k in $existing.Keys) { $merged[$k] = $existing[$k] }
@@ -92,9 +109,13 @@ function Read-OptionalSecret {
     finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
 }
 
-function Write-SecretManifest {
+function Set-K8sSecret {
     param([string]$Name, [string]$Namespace, [hashtable]$StringData)
-    $lines = foreach ($k in $StringData.Keys) { "  ${k}: $($StringData[$k])" }
+    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
+        Write-Warn2 "kubectl not found on PATH - skipping Secret '$Name' (nothing is saved to disk)."
+        return
+    }
+    $lines = foreach ($k in $StringData.Keys) { "  ${k}: $($StringData[$k] | ConvertTo-Json -Compress)" }
     $yaml = @"
 apiVersion: v1
 kind: Secret
@@ -105,9 +126,15 @@ type: Opaque
 stringData:
 $($lines -join "`n")
 "@
-    $file = Join-Path $PSScriptRoot "$Name-$(Get-Date -Format 'yyyyMMdd-HHmmss').yaml"
-    $yaml | Out-File -FilePath $file -Encoding utf8
-    Write-Ok "Wrote $file - not applied automatically, review and:  kubectl apply -f `"$file`""
+    $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    Write-Ok "kubectl context: $(kubectl config current-context)"
+    # The namespace may not exist yet at bootstrap (e.g. cert-manager, created later by ArgoCD).
+    kubectl create namespace $Namespace --dry-run=client -o yaml | kubectl apply -f - | Out-Null
+    $yaml | kubectl apply -f -
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Failed to apply Secret '$Name' in namespace '$Namespace'." -ForegroundColor Red
+        exit 1
+    }
 }
 
 # ── 1. Freely generatable app passwords ────────────────────────────────────
@@ -122,7 +149,7 @@ Write-Step "External values (leave blank to skip / keep existing)"
 $hetznerToken = Read-OptionalSecret "Hetzner Cloud API token (DNS read/write, blank to skip)"
 if ($hetznerToken) {
     # Applied directly via kubectl, not GitOps/AVP - see kubernetes/infra/kube-clusterissuer.yaml
-    Write-SecretManifest -Name "hetzner-secret" -Namespace "cert-manager" -StringData @{ "api-token" = $hetznerToken }
+    Set-K8sSecret -Name "hetzner-secret" -Namespace "cert-manager" -StringData @{ "api-token" = $hetznerToken }
 }
 
 $netbirdKey = Read-OptionalSecret "NetBird Management API personal access token"
