@@ -5,18 +5,17 @@
 
 .DESCRIPTION
     - Freely generatable secrets (Harbor/Jenkins/Grafana admin passwords)
-      are generated locally and written straight to Vault.
-    - The Hetzner API token is applied straight into the cluster as a
-      standalone Secret instead of going to Vault (like vault-unsealer-config)
-      - via kubectl, not GitOps/AVP, see kubernetes/infra/kube-clusterissuer.yaml.
-    - Nothing is written to disk by this script.
-    - The rest (NetBird PAT, the docker01 DB credentials for
+      are generated locally and written to Vault, but never replace a value
+      that already exists.
+    - External values are prompted for interactively and written to Vault:
+      the Hetzner and NetBird API tokens, the docker01 DB credentials for
       Harbor/Keycloak/Microcks, and the vault-backup CronJob's restic
-      password + rclone.conf) go to Vault and are prompted for
-      interactively. Leave blank to skip a value - existing Vault data for
-      that key is left untouched.
-    - Safe to re-run: it never overwrites a key you leave blank, and asks
-      before overwriting one you do provide if it already has a value.
+      password + rclone.conf. Leave blank to skip a value - existing Vault
+      data for that key is left untouched.
+    - Safe to re-run: it asks before overwriting a value you provide if it
+      already has one.
+    - Nothing is written to disk. The raw Secrets that ArgoCD renders from
+      these Vault values live in kubernetes/secrets/.
 
 .PARAMETER VaultAddr
     Vault API address reachable from this machine.
@@ -81,7 +80,7 @@ function Confirm-KVEngine {
 }
 
 function Set-VaultKV {
-    param([string]$Path, [hashtable]$Data, [string]$Engine = "argocd")
+    param([string]$Path, [hashtable]$Data, [string]$Engine = "argocd", [switch]$SkipExisting)
     Confirm-KVEngine -Engine $Engine
     $existing = Get-VaultKV -Path $Path -Engine $Engine
     $merged = @{}
@@ -89,6 +88,7 @@ function Set-VaultKV {
     foreach ($k in $Data.Keys) {
         if ([string]::IsNullOrEmpty($Data[$k])) { continue }  # never write blanks over existing data
         if ($merged.ContainsKey($k) -and $merged[$k] -eq $Data[$k]) { continue }
+        if ($SkipExisting -and $merged.ContainsKey($k)) { continue }  # generated values: never replace what's there
         if ($merged.ContainsKey($k)) {
             $confirm = Read-Host "  $Engine/data/$Path#$k already has a value. Overwrite? [y/N]"
             if ($confirm -notmatch '^[yY]') { continue }
@@ -109,50 +109,19 @@ function Read-OptionalSecret {
     finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
 }
 
-function Set-K8sSecret {
-    param([string]$Name, [string]$Namespace, [hashtable]$StringData)
-    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
-        Write-Warn2 "kubectl not found on PATH - skipping Secret '$Name' (nothing is saved to disk)."
-        return
-    }
-    $lines = foreach ($k in $StringData.Keys) { "  ${k}: $($StringData[$k] | ConvertTo-Json -Compress)" }
-    $yaml = @"
-apiVersion: v1
-kind: Secret
-metadata:
-  name: $Name
-  namespace: $Namespace
-type: Opaque
-stringData:
-$($lines -join "`n")
-"@
-    $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-    Write-Ok "kubectl context: $(kubectl config current-context)"
-    # The namespace may not exist yet at bootstrap (e.g. cert-manager, created later by ArgoCD).
-    kubectl create namespace $Namespace --dry-run=client -o yaml | kubectl apply -f - | Out-Null
-    $yaml | kubectl apply -f -
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to apply Secret '$Name' in namespace '$Namespace'." -ForegroundColor Red
-        exit 1
-    }
-}
-
 # ── 1. Freely generatable app passwords ────────────────────────────────────
 Write-Step "Generating app-internal admin passwords"
-Set-VaultKV -Path "harbor" -Data @{ "admin.password" = (New-RandomSecret) }
-Set-VaultKV -Path "jenkins" -Data @{ "password" = (New-RandomSecret) }
-Set-VaultKV -Path "prometheus" -Data @{ "password" = (New-RandomSecret) }
+Set-VaultKV -Path "harbor" -Data @{ "admin.password" = (New-RandomSecret) } -SkipExisting
+Set-VaultKV -Path "jenkins" -Data @{ "password" = (New-RandomSecret) } -SkipExisting
+Set-VaultKV -Path "prometheus" -Data @{ "password" = (New-RandomSecret) } -SkipExisting
 
 # ── 2. External values that must match reality - prompt, never generate ───
 Write-Step "External values (leave blank to skip / keep existing)"
 
 $hetznerToken = Read-OptionalSecret "Hetzner Cloud API token (DNS read/write, blank to skip)"
-if ($hetznerToken) {
-    # Applied directly via kubectl, not GitOps/AVP - see kubernetes/infra/kube-clusterissuer.yaml
-    Set-K8sSecret -Name "hetzner-secret" -Namespace "cert-manager" -StringData @{ "api-token" = $hetznerToken }
-}
+if ($hetznerToken) { Set-VaultKV -Path "hetzner" -Data @{ "token" = $hetznerToken } }
 
-$netbirdKey = Read-OptionalSecret "NetBird Management API personal access token"
+$netbirdKey = Read-OptionalSecret "NetBird Management API personal access token (blank to skip)"
 if ($netbirdKey) { Set-VaultKV -Path "netbird" -Data @{ "api_key" = $netbirdKey } }
 
 Write-Warn2 "For the next three, run scripts/postgresql/db_create.sh <dbname> (and user_create.sh) on docker01 first - it prints a generated password."
@@ -176,7 +145,7 @@ if ($microcksDbUser) {
 }
 
 # ── 3. Vault backup CronJob (reads these via Kubernetes auth at runtime,
-#      not AVP - see kubernetes/backup/kube-vault-backup.yaml) ─────────────
+#      not AVP - see kubernetes/backup/kubectl/kube-vault-backup.yaml) ─────────────
 Write-Step "Vault backup (K8s CronJob) - leave blank to skip"
 
 $resticPassword = Read-OptionalSecret "Restic repository password for the vault_pb backup repo"

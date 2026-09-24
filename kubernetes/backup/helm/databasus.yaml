@@ -31,21 +31,3 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-
----
-
-apiVersion: netbird.io/v1alpha1
-kind: NetworkResource
-metadata:
-  name: databasus
-  namespace: databasus
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  networkRouterRef:
-    name: proxy
-    namespace: netbird
-  serviceRef:
-    name: databasus-service
-  groups:
-    - name: kubernetes-services

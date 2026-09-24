@@ -5,7 +5,6 @@ metadata:
   namespace: netbird
   annotations:
     argocd.argoproj.io/sync-wave: "2"
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   name: kubernetes-services
 
@@ -18,7 +17,6 @@ metadata:
   namespace: netbird
   annotations:
     argocd.argoproj.io/sync-wave: "2"
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   name: kubernetes-clients
 
@@ -30,7 +28,6 @@ metadata:
   name: kubernetes-access
   annotations:
     argocd.argoproj.io/sync-wave: "3"
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   name: kubernetes-access
   description: Peers in kubernetes-clients may reach the exposed Kubernetes services

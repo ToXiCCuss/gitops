@@ -42,22 +42,3 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-
-
----
-
-apiVersion: netbird.io/v1alpha1
-kind: NetworkResource
-metadata:
-  name: akhq
-  namespace: kafka
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  networkRouterRef:
-    name: proxy
-    namespace: netbird
-  serviceRef:
-    name: akhq
-  groups:
-    - name: kubernetes-services

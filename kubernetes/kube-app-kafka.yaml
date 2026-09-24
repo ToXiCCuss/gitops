@@ -13,10 +13,8 @@ spec:
     targetRevision: master
     path: kubernetes/kafka
     directory:
-      recurse: true
+      recurse: false
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true

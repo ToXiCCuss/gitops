@@ -32,17 +32,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-
----
-
-apiVersion: v1
-kind: Secret
-metadata:
-  name: netbird-mgmt-api-key
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "1"
-    avp.kubernetes.io/path: "argocd/data/netbird"
-type: Opaque
-stringData:
-  NB_API_KEY: <api_key>
+# netbird-mgmt-api-key comes from Vault via AVP - see kubernetes/secrets/netbird-mgmt-api-key.yaml.
