@@ -7,5 +7,6 @@ variable "netbird_token" {
 
 variable "netbird_management_url" {
   type        = string
-  description = "Self-hosted NetBird Management API URL (not the public NetBird Cloud default)."
+  description = "Self-hosted NetBird management URL. Leave unset and use the NB_MANAGEMENT_URL env var (the provider default is NetBird Cloud, not your server)."
+  default     = null
 }

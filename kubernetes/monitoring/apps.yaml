@@ -39,8 +39,8 @@ spec:
     repoURL: https://github.com/ToXiCCuss/gitops.git
     targetRevision: master
     path: kubernetes/monitoring/kubectl
-    plugin:
-      name: argocd-vault-plugin
+    directory:
+      recurse: true
   syncPolicy:
     automated:
       prune: true

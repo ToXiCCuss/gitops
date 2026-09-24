@@ -18,22 +18,16 @@ so it would be reachable from the internet.
 terraform -chdir=terraform init
 ----
 
-== Token
+== Token and URL
 
 Never put the PAT in a `.tf` file or pass it with `-var` (ends up in shell
-history). The provider reads it natively from an env var:
+history). The provider reads both values natively from env vars. The URL is
+your self-hosted NetBird management URL (the provider's default points at
+NetBird Cloud, not at your server):
 
 ----
 $env:NB_PAT = "<your netbird PAT>"
-$env:NETBIRD_API_URL = "https://api.proxy.rjst.de"   # your self-hosted management API
-----
-
-`netbird_management_url` is still a required Terraform variable (the
-provider's own env var for it is `NETBIRD_API_URL`, so set both or neither) -
-pass it however you like:
-
-----
-terraform -chdir=terraform plan -var="netbird_management_url=https://api.proxy.rjst.de"
+$env:NB_MANAGEMENT_URL = "https://<your netbird domain>"
 ----
 
 == Apply
