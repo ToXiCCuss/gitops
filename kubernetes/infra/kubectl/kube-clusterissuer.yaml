@@ -5,7 +5,6 @@ metadata:
   name: letsencrypt
   annotations:
     argocd.argoproj.io/sync-wave: "2"
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   acme:
     email: robert.stenzhorn@web.de
@@ -21,3 +20,4 @@ spec:
               tokenSecretKeyRef:
                 name: hetzner-secret
                 key: api-token
+# hetzner-secret comes from Vault via AVP - see kubernetes/secrets/hetzner-secret.yaml.

@@ -1,8 +1,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: spring
+  name: spring-kubectl
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   destination:
     namespace: argocd
@@ -11,9 +13,9 @@ spec:
   source:
     repoURL: https://github.com/ToXiCCuss/gitops.git
     targetRevision: master
-    path: kubernetes/spring
-    directory:
-      recurse: false
+    path: kubernetes/spring/kubectl
+    plugin:
+      name: argocd-vault-plugin
   syncPolicy:
     automated:
       prune: true

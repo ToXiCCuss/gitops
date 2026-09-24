@@ -3,7 +3,7 @@
 Manages the self-hosted NetBird account-level things that have no
 Kubernetes CRD equivalent - currently just the `proxy.rjst.de` DNS zone.
 Groups and access policies live in Git as operator CRDs instead
-(`kubernetes/infra/kube-netbird-access.yaml`). This is the officially
+(`kubernetes/infra/kubectl/kube-netbird-access.yaml`). This is the officially
 maintained provider (`registry.terraform.io/netbirdio/netbird`), separate
 from GitOps/ArgoCD - nothing here is applied automatically, you run it
 yourself.

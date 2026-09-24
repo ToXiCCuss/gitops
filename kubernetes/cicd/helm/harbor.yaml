@@ -39,21 +39,3 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-
----
-
-apiVersion: netbird.io/v1alpha1
-kind: NetworkResource
-metadata:
-  name: harbor
-  namespace: harbor
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  networkRouterRef:
-    name: proxy
-    namespace: netbird
-  serviceRef:
-    name: harbor
-  groups:
-    - name: kubernetes-services

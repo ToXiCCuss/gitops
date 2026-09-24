@@ -13,7 +13,26 @@ helm upgrade argocd argo/argo-cd -n argocd --values argocd-values.yaml
 
 Each top-level folder is its own independently deployable ArgoCD app-of-apps
 (`kube-app-<name>.yaml`), so a domain can be bootstrapped on its own via
-`kubectl apply -f kubernetes/kube-app-<name>.yaml`:
+`kubectl apply -f kubernetes/kube-app-<name>.yaml`. Inside a domain, the
+manifests are split by *how* they are deployed:
+
+----
+kubernetes/<domain>/
+  apps.yaml     the two child Applications below (the root app only reads this file)
+  helm/         Applications that wrap Helm charts (operators, apps) - synced first, wave 0
+  kubectl/      raw manifests (custom resources, Gateways, Secrets, ...) - synced second, wave 1
+----
+
+`<domain>-kubectl` waits until `<domain>-helm` is healthy, so operators and
+their CRDs exist before the custom resources that need them - that is the
+enforced ordering, no dry-run workarounds needed. `kubectl/` apps run with the
+AVP plugin (`argocd-vault-plugin`), so raw Secrets with an
+`avp.kubernetes.io/path` annotation are filled from Vault there. `helm/` apps
+are plain directory sources; their `<path:...>` values are resolved later, by
+the AVP Helm plugin of each child Application. Two rules follow from this:
+a Helm app must not depend on anything that lives in the same domain's
+`kubectl/` folder (it runs first), and a domain without Helm apps (`spring`)
+simply has no `helm/` folder.
 
 . infra (cert-manager, ClusterIssuer, Istio security policies, NetBird operator)
 . monitoring (Prometheus, exporters, Istio dashboards)
@@ -23,13 +42,15 @@ Each top-level folder is its own independently deployable ArgoCD app-of-apps
 . backup (Databasus)
 . spring
 
-`kube-vault.yaml` (Vault itself) sits at the top level, not inside any
-domain folder, and is applied standalone before `infra` — see the
-Deployment Guide below for why.
+`kube-vault.yaml` (Vault itself) and `kube-app-secrets.yaml` (the
+`secrets/` folder: every raw Secret that AVP fills from Vault) sit at the
+top level, not inside a domain folder, and are applied standalone before
+`infra` — see the Deployment Guide below for why.
 
-Sync-wave annotations (`argocd.argoproj.io/sync-wave`) order resources
-*within* a domain (e.g. cert-manager before the ClusterIssuer that needs it),
-but not across domains — those orderings are manual/documented instead:
+Sync-wave annotations (`argocd.argoproj.io/sync-wave`) additionally order
+resources *within* `helm/` and within `kubectl/` (e.g. ClusterIssuer before
+the NetworkResources), but not across domains — those orderings are
+manual/documented instead:
 `infra` must be healthy before the others (they all rely on its
 ClusterIssuer and cert-manager), and `cicd` before `management` (Backstage
 pulls its own image from Harbor). Istio itself and ArgoCD's own
@@ -65,19 +86,16 @@ helm install argocd argo/argo-cd -n argocd --values argocd-values.yaml --create-
 kubectl apply -f kubernetes/kube-vault.yaml
 ----
 
-Vault is deliberately *not* part of the `infra` domain app — `infra` also
-contains AVP-dependent secrets (e.g. `netbird-mgmt-api-key`), and its very
-first sync would try to render all of them at once. If Vault were bundled
-in there too, that first sync would race against Vault not being unsealed
-yet. Deploying Vault on its own, first, and fully populating it (next
-step) *before* `infra` ever syncs sidesteps that entirely.
+Vault is deliberately *not* part of a domain app: everything that needs
+AVP depends on Vault being up, unsealed and populated, so Vault is deployed
+on its own first and populated (next step) before any Secret is rendered.
 
 === 3. Populate Vault secrets
 
 The `avp-helm`/`avp` ArgoCD CMP plugins read secrets from Vault at sync time —
 if a path is missing, that Application's manifests simply fail to render.
-Populate these *before* syncing `infra` (paths are Vault KV v2, under
-`argocd/data/...`).
+Populate these *before* applying the `secrets` app in step 4 (paths are
+Vault KV v2, under `argocd/data/...`).
 
 Three PowerShell scripts in `scripts/vault/` automate this against the Vault
 from step 2 (port-forward it first: `kubectl port-forward -n vault svc/vault 8200:8200`):
@@ -89,21 +107,16 @@ from step 2 (port-forward it first: `kubectl port-forward -n vault svc/vault 820
 # Generates the app-internal passwords, and prompts for the values that
 # can't be generated (Hetzner/NetBird tokens, docker01 DB credentials,
 # vault-backup secrets). Safe to re-run - blank answers never overwrite
-# existing data.
+# existing data. Writes nothing to disk.
 .\scripts\vault\generate-secrets.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <root-token-from-init>
 ----
-
-The Hetzner API token is *not* in Vault, and neither script writes anything
-to disk:
-
-* Like `vault-unsealer-config`, it is applied straight into the cluster as a
-  standalone `hetzner-secret`, not through GitOps/AVP.
-* The script uses `kubectl` and prints the current context first.
-* It creates the `cert-manager` namespace if it doesn't exist yet.
 
 [cols="1,2"]
 |===
 |Vault path |Keys
+
+|`argocd/data/hetzner`
+|`token` (Hetzner Cloud API token, DNS read/write)
 
 |`argocd/data/netbird`
 |`api_key` (NetBird Management API personal access token)
@@ -124,8 +137,8 @@ to disk:
 |`username`, `password` (MongoDB connection on `docker01`)
 |===
 
-NOTE: Vault's own unseal keys aren't in the table above and aren't stored
-in Vault at all - they're circular on a *first* install (Vault must already
+NOTE: Everything is in Vault except Vault's own unseal keys. Those aren't in
+the table above and aren't stored in Vault at all - they're circular on a *first* install (Vault must already
 be unsealed for AVP to read them back out of it). `init-vault.ps1` above
 creates them via `vault operator init`, unseals Vault, and applies the
 `vault-unsealer-config` Secret straight into the cluster with `kubectl`
@@ -145,7 +158,11 @@ authenticate to Vault directly with their own ServiceAccount:
 * Writes the policies and auth roles for ArgoCD, Jenkins, the Spring apps
   (`dev`/`prod` namespaces) and the Vault backup CronJob.
 
-The Vault backup CronJob (`backup/kube-vault-backup.yaml`) depends on it: it
+The `argocd` role matters most: ArgoCD's AVP plugin itself logs in to Vault
+through it (`AVP_AUTH_TYPE=k8s`, role `argocd`, see `argocd-values.yaml`), so
+nothing that uses AVP - including the `secrets` app - renders without it.
+
+The Vault backup CronJob (`backup/kubectl/kube-vault-backup.yaml`) depends on it: it
 logs in through the `vault_backup` role this script creates, so the backup
 fails without it. Jenkins and Spring don't read from Vault at runtime yet;
 wiring them up (Vault Agent injector, Spring Cloud Vault, etc.) is a separate,
@@ -157,7 +174,7 @@ later step, app by app.
 
 ==== Vault backups
 
-A `CronJob` (`kubernetes/backup/kube-vault-backup.yaml`, daily at 03:00)
+A `CronJob` (`kubernetes/backup/kubectl/kube-vault-backup.yaml`, daily at 03:00)
 takes a Raft snapshot and pushes it to the same restic/pCloud repository
 your old Linux cron job used (`rclone:pCloud:/Backups/vault_pb`) — it
 replaces that cron entirely; remove it from the old host's crontab
@@ -169,9 +186,10 @@ Kubernetes auth, no static token), and reads the restic password + your
 "Vault backup" prompt. `scripts/vault/vault_restore.sh` still works
 unchanged for restores, since it just reads from the same restic repo.
 
-=== 4. Deploy the domains, in this order
+=== 4. Deploy the secrets, then the domains, in this order
 
 ----
+kubectl apply -f kubernetes/kube-app-secrets.yaml     # 0. renders the Secrets from Vault via AVP, must be healthy before infra
 kubectl apply -f kubernetes/kube-app-infra.yaml       # 1. cert-manager, ClusterIssuer, NetBird operator
 kubectl apply -f kubernetes/kube-app-monitoring.yaml  # 2. needed before kafka (PodMonitor CRDs)
 kubectl apply -f kubernetes/kube-app-cicd.yaml        # 3. needed before management (Backstage pulls its image from Harbor)
@@ -181,6 +199,16 @@ kubectl apply -f kubernetes/kube-app-backup.yaml
 kubectl apply -f kubernetes/kube-app-spring.yaml
 ----
 
+Why the secrets are a separate app that comes first: some Helm apps need
+their Secret at start (the NetBird operator needs `netbird-mgmt-api-key`),
+but `helm/` runs before `kubectl/`, so those Secrets can't wait for the
+domain's `kubectl/` folder. `secrets` holds them (plus the namespaces they live
+in) and runs the AVP plugin. Secrets that are only needed by raw manifests
+could live in a `kubectl/` folder instead. Never put the AVP plugin on a
+`helm/` app: it would resolve every `<path:...>` in the child Applications'
+`HELM_VALUES` and write those passwords in plain text into the Application
+objects.
+
 Watch `infra` reach Healthy in the ArgoCD UI/CLI before applying the rest —
 nothing else will work without its ClusterIssuer and cert-manager.
 
@@ -188,7 +216,7 @@ nothing else will work without its ClusterIssuer and cert-manager.
 
 What lives in Git, and what doesn't:
 
-* *In Git, via the NetBird operator* (`kubernetes/infra/kube-netbird-access.yaml`,
+* *In Git, via the NetBird operator* (`kubernetes/infra/kubectl/kube-netbird-access.yaml`,
   applied with `infra`): the `kubernetes-services` and `kubernetes-clients`
   groups, and one `NBPolicy` letting `kubernetes-clients` reach
   `kubernetes-services` on the app ports. Every app's `NetworkResource` is in
@@ -197,7 +225,7 @@ What lives in Git, and what doesn't:
   `Failed` after the first sync, check the status in `kubectl describe nbpolicy`.)
 * *In Git, via Terraform* (`terraform/`, run by hand): the `proxy.rjst.de` DNS
   zone. It must exist *before* `infra` syncs the `NetworkRouter`
-  (`kubernetes/infra/kube-netbird-router.yaml`), otherwise the router fails.
+  (`kubernetes/infra/kubectl/kube-netbird-router.yaml`), otherwise the router fails.
   Creating it in the dashboard (`DNS > Zones > Add Zone`) works just as well.
 * *By hand in the dashboard*: which peers/users are members of
   `kubernetes-clients` - nothing is reachable until a peer is in that group
