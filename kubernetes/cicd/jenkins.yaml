@@ -1,0 +1,101 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jenkins
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  destination:
+    namespace: jenkins
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://charts.jenkins.io/
+    chart: jenkins
+    targetRevision: 5.9.22
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            controller:
+              jenkinsUrl: "http://jenkins.proxy.rjst.de"
+              admin:
+                password: <path:argocd/data/jenkins#password>
+              resources:
+                requests:
+                  cpu: "0"
+                  memory: "0"
+                limits:
+                  cpu: "1"
+                  memory: "2Gi"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: jenkins
+  namespace: jenkins
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: jenkins
+  groups:
+    - name: kubernetes-services
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: maven-repo-pvc
+  namespace: jenkins
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 25Gi
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: maven-settings-secret
+  namespace: jenkins
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+type: Opaque
+stringData:
+  settings.xml: |
+    <settings>
+        <servers>
+            <server>
+                <id>local-rjst</id>
+                <username>XXX</username>
+                <password>XXX</password>
+                <configuration>
+                    <httpConfiguration>
+                        <all>
+                            <connectionTimeout>120000</connectionTimeout>
+                            <readTimeout>120000</readTimeout>
+                        </all>
+                    </httpConfiguration>
+                </configuration>
+            </server>
+        </servers>
+    </settings>

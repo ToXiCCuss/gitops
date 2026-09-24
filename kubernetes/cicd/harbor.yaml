@@ -1,0 +1,59 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: harbor
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  destination:
+    namespace: harbor
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://helm.goharbor.io
+    targetRevision: 1.19.1
+    chart: harbor
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            expose:
+              type: clusterIP
+              tls:
+                enabled: false
+            externalURL: http://harbor.proxy.rjst.de
+            harborAdminPassword: <path:argocd/data/harbor#admin.password>
+            database:
+              type: external
+              external:
+                host: "docker01.vpn.rjst.de"
+                username: <path:argocd/data/harbor#database.username>
+                password: <path:argocd/data/harbor#database.password>
+                coreDatabase: "harbor"
+              maxIdleConns: 1
+              maxOpenConns: 10
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: harbor
+  namespace: harbor
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: harbor
+  groups:
+    - name: kubernetes-services

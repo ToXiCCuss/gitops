@@ -1,0 +1,24 @@
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: ingress-policy-public
+  namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  selector:
+    matchLabels:
+      app: istio-ingressgateway
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            ipBlocks: [ "0.0.0.0/0"]
+      to:
+        - operation:
+            hosts:
+              - "microcks.rjst.de"
+              - "keycloak.rjst.de"
+              - "rjst.de"
+              - "www.rjst.de"
+              - "trek.rjst.de"
