@@ -11,7 +11,7 @@ spec:
     server: https://kubernetes.default.svc
   project: default
   source:
-    repoURL: oci://ghcr.io/netbirdio/helm-charts
+    repoURL: ghcr.io/netbirdio/helm-charts
     targetRevision: 0.8.0
     chart: netbird-operator
     plugin:
