@@ -1,0 +1,29 @@
+---
+- name: Check for an existing registries.yaml
+  ansible.builtin.stat:
+    path: /etc/rancher/k3s/registries.yaml
+  register: k3s_registries_existing
+
+- name: Require the Harbor password when there is no registries.yaml yet
+  ansible.builtin.assert:
+    that:
+      - k3s_registries_harbor_password | length > 0
+    fail_msg: "k3s_registries_harbor_password must be set (e.g. via --extra-vars) to create /etc/rancher/k3s/registries.yaml."
+  when: not k3s_registries_existing.stat.exists
+
+- name: Make sure /etc/rancher/k3s exists
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"
+
+- name: Write registries.yaml (Harbor pull-through mirrors)
+  ansible.builtin.template:
+    src: registries.yaml.j2
+    dest: /etc/rancher/k3s/registries.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  when: k3s_registries_harbor_password | length > 0
+  no_log: true
+  notify: restart k3s

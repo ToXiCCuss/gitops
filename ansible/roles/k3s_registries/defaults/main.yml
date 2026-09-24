@@ -1,0 +1,19 @@
+---
+# Harbor host that acts as pull-through cache for the mirrored registries.
+k3s_registries_harbor_host: harbor.proxy.rjst.de
+
+# Harbor account used to pull (a robot account is better than admin).
+k3s_registries_harbor_username: admin
+
+# Must be provided via ansible-vault or --extra-vars, never committed in plain text.
+# If empty and /etc/rancher/k3s/registries.yaml already exists, the file is left untouched.
+k3s_registries_harbor_password: ""
+
+# Upstream registries mirrored through Harbor. Each needs a Harbor proxy-cache
+# project with exactly this name (docker.io, ghcr.io, ...).
+k3s_registries_mirrored:
+  - docker.io
+  - ghcr.io
+
+# systemd unit to restart when the config changes ("k3s" on servers, "k3s-agent" on agents).
+k3s_registries_service_name: k3s
