@@ -18,6 +18,7 @@ spec:
       env:
         - name: HELM_VALUES
           value: |
+            managementURL: "https://proxy.rjst.de"
             webhook:
               failurePolicy: Ignore
             operator:
