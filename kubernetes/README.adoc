@@ -218,22 +218,34 @@ What lives in Git, and what doesn't:
 
 * *In Git, via the NetBird operator* (`kubernetes/infra/kubectl/kube-netbird-access.yaml`,
   applied with `infra`): the `kubernetes-services` and `kubernetes-clients`
-  groups, and one `NBPolicy` letting `kubernetes-clients` reach
-  `kubernetes-services` on the app ports. Every app's `NetworkResource` is in
-  `kubernetes-services`. If you add an app on a new port, add the port to the
-  policy. (`NBPolicy` takes group *names*, not IDs - if the policy stays
-  `Failed` after the first sync, check the status in `kubectl describe nbpolicy`.)
-* *In Git, via Terraform* (`terraform/`, run by hand): the `proxy.rjst.de` DNS
-  zone. It must exist *before* `infra` syncs the `NetworkRouter`
-  (`kubernetes/infra/kubectl/kube-netbird-router.yaml`), otherwise the router fails.
-  Creating it in the dashboard (`DNS > Zones > Add Zone`) works just as well.
-* *By hand in the dashboard*: which peers/users are members of
-  `kubernetes-clients` - nothing is reachable until a peer is in that group
-  (NetBird is deny-by-default).
+  groups. Every app's `NetworkResource` is in `kubernetes-services`.
+* *By hand in the dashboard* (no Terraform for now; `terraform/` is optional and
+  not needed for this):
+  . `DNS > Zones > Add Zone`: name and domain `proxy.rjst.de`, *Distribution
+    Groups* `kubernetes-clients` (only peers in these groups resolve the
+    records; if the group doesn't exist yet, sync `infra` first and add it to
+    the zone afterwards). The zone must exist before the `NetworkRouter` syncs.
+  . `Access Control > Policies`: source `kubernetes-clients`, destination
+    `kubernetes-services`, TCP on the app ports (80, 4005, 7007, 8080, 8200),
+    one-way. NetBird is deny-by-default and the operator writes no policies
+    (its `NBPolicy` resource creates nothing for `NetworkResource`s, so it is
+    deliberately not used).
+  . `Peers`: add every peer that should reach the apps to
+    `kubernetes-clients` - your devices, and the peer of the NetBird host that
+    runs Traefik. Nothing is reachable until a peer is in that group.
+* Guide this follows: https://docs.netbird.io/use-cases/kubernetes/route-to-a-kubernetes-service[Route to a Kubernetes service].
+  The router runs a single routing peer (`workloadOverride.replicas: 1`,
+  single-node cluster); raise it to 3+ for failover.
 * *Reverse proxy* (`<app>.proxy.rjst.de -> <service>.<namespace>.proxy.rjst.de:<port>`,
   see the port table below): still manual, on the NetBird host. Do *not* create
   these as services with the Terraform provider (v0.0.10): it can't mark a
   service as private/NetBird-only, so they'd be reachable from the internet.
+
+NOTE: for the first test only Vault has a `NetworkResource` that is actually
+deployed (`infra/kubectl/vault-kube.yaml`). ArgoCD's is parked in
+`kubernetes/parked/` (nothing syncs that folder); move it back into
+`infra/kubectl/` to enable it. The other apps' `NetworkResource`s sit in domains
+that aren't applied yet.
 
 Once `infra` is healthy, each app's `NetworkResource` (ArgoCD, Vault, Grafana,
 Harbor, Jenkins, Backstage, AKHQ, Apicurio Registry, Databasus) shows up under
