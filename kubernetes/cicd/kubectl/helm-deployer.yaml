@@ -1,0 +1,123 @@
+# ServiceAccount the Jenkins pipelines use to `helm upgrade` the Spring apps
+# (cicd-library: HelmInstallStep, kubeconfig from Vault jenkins/data/jenkins#KUBECONFIG).
+#
+# Instead of a personal admin kubeconfig it only has namespaced Roles:
+#   - dev / prod (Roles live in kubernetes/spring/kubectl/helm-deployer.yaml)
+#   - the few platform namespaces the spring-boot chart writes into (this file)
+# It cannot touch RBAC, nodes, namespaces or anything cluster-scoped.
+#
+# The token is created by the control plane, not stored in Git. Turn it into the
+# kubeconfig in Vault with scripts/vault/set-jenkins-kubeconfig.ps1.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: helm-deployer
+  namespace: jenkins
+
+---
+
+# Long-lived token for the ServiceAccount (needed because the kubeconfig sits in Vault).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: helm-deployer-token
+  namespace: jenkins
+  annotations:
+    kubernetes.io/service-account.name: helm-deployer
+type: kubernetes.io/service-account-token
+
+---
+
+# --- platform namespaces, only used by the spring-boot chart ------------------------
+# istio-system: Certificate for public hosts (Let's Encrypt)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: helm-deployer
+  namespace: istio-system
+rules:
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: helm-deployer
+  namespace: istio-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: helm-deployer
+subjects:
+  - kind: ServiceAccount
+    name: helm-deployer
+    namespace: jenkins
+
+---
+
+# istio-internal: per internal app a Gateway, Service, VirtualService and NetworkResource.
+# NOTE: this lets a pipeline expose a Service over NetBird (NetworkResource). Drop this
+# Role/RoleBinding and the chart's internal hosts if CI should not be able to do that.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: helm-deployer
+  namespace: istio-internal
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.istio.io"]
+    resources: ["gateways", "virtualservices"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["netbird.io"]
+    resources: ["networkresources"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: helm-deployer
+  namespace: istio-internal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: helm-deployer
+subjects:
+  - kind: ServiceAccount
+    name: helm-deployer
+    namespace: jenkins
+
+---
+
+# netbird: the two NetBird groups per internal app
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: helm-deployer
+  namespace: netbird
+rules:
+  - apiGroups: ["netbird.io"]
+    resources: ["groups"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: helm-deployer
+  namespace: netbird
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: helm-deployer
+subjects:
+  - kind: ServiceAccount
+    name: helm-deployer
+    namespace: jenkins
