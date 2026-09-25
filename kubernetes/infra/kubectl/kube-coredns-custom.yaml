@@ -23,3 +23,10 @@ data:
         cache 30
         forward . 100.67.2.1
     }
+  # <app>.k8sdev.rjst.de -> gw-<app>.istio-internal (the app's internal gateway Service).
+  # Inside the cluster the apps then use the same https://<app>.k8sdev.rjst.de URL as
+  # people do over NetBird, with the valid wildcard certificate and no NetBird hop.
+  # Only single-label names match, so the records the operator creates in the
+  # NetBird zone (gw-<app>.istio-internal.k8sdev.rjst.de) are left alone.
+  k8sdev.override: |
+    rewrite stop name regex ^([a-z0-9-]+)\.k8sdev\.rjst\.de\.$ gw-{1}.istio-internal.svc.cluster.local. answer auto
