@@ -249,11 +249,12 @@ What lives in Git, and what doesn't:
   these as services with the Terraform provider (v0.0.10): it can't mark a
   service as private/NetBird-only, so they'd be reachable from the internet.
 
-NOTE: for the first test only Vault has a `NetworkResource` that is actually
-deployed (`infra/kubectl/vault-kube.yaml`). ArgoCD's is parked in
-`kubernetes/parked/` (nothing syncs that folder); move it back into
-`infra/kubectl/` to enable it. The other apps' `NetworkResource`s sit in domains
-that aren't applied yet.
+NOTE: for now only Vault is exposed (through `istio-internal`, see below).
+The direct `NetworkResource`s for ArgoCD and Vault are parked in
+`kubernetes/parked/` (nothing syncs that folder). The other apps'
+`NetworkResource`s sit in domains that aren't applied yet and still use the
+direct `<service>.<namespace>.k8sdev.rjst.de:<port>` model; move them to the
+per-app gateway pattern when you deploy those domains.
 
 Once `infra` is healthy, each app's `NetworkResource` (ArgoCD, Vault, Grafana,
 Harbor, Jenkins, Backstage, AKHQ, Apicurio Registry, Databasus) shows up under
@@ -285,8 +286,8 @@ NetBird separates access per destination, not per hostname, so every app gets
 its own Service, its own listener port on the gateway and its own
 `NetworkResource` (`infra/kubectl/kube-istio-internal.yaml`). Each listener
 only accepts that app's hostname, so per-app groups stay meaningful. Vault is
-the first app there; the direct `NetworkResource` on port 8200
-(`infra/kubectl/vault-kube.yaml`) stays until the new route is verified.
+the first app there. The earlier direct `NetworkResource` on port 8200 is parked
+in `kubernetes/parked/`, so the HTTPS route is the only way in.
 
 === 6. Verify
 
