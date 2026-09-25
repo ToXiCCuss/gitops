@@ -10,7 +10,7 @@ spec:
   project: default
   source:
     repoURL: https://charts.jetstack.io
-    targetRevision: v1.20.2
+    targetRevision: v1.21.2
     chart: cert-manager
     plugin:
       env:
