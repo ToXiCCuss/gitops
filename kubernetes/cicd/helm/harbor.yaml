@@ -12,7 +12,7 @@ spec:
   project: default
   source:
     repoURL: https://helm.goharbor.io
-    targetRevision: 1.19.1
+    targetRevision: 1.19.2
     chart: harbor
     plugin:
       env:
