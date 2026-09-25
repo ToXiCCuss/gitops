@@ -1,3 +1,11 @@
+# NetBird groups. The access policies between them are created by hand in the
+# dashboard (the operator writes none, NetBird is deny-by-default) - see
+# kubernetes/README.adoc, section 5.
+#
+#   k8s-admins          peers/users that may reach every app (policy -> kubernetes-services)
+#   kubernetes-services every NetworkResource is in this group
+#   k8s-<app>           destination group of one app's NetworkResource
+#   <app>-users         peers/users that may reach only that app (policy -> k8s-<app>)
 apiVersion: netbird.io/v1alpha1
 kind: Group
 metadata:
@@ -10,6 +18,9 @@ spec:
 
 ---
 
+# Formerly "kubernetes-clients". metadata.name stays, so the operator renames the
+# existing NetBird group in place (same ID: peers, policies and the zone's
+# distribution group keep working).
 apiVersion: netbird.io/v1alpha1
 kind: Group
 metadata:
@@ -18,4 +29,28 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "2"
 spec:
-  name: kubernetes-clients
+  name: k8s-admins
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: k8s-vault
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: k8s-vault
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: vault-users
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: vault-users

@@ -1,0 +1,110 @@
+# Internal HTTPS entry for NetBird-only apps.
+#
+# One gateway deployment (kubernetes/infra/helm/istio-internal-gateway.yaml),
+# but one Service, one listener port and one NetBird resource *per app*: NetBird
+# separates access per destination (resource + group), not per hostname. Each
+# listener only accepts its own hostname (SNI + Host), so reaching app A's
+# Service with app B's hostname is refused - that is what keeps the per-app
+# groups meaningful.
+#
+# Add an app: copy the "vault" block (Service, Gateway server, VirtualService,
+# NetworkResource), pick the next listener port, add two Group CRs in
+# kube-netbird-access.yaml, then in the NetBird dashboard: a CNAME in the zone
+# and a policy <app>-users -> k8s-<app> on TCP 443.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: k8sdev-wildcard
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  secretName: k8sdev-wildcard-tls
+  dnsNames:
+    - "*.k8sdev.rjst.de"
+  issuerRef:
+    name: letsencrypt
+    kind: ClusterIssuer
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: internal
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: internal-gateway
+  servers:
+    - port:
+        number: 8443
+        name: https-vault
+        protocol: HTTPS
+      hosts:
+        - vault.k8sdev.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: k8sdev-wildcard-tls
+
+---
+
+# vault: Service -> listener 8443, users see plain :443
+apiVersion: v1
+kind: Service
+metadata:
+  name: gw-vault
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  type: ClusterIP
+  selector:
+    app: internal-gateway
+    istio: internal-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8443
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: vault
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  hosts:
+    - vault.k8sdev.rjst.de
+  gateways:
+    - internal
+  http:
+    - route:
+        - destination:
+            host: vault.vault.svc.cluster.local
+            port:
+              number: 8200
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: gw-vault
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: gw-vault
+  groups:
+    - name: k8s-vault
+    - name: kubernetes-services
