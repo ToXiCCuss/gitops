@@ -244,36 +244,40 @@ What lives in Git, and what doesn't:
 * Guide this follows: https://docs.netbird.io/use-cases/kubernetes/route-to-a-kubernetes-service[Route to a Kubernetes service].
   The router runs a single routing peer (`workloadOverride.replicas: 1`,
   single-node cluster); raise it to 3+ for failover.
-* *Reverse proxy* (`<app>.proxy.rjst.de -> <service>.<namespace>.k8sdev.rjst.de:<port>`,
-  see the port table below): still manual, on the NetBird host. Do *not* create
-  these as services with the Terraform provider (v0.0.10): it can't mark a
-  service as private/NetBird-only, so they'd be reachable from the internet.
+* The manual Traefik routes on the NetBird host (`<app>.proxy.rjst.de`) are no
+  longer needed for these apps: clients reach them directly through NetBird. If
+  you still publish anything through NetBird's reverse proxy, don't create it
+  with the Terraform provider (v0.0.10): it can't mark a service as
+  private/NetBird-only, so it would be reachable from the internet.
 
-NOTE: for now only Vault is exposed (through `istio-internal`, see below).
-The direct `NetworkResource`s for ArgoCD and Vault are parked in
-`kubernetes/parked/` (nothing syncs that folder). The other apps'
-`NetworkResource`s sit in domains that aren't applied yet and still use the
-direct `<service>.<namespace>.k8sdev.rjst.de:<port>` model; move them to the
-per-app gateway pattern when you deploy those domains.
+Every app is reached as `https://<app>.k8sdev.rjst.de` (see the next section):
+its own Gateway, Service, VirtualService and `NetworkResource` live next to the
+app (`kube-gw-argocd.yaml` in `infra`, the others in their domain's `kubectl/`
+folder) and create the record `gw-<app>.istio-internal.k8sdev.rjst.de`. Nothing
+syncs the `kubernetes/parked/` folder (old direct NetworkResources, kept for
+reference).
 
-Once `infra` is healthy, each app's `NetworkResource` (ArgoCD, Vault, Grafana,
-Harbor, Jenkins, Backstage, AKHQ, Apicurio Registry, Databasus) shows up under
-the zone as `<service>.<namespace>.k8sdev.rjst.de`.
-
-[cols="1,2,1"]
+[cols="1,2,1,1"]
 |===
-|App |Backend (NetBird-internal) |Port
+|App |URL |Backend |Listener
 
-|ArgoCD |`argocd-server.argocd.k8sdev.rjst.de` |80
-|Vault |`vault.vault.k8sdev.rjst.de` |8200
-|Grafana |`grafana.prometheus.k8sdev.rjst.de` |80
-|Harbor |`harbor.harbor.k8sdev.rjst.de` |80
-|Jenkins |`jenkins.jenkins.k8sdev.rjst.de` |8080
-|Backstage |`backstage.backstage.k8sdev.rjst.de` |7007
-|AKHQ |`akhq.kafka.k8sdev.rjst.de` |80
-|Apicurio Registry |`example-apicurioregistry-mem-service.kafka.k8sdev.rjst.de` |8080
-|Databasus |`databasus-service.databasus.k8sdev.rjst.de` |4005
+|ArgoCD |`argocd.k8sdev.rjst.de` |`argocd-server.argocd:80` |8444
+|Vault |`vault.k8sdev.rjst.de` |`vault.vault:8200` |8443
+|Grafana |`grafana.k8sdev.rjst.de` |`grafana.prometheus:80` |8445
+|Harbor |`harbor.k8sdev.rjst.de` |`harbor.harbor:80` |8446
+|Jenkins |`jenkins.k8sdev.rjst.de` |`jenkins.jenkins:8080` |8447
+|Backstage |`backstage.k8sdev.rjst.de` |`backstage.backstage:7007` |8448
+|AKHQ |`akhq.k8sdev.rjst.de` |`akhq.kafka:80` |8449
+|Apicurio Registry |`apicurio.k8sdev.rjst.de` |`example-apicurioregistry-mem-service.kafka:8080` |8450
+|Databasus |`databasus.k8sdev.rjst.de` |`databasus-service.databasus:4005` |8451
 |===
+
+Per app, in the dashboard: a CNAME `<app>` ->
+`gw-<app>.istio-internal.k8sdev.rjst.de`, the app's `<app>-users` group as a
+distribution group of the zone, and the policy `<app>-users` -> `k8s-<app>`
+(TCP 443). The nodes need the same to pull from Harbor
+(`harbor.k8sdev.rjst.de` has a valid certificate, so k3s needs no
+insecure-registry setting): put the node peers into `harbor-users`.
 
 ==== HTTPS entry for internal apps (`istio-internal`)
 

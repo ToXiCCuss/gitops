@@ -19,7 +19,7 @@ spec:
         - name: HELM_VALUES
           value: |
             controller:
-              jenkinsUrl: "http://jenkins.proxy.rjst.de"
+              jenkinsUrl: "https://jenkins.k8sdev.rjst.de"
               admin:
                 password: <path:argocd/data/jenkins#password>
               resources:

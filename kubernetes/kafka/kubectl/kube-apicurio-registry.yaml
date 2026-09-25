@@ -12,18 +12,84 @@ spec:
 
 ---
 
+# apicurio: https://apicurio.k8sdev.rjst.de -> example-apicurioregistry-mem-service.kafka:8080
+# Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: apicurio
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: internal-gateway
+  servers:
+    - port:
+        number: 8450
+        name: https-apicurio
+        protocol: HTTPS
+      hosts:
+        - apicurio.k8sdev.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: k8sdev-wildcard-tls
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gw-apicurio
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  type: ClusterIP
+  selector:
+    app: internal-gateway
+    istio: internal-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8450
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: apicurio
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  hosts:
+    - apicurio.k8sdev.rjst.de
+  gateways:
+    - apicurio
+  http:
+    - route:
+        - destination:
+            host: example-apicurioregistry-mem-service.kafka.svc.cluster.local
+            port:
+              number: 8080
+
+---
+
 apiVersion: netbird.io/v1alpha1
 kind: NetworkResource
 metadata:
-  name: apicurio-registry
-  namespace: kafka
+  name: gw-apicurio
+  namespace: istio-internal
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   networkRouterRef:
     name: proxy
     namespace: netbird
   serviceRef:
-    name: example-apicurioregistry-mem-service
+    name: gw-apicurio
   groups:
+    - name: k8s-apicurio
     - name: kubernetes-services

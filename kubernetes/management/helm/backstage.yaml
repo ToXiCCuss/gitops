@@ -22,7 +22,7 @@ spec:
               backstage:
                 replicas: 1
                 image:
-                  registry: harbor.proxy.rjst.de
+                  registry: harbor.k8sdev.rjst.de
                   repository: dev/rjst-backstage
                   tag: 1.0.0
                 # -- Extra app configuration files to inline into command arguments

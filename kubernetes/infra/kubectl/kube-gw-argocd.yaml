@@ -1,9 +1,9 @@
-# grafana: https://grafana.k8sdev.rjst.de -> grafana.prometheus:80
+# argocd: https://argocd.k8sdev.rjst.de -> argocd-server.argocd:80
 # Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
 apiVersion: networking.istio.io/v1
 kind: Gateway
 metadata:
-  name: grafana
+  name: argocd
   namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
@@ -12,11 +12,11 @@ spec:
     istio: internal-gateway
   servers:
     - port:
-        number: 8445
-        name: https-grafana
+        number: 8444
+        name: https-argocd
         protocol: HTTPS
       hosts:
-        - grafana.k8sdev.rjst.de
+        - argocd.k8sdev.rjst.de
       tls:
         mode: SIMPLE
         credentialName: k8sdev-wildcard-tls
@@ -26,7 +26,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: gw-grafana
+  name: gw-argocd
   namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
@@ -38,26 +38,26 @@ spec:
   ports:
     - name: https
       port: 443
-      targetPort: 8445
+      targetPort: 8444
 
 ---
 
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
-  name: grafana
+  name: argocd
   namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
   hosts:
-    - grafana.k8sdev.rjst.de
+    - argocd.k8sdev.rjst.de
   gateways:
-    - grafana
+    - argocd
   http:
     - route:
         - destination:
-            host: grafana.prometheus.svc.cluster.local
+            host: argocd-server.argocd.svc.cluster.local
             port:
               number: 80
 
@@ -66,7 +66,7 @@ spec:
 apiVersion: netbird.io/v1alpha1
 kind: NetworkResource
 metadata:
-  name: gw-grafana
+  name: gw-argocd
   namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
@@ -75,7 +75,7 @@ spec:
     name: proxy
     namespace: netbird
   serviceRef:
-    name: gw-grafana
+    name: gw-argocd
   groups:
-    - name: k8s-grafana
+    - name: k8s-argocd
     - name: kubernetes-services

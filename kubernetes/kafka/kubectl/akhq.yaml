@@ -1,8 +1,73 @@
+# akhq: https://akhq.k8sdev.rjst.de -> akhq.kafka:80
+# Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: akhq
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: internal-gateway
+  servers:
+    - port:
+        number: 8449
+        name: https-akhq
+        protocol: HTTPS
+      hosts:
+        - akhq.k8sdev.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: k8sdev-wildcard-tls
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gw-akhq
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  type: ClusterIP
+  selector:
+    app: internal-gateway
+    istio: internal-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8449
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: akhq
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  hosts:
+    - akhq.k8sdev.rjst.de
+  gateways:
+    - akhq
+  http:
+    - route:
+        - destination:
+            host: akhq.kafka.svc.cluster.local
+            port:
+              number: 80
+
+---
+
 apiVersion: netbird.io/v1alpha1
 kind: NetworkResource
 metadata:
-  name: akhq
-  namespace: kafka
+  name: gw-akhq
+  namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
@@ -10,6 +75,7 @@ spec:
     name: proxy
     namespace: netbird
   serviceRef:
-    name: akhq
+    name: gw-akhq
   groups:
+    - name: k8s-akhq
     - name: kubernetes-services
