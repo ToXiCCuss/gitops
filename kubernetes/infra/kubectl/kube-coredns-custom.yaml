@@ -1,0 +1,25 @@
+# Cluster DNS for the NetBird peer names (<host>.server.lan, e.g. docker01.server.lan).
+#
+# k3s' CoreDNS forwards everything to the node's /etc/resolv.conf, which does not
+# know the NetBird domain. Forward only this zone to the NetBird resolver of the
+# node (k8sdev01 = NetBird IP 100.67.2.1, port 53); everything else is untouched.
+# Pods then reach NetBird peers through the node's NetBird tunnel (the node has to
+# be a peer and a policy has to allow it, see kubernetes/README.adoc).
+#
+# k3s imports /etc/coredns/custom/*.server from this ConfigMap. If CoreDNS was
+# already running when the ConfigMap first appears, restart it once:
+#   kubectl -n kube-system rollout restart deploy coredns
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+data:
+  netbird.server: |
+    server.lan:53 {
+        errors
+        cache 30
+        forward . 100.67.2.1
+    }
