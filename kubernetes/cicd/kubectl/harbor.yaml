@@ -1,8 +1,73 @@
+# harbor: https://harbor.k8sdev.rjst.de -> harbor.harbor:80
+# Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: harbor
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: internal-gateway
+  servers:
+    - port:
+        number: 8446
+        name: https-harbor
+        protocol: HTTPS
+      hosts:
+        - harbor.k8sdev.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: k8sdev-wildcard-tls
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gw-harbor
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  type: ClusterIP
+  selector:
+    app: internal-gateway
+    istio: internal-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8446
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: harbor
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  hosts:
+    - harbor.k8sdev.rjst.de
+  gateways:
+    - harbor
+  http:
+    - route:
+        - destination:
+            host: harbor.harbor.svc.cluster.local
+            port:
+              number: 80
+
+---
+
 apiVersion: netbird.io/v1alpha1
 kind: NetworkResource
 metadata:
-  name: harbor
-  namespace: harbor
+  name: gw-harbor
+  namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
@@ -10,6 +75,7 @@ spec:
     name: proxy
     namespace: netbird
   serviceRef:
-    name: harbor
+    name: gw-harbor
   groups:
+    - name: k8s-harbor
     - name: kubernetes-services

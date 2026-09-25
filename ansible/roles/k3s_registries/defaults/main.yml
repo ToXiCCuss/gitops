@@ -1,6 +1,6 @@
 ---
 # Harbor host that acts as pull-through cache for the mirrored registries.
-k3s_registries_harbor_host: harbor.proxy.rjst.de
+k3s_registries_harbor_host: harbor.k8sdev.rjst.de
 
 # Harbor account used to pull (a robot account is better than admin).
 k3s_registries_harbor_username: admin

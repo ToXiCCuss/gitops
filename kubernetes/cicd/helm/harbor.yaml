@@ -22,7 +22,7 @@ spec:
               type: clusterIP
               tls:
                 enabled: false
-            externalURL: http://harbor.proxy.rjst.de
+            externalURL: https://harbor.k8sdev.rjst.de
             harborAdminPassword: <path:argocd/data/harbor#admin.password>
             database:
               type: external
