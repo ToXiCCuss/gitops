@@ -221,7 +221,8 @@ What lives in Git, and what doesn't:
   groups. Every app's `NetworkResource` is in `kubernetes-services`.
 * *By hand in the dashboard* (no Terraform for now; `terraform/` is optional and
   not needed for this):
-  . `DNS > Zones > Add Zone`: name and domain `proxy.rjst.de`, *Distribution
+  . `DNS > Zones > Add Zone`: name and domain `k8sdev.rjst.de` (a separate internal zone: `proxy.rjst.de` is the NetBird host's own public domain and
+    must not be shadowed), *Distribution
     Groups* `kubernetes-clients` (only peers in these groups resolve the
     records; if the group doesn't exist yet, sync `infra` first and add it to
     the zone afterwards). The zone must exist before the `NetworkRouter` syncs.
@@ -236,7 +237,7 @@ What lives in Git, and what doesn't:
 * Guide this follows: https://docs.netbird.io/use-cases/kubernetes/route-to-a-kubernetes-service[Route to a Kubernetes service].
   The router runs a single routing peer (`workloadOverride.replicas: 1`,
   single-node cluster); raise it to 3+ for failover.
-* *Reverse proxy* (`<app>.proxy.rjst.de -> <service>.<namespace>.proxy.rjst.de:<port>`,
+* *Reverse proxy* (`<app>.proxy.rjst.de -> <service>.<namespace>.k8sdev.rjst.de:<port>`,
   see the port table below): still manual, on the NetBird host. Do *not* create
   these as services with the Terraform provider (v0.0.10): it can't mark a
   service as private/NetBird-only, so they'd be reachable from the internet.
@@ -249,21 +250,21 @@ that aren't applied yet.
 
 Once `infra` is healthy, each app's `NetworkResource` (ArgoCD, Vault, Grafana,
 Harbor, Jenkins, Backstage, AKHQ, Apicurio Registry, Databasus) shows up under
-the zone as `<service>.<namespace>.proxy.rjst.de`.
+the zone as `<service>.<namespace>.k8sdev.rjst.de`.
 
 [cols="1,2,1"]
 |===
 |App |Backend (NetBird-internal) |Port
 
-|ArgoCD |`argocd-server.argocd.proxy.rjst.de` |80
-|Vault |`vault.vault.proxy.rjst.de` |8200
-|Grafana |`grafana.prometheus.proxy.rjst.de` |80
-|Harbor |`harbor.harbor.proxy.rjst.de` |80
-|Jenkins |`jenkins.jenkins.proxy.rjst.de` |8080
-|Backstage |`backstage.backstage.proxy.rjst.de` |7007
-|AKHQ |`akhq.kafka.proxy.rjst.de` |80
-|Apicurio Registry |`example-apicurioregistry-mem-service.kafka.proxy.rjst.de` |8080
-|Databasus |`databasus-service.databasus.proxy.rjst.de` |4005
+|ArgoCD |`argocd-server.argocd.k8sdev.rjst.de` |80
+|Vault |`vault.vault.k8sdev.rjst.de` |8200
+|Grafana |`grafana.prometheus.k8sdev.rjst.de` |80
+|Harbor |`harbor.harbor.k8sdev.rjst.de` |80
+|Jenkins |`jenkins.jenkins.k8sdev.rjst.de` |8080
+|Backstage |`backstage.backstage.k8sdev.rjst.de` |7007
+|AKHQ |`akhq.kafka.k8sdev.rjst.de` |80
+|Apicurio Registry |`example-apicurioregistry-mem-service.kafka.k8sdev.rjst.de` |8080
+|Databasus |`databasus-service.databasus.k8sdev.rjst.de` |4005
 |===
 
 === 6. Verify
@@ -277,4 +278,4 @@ kubectl get networkresources -A
 
 All `Application` rows should show `Synced`/`Healthy`, and each
 `NetworkResource` should have a matching entry in the NetBird dashboard
-under the `proxy.rjst.de` zone.
+under the `k8sdev.rjst.de` zone.

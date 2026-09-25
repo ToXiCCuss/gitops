@@ -11,7 +11,7 @@ configs, because they have to run at different times:
 |Folder |What |When
 
 |`dns/`
-|The `proxy.rjst.de` DNS zone.
+|The `k8sdev.rjst.de` DNS zone.
 |*Before* `infra` syncs the `NetworkRouter`, otherwise the router fails.
 Creating the zone in the dashboard instead (`DNS > Zones > Add Zone`) works
 just as well.
