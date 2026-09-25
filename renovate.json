@@ -5,25 +5,21 @@
     ":prConcurrentLimitNone",
     ":prHourlyLimitNone"
   ],
+  "minimumReleaseAge": "3 days",
+  "ignorePaths": [
+    "kubernetes/archive/**",
+    "kubernetes/parked/**"
+  ],
   "argocd": {
     "managerFilePatterns": [
-      "kubernetes/helm/.+\\.yaml$/",
-      "kubernetes/core/.+\\.yaml$/"
+      "/^kubernetes/[^/]+/helm/.+\\.yaml$/",
+      "/^kubernetes/kube-vault\\.yaml$/"
     ]
   },
   "kubernetes": {
     "managerFilePatterns": [
-      "kubernetes/kubectl/.+\\.yaml$/",
-      "kubernetes/argocd-values.yaml"
+      "/^kubernetes/[^/]+/kubectl/.+\\.yaml$/",
+      "/^kubernetes/argocd-values\\.yaml$/"
     ]
-  },
-  "packageRules": [
-    {
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": true,
-      "minimumReleaseAge": "3 days"
-    }
-  ]
+  }
 }
