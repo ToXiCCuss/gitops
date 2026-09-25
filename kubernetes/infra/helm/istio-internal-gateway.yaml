@@ -1,0 +1,51 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-internal-gateway
+  namespace: argocd
+spec:
+  destination:
+    namespace: istio-internal
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    # Second, internal-only ingress gateway next to the public istio-ingressgateway
+    # (which stays outside GitOps). ClusterIP only: it is reachable solely through
+    # the NetBird routing peer. istiod is 1.31.x, the gateway chart is only
+    # published up to 1.30.x - fine, the proxy image is filled in by istiod's injector.
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    targetRevision: 1.30.5
+    chart: gateway
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            name: internal-gateway
+            replicaCount: 1
+            autoscaling:
+              enabled: false
+            service:
+              type: ClusterIP
+              # No 80/443 here: every app gets its own Service (and NetBird
+              # resource) in kubernetes/infra/kubectl/kube-istio-internal.yaml.
+              ports:
+                - name: status-port
+                  port: 15021
+                  protocol: TCP
+                  targetPort: 15021
+            resources:
+              requests:
+                cpu: 0m
+                memory: 0Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    managedNamespaceMetadata:
+      labels:
+        istio-injection: enabled

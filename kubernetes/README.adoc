@@ -217,23 +217,30 @@ nothing else will work without its ClusterIssuer and cert-manager.
 What lives in Git, and what doesn't:
 
 * *In Git, via the NetBird operator* (`kubernetes/infra/kubectl/kube-netbird-access.yaml`,
-  applied with `infra`): the `kubernetes-services` and `kubernetes-clients`
-  groups. Every app's `NetworkResource` is in `kubernetes-services`.
+  applied with `infra`): the groups. `k8s-admins` (peers that may reach every
+  app), `kubernetes-services` (every `NetworkResource` is in it), and per app a
+  destination group `k8s-<app>` and a user group `<app>-users`.
 * *By hand in the dashboard* (no Terraform for now; `terraform/` is optional and
   not needed for this):
-  . `DNS > Zones > Add Zone`: name and domain `k8sdev.rjst.de` (a separate internal zone: `proxy.rjst.de` is the NetBird host's own public domain and
-    must not be shadowed), *Distribution
-    Groups* `kubernetes-clients` (only peers in these groups resolve the
-    records; if the group doesn't exist yet, sync `infra` first and add it to
-    the zone afterwards). The zone must exist before the `NetworkRouter` syncs.
-  . `Access Control > Policies`: source `kubernetes-clients`, destination
-    `kubernetes-services`, TCP on the app ports (80, 4005, 7007, 8080, 8200),
-    one-way. NetBird is deny-by-default and the operator writes no policies
-    (its `NBPolicy` resource creates nothing for `NetworkResource`s, so it is
+  . `DNS > Zones > Add Zone`: name and domain `k8sdev.rjst.de` (a separate internal
+    zone: `proxy.rjst.de` is the NetBird host's own public domain and must not
+    be shadowed; a subdomain of `rjst.de` so Let's Encrypt DNS-01 can issue for
+    it). *Distribution Groups*: `k8s-admins` and every `<app>-users` (only peers
+    in these groups resolve the records; the zone is not a security boundary,
+    the policies are). The zone must exist before the `NetworkRouter` syncs.
+  . Records in that zone: the operator creates `<service>.<namespace>.k8sdev.rjst.de`
+    for every `NetworkResource`. Add a CNAME per app to that name, e.g.
+    `vault.k8sdev.rjst.de` -> `gw-vault.istio-internal.k8sdev.rjst.de`.
+  . `Access Control > Policies`, all TCP 443, one-way:
+    `k8s-admins` -> `kubernetes-services` (every app), and per app
+    `<app>-users` -> `k8s-<app>` (e.g. `vault-users` -> `k8s-vault`).
+    NetBird is deny-by-default and the operator writes no policies (its
+    `NBPolicy` resource creates nothing for `NetworkResource`s, so it is
     deliberately not used).
-  . `Peers`: add every peer that should reach the apps to
-    `kubernetes-clients` - your devices, and the peer of the NetBird host that
-    runs Traefik. Nothing is reachable until a peer is in that group.
+  . `Peers`: put each peer/user into `k8s-admins` and/or the matching
+    `<app>-users`. Nothing is reachable until a peer is in a group with a policy.
+  . The group formerly called `kubernetes-clients` is renamed to `k8s-admins` by
+    the operator (same group ID, so existing peers and policies stay).
 * Guide this follows: https://docs.netbird.io/use-cases/kubernetes/route-to-a-kubernetes-service[Route to a Kubernetes service].
   The router runs a single routing peer (`workloadOverride.replicas: 1`,
   single-node cluster); raise it to 3+ for failover.
@@ -266,6 +273,20 @@ the zone as `<service>.<namespace>.k8sdev.rjst.de`.
 |Apicurio Registry |`example-apicurioregistry-mem-service.kafka.k8sdev.rjst.de` |8080
 |Databasus |`databasus-service.databasus.k8sdev.rjst.de` |4005
 |===
+
+==== HTTPS entry for internal apps (`istio-internal`)
+
+Apps are reached as `https://<app>.k8sdev.rjst.de` (port 443, Let's Encrypt
+wildcard `*.k8sdev.rjst.de` via the `letsencrypt` ClusterIssuer, DNS-01 at
+Hetzner). `istio-internal-gateway` (`infra/helm`) is a second Istio ingress
+gateway, ClusterIP only - unlike the public `istio-ingressgateway`, nothing
+outside the cluster can reach it except through the NetBird routing peer.
+NetBird separates access per destination, not per hostname, so every app gets
+its own Service, its own listener port on the gateway and its own
+`NetworkResource` (`infra/kubectl/kube-istio-internal.yaml`). Each listener
+only accepts that app's hostname, so per-app groups stay meaningful. Vault is
+the first app there; the direct `NetworkResource` on port 8200
+(`infra/kubectl/vault-kube.yaml`) stays until the new route is verified.
 
 === 6. Verify
 
