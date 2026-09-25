@@ -1,3 +1,30 @@
+# NetBird groups exist only while this app is deployed (destination k8s-akhq, users akhq-users).
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: k8s-akhq
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: k8s-akhq
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: akhq-users
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: akhq-users
+
+---
+
+---
+
 # akhq: https://akhq.k8sdev.rjst.de -> akhq.kafka:80
 # Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
 apiVersion: networking.istio.io/v1

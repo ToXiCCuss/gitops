@@ -1,3 +1,30 @@
+# NetBird groups exist only while this app is deployed (destination k8s-jenkins, users jenkins-users).
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: k8s-jenkins
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: k8s-jenkins
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: jenkins-users
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: jenkins-users
+
+---
+
+---
+
 # jenkins: https://jenkins.k8sdev.rjst.de -> jenkins.jenkins:8080
 # Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
 apiVersion: networking.istio.io/v1

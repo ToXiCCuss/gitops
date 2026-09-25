@@ -216,10 +216,15 @@ nothing else will work without its ClusterIssuer and cert-manager.
 
 What lives in Git, and what doesn't:
 
-* *In Git, via the NetBird operator* (`kubernetes/infra/kubectl/kube-netbird-access.yaml`,
-  applied with `infra`): the groups. `k8s-admins` (peers that may reach every
-  app), `kubernetes-services` (every `NetworkResource` is in it), and per app a
-  destination group `k8s-<app>` and a user group `<app>-users`.
+* *In Git, via the NetBird operator*: the groups. `k8s-admins` (peers that may
+  reach every app) and `kubernetes-services` (every `NetworkResource` is in it)
+  live in `kubernetes/infra/kubectl/kube-netbird-access.yaml`, together with the
+  groups of the apps deployed with `infra` (Vault, ArgoCD). Every other app
+  declares its own destination group `k8s-<app>` and user group `<app>-users`
+  next to its `NetworkResource`, so they exist only while that app's domain is
+  deployed. Removing a domain deletes them again - delete the policy that uses
+  them (and the zone's distribution-group entry) first, NetBird refuses to
+  delete a group that is still referenced.
 * *By hand in the dashboard* (no Terraform for now; `terraform/` is optional and
   not needed for this):
   . `DNS > Zones > Add Zone`: name and domain `k8sdev.rjst.de` (a separate internal
