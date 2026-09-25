@@ -13,7 +13,7 @@ spec:
   source:
     repoURL: https://charts.jenkins.io/
     chart: jenkins
-    targetRevision: 5.9.22
+    targetRevision: 5.9.63
     plugin:
       env:
         - name: HELM_VALUES
