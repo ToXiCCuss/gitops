@@ -27,7 +27,7 @@ spec:
             database:
               type: external
               external:
-                host: "docker01.vpn.rjst.de"
+                host: "docker01.server.lan"
                 username: <path:argocd/data/harbor#database.username>
                 password: <path:argocd/data/harbor#database.password>
                 coreDatabase: "harbor"
