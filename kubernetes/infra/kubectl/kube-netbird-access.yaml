@@ -19,28 +19,3 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"
 spec:
   name: kubernetes-clients
-
----
-
-apiVersion: netbird.io/v1
-kind: NBPolicy
-metadata:
-  name: kubernetes-access
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  name: kubernetes-access
-  description: Peers in kubernetes-clients may reach the exposed Kubernetes services
-  sourceGroups:
-    - kubernetes-clients
-  destinationGroups:
-    - kubernetes-services
-  protocols:
-    - tcp
-  ports:
-    - 80
-    - 4005
-    - 7007
-    - 8080
-    - 8200
-  bidirectional: false

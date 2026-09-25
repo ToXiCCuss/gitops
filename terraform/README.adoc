@@ -1,22 +1,35 @@
 = NetBird account config (Terraform)
 
-Manages the self-hosted NetBird account-level things that have no
-Kubernetes CRD equivalent - currently just the `proxy.rjst.de` DNS zone.
-Groups and access policies live in Git as operator CRDs instead
-(`kubernetes/infra/kubectl/kube-netbird-access.yaml`). This is the officially
-maintained provider (`registry.terraform.io/netbirdio/netbird`), separate
-from GitOps/ArgoCD - nothing here is applied automatically, you run it
-yourself.
+Manages the self-hosted NetBird account-level things that the Kubernetes
+operator doesn't (or can't) do. This is the officially maintained provider
+(`registry.terraform.io/netbirdio/netbird`), separate from GitOps/ArgoCD -
+nothing here is applied automatically, you run it yourself. Two independent
+configs, because they have to run at different times:
+
+[cols="1,2,2"]
+|===
+|Folder |What |When
+
+|`dns/`
+|The `proxy.rjst.de` DNS zone.
+|*Before* `infra` syncs the `NetworkRouter`, otherwise the router fails.
+Creating the zone in the dashboard instead (`DNS > Zones > Add Zone`) works
+just as well.
+
+|`access/`
+|The access policy: `kubernetes-clients` may reach `kubernetes-services` on
+the app ports.
+|*After* `infra` has synced - the two groups are created by the NetBird
+operator (`kubernetes/infra/kubectl/kube-netbird-access.yaml`), and the config
+looks them up by name.
+|===
+
+The operator's own `NBPolicy` resource is not used: it only derives ports from
+the deprecated ingress flow and creates nothing for `NetworkResource`s.
 
 NOTE: don't add `netbird_reverse_proxy_service` resources for the internal
 apps. Provider v0.0.10 has no way to mark a service private (NetBird-only),
 so it would be reachable from the internet.
-
-== Setup
-
-----
-terraform -chdir=terraform init
-----
 
 == Token and URL
 
@@ -30,9 +43,13 @@ $env:NB_PAT = "<your netbird PAT>"
 $env:NB_MANAGEMENT_URL = "https://<your netbird domain>"
 ----
 
-== Apply
+== Run
 
 ----
-terraform -chdir=terraform plan
-terraform -chdir=terraform apply
+terraform -chdir=terraform/access init
+terraform -chdir=terraform/access plan
+terraform -chdir=terraform/access apply
 ----
+
+Same for `terraform/dns`. State stays local (`terraform.tfstate` is
+git-ignored) - keep it, or a second `apply` will try to create things again.

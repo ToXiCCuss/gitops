@@ -8,3 +8,6 @@ metadata:
 spec:
   dnsZoneRef:
     name: proxy.rjst.de
+  workloadOverride:
+    # CRD default is 3; the cluster has a single node for now. Raise it (3+ gives failover) once there are more nodes.
+    replicas: 1
