@@ -298,6 +298,35 @@ only accepts that app's hostname, so per-app groups stay meaningful. Vault is
 the first app there. The earlier direct `NetworkResource` on port 8200 is parked
 in `kubernetes/parked/`, so the HTTPS route is the only way in.
 
+==== kubectl through NetBird (API server proxy)
+
+`infra/kubectl/kube-netbird-apiproxy.yaml` deploys the operator's `ClusterProxy` `k8sdev`
+(https://docs.netbird.io/use-cases/kubernetes/api-server-proxy). The proxy pod is a NetBird peer
+in the group `k8s-api-proxy`; it forwards `kubectl` requests to the API server and impersonates
+the caller: the Kubernetes user is the NetBird user, the Kubernetes groups are the NetBird
+groups the *user* belongs to. No credentials in a kubeconfig.
+
+What may be done is decided by RBAC. Only one binding exists so far: the NetBird group
+`k8s-cluster-admins` is bound to `cluster-admin`.
+
+By hand in the dashboard:
+
+. `Team > Users > <your user> > Auto-assigned groups`: add `k8s-cluster-admins`. The *user* has
+  to be in the group; the membership of your devices (peers) does not count.
+. `Access Control > Policies`: `k8s-cluster-admins` -> `k8s-api-proxy` (find the port in the
+  proxy pod, `kubectl -n netbird get pods`, the operator docs do not name it).
+
+Then on your machine (NetBird CLI >= 0.79):
+
+----
+netbird kubernetes list
+netbird kubernetes write-kubeconfig k8sdev
+kubectl --context k8sdev get pods -A
+----
+
+The proxy service account may impersonate any user and group, so the proxy pod is as sensitive as
+`cluster-admin`.
+
 === 6. Verify
 
 ----

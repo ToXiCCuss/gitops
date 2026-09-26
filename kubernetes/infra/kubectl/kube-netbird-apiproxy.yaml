@@ -1,0 +1,118 @@
+# kubectl through NetBird: the operator's API server proxy.
+# https://docs.netbird.io/use-cases/kubernetes/api-server-proxy
+#
+# A ClusterProxy pod joins NetBird and forwards kubectl requests to the API server. It
+# impersonates the caller: the Kubernetes user is the NetBird user, the Kubernetes groups
+# are the NetBird groups the *user* is a member of. So nobody needs a kubeconfig with
+# credentials, and what a person may do is decided by the RBAC bindings below.
+#
+# Admin: members of the NetBird group "k8s-cluster-admins" get cluster-admin. Put your NetBird
+# USER (Team > Users > your user > Auto-assigned groups) into that group - group membership
+# of your devices (peers) does not count.
+#
+# Manual in the NetBird dashboard: a policy  k8s-cluster-admins -> k8s-api-proxy  (the proxy
+# peer's group), otherwise the proxy is not reachable (deny-by-default).
+# On your machine:  netbird kubernetes list  /  netbird kubernetes write-kubeconfig k8sdev
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: clusterproxy-k8sdev
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+
+---
+
+# The proxy may impersonate users and groups (that is how it hands the NetBird identity to
+# Kubernetes). Anything that gets into the proxy pod could impersonate anyone, so the
+# proxy pod is as sensitive as cluster-admin.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: clusterproxy-k8sdev
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+rules:
+  - apiGroups: [""]
+    resources: ["users", "groups"]
+    verbs: ["impersonate"]
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["userextras/*", "uids"]
+    verbs: ["impersonate"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: clusterproxy-k8sdev
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: clusterproxy-k8sdev
+subjects:
+  - kind: ServiceAccount
+    name: clusterproxy-k8sdev
+    namespace: netbird
+
+---
+
+# NetBird groups (created by the operator).
+#   k8s-cluster-admins: NetBird users with cluster-admin (bound below)
+#   k8s-api-proxy:      the proxy peer itself (target of the access policy)
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: k8s-cluster-admins
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: k8s-cluster-admins
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: k8s-api-proxy
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: k8s-api-proxy
+
+---
+
+# The admin role: the NetBird group k8s-cluster-admins is the Kubernetes group of the same name.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: netbird-cluster-admins
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: Group
+    name: k8s-cluster-admins
+    apiGroup: rbac.authorization.k8s.io
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: ClusterProxy
+metadata:
+  name: k8sdev
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  clusterName: k8sdev
+  serviceAccountName: clusterproxy-k8sdev
+  groups:
+    - name: k8s-api-proxy
