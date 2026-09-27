@@ -1,57 +1,5 @@
 = GitOps Docker
 
-== Apps Übersicht
-
-[cols="1,1,1", options="header"]
-|===
-| App | Arcane Ready | .env benötigt
-
-| arcane
-| ❌
-| ✅
-
-| cadvisor
-| ❌
-| ❌
-
-| conan-exiles
-| ❌
-| ❌
-
-| databasus
-| ❌
-| ❌
-
-| dockhand
-| ❌
-| ❌
-
-| duplicati
-| ✅
-| ✅
-
-| palworld
-| ❌
-| ❌
-
-| pelican
-| ❌
-| ❌
-
-| postgresql
-| ✅
-| ✅
-
-| seaweedfs
-| ❌
-| ❌
-
-| uptime-kuma
-| ❌
-| ❌
-
-|===
-
 == Setup Arcane
 
 * Clone this repository to your local machine.
