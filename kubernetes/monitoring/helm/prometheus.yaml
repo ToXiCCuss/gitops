@@ -19,7 +19,12 @@ spec:
         - name: HELM_VALUES
           value: |
             crds:
-              enabled: true
+              # The CRDs live in kubernetes/monitoring/kubectl/prometheus-crds.yaml instead (they need
+              # the argocd.argoproj.io/sync-options: ServerSideApply=true annotation - several are too
+              # large for client-side apply's kubectl.kubernetes.io/last-applied-configuration
+              # annotation, and ArgoCD v3.5.3 does not honor the Application-level ServerSideApply=true
+              # sync option for CRDs).
+              enabled: false
             fullnameOverride: prometheus
             defaultRules:
               create: false
