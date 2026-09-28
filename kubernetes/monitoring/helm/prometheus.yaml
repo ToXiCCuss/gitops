@@ -19,7 +19,7 @@ spec:
         - name: HELM_VALUES
           value: |
             crds:
-              enabled: false
+              enabled: true
             fullnameOverride: prometheus
             defaultRules:
               create: false
