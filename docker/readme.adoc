@@ -11,3 +11,37 @@ ENCRYPTION_KEY=default-encryption-key
 JWT_SECRET=default-jwt-secret
 ----
 * docker-compose up -d in the arcane folder
+
+== Setup Backrest
+
+Backrest is the web UI for restic on the Docker host. It backs up the Docker volumes read-only
+to the local SeaweedFS S3 and is used to browse and restore snapshots.
+
+* Secrets are set in `.env` (in Arcane: project environment). `default.env` lists all variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (SeaweedFS S3) and `RESTIC_PASSWORD`
+* `docker compose up -d` in the backrest folder
+* Open `http://<docker-host>:9898` (only reachable through NetBird, never publish it) and create the admin user
+* Copy the pCloud remote (`rclone.conf`) to `/root/docker/backrest/rclone/rclone.conf` to restore from pCloud
+* Repos:
+** `s3:http://<docker-host>:8333/<bucket>/docker` (backup target, env `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` set on the repo)
+** `rclone:pCloud:/Backups/...` (offsite, restore only)
+* Plan `/userdata/docker`: exclude `seaweedfs` and database data directories
+* Restore only into `/restore`, then move the data into place
+* Store the restic password and `rclone.conf` outside the server as well (password manager)
+
+== Setup Databasus
+
+Databasus makes the logical database backups and writes them to the local SeaweedFS S3.
+
+* `docker compose up -d` in the databasus folder
+* Open `http://<docker-host>:4005`, add the databases and the S3 storage (`http://<docker-host>:8333`)
+
+== Setup Offsite Sync
+
+Nightly `rclone sync` of the SeaweedFS S3 to pCloud. Deleted or overwritten files are moved to
+`Backups-deleted/<date>` and kept for `RETENTION_DAYS`. This is the only container that holds the
+pCloud credentials.
+
+* Create the pCloud remote on the docker host with `rclone config` and copy the `rclone.conf`
+to `/root/docker/offsite-sync/rclone/rclone.conf`
+* Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (SeaweedFS S3) and `PUSH_URL` (Uptime Kuma push monitor, heartbeat 26h) in the Arcane project environment
+* `docker compose up -d` in the offsite-sync folder
