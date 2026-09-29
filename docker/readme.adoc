@@ -22,7 +22,7 @@ to the local SeaweedFS S3 and is used to browse and restore snapshots.
 * Open `http://<docker-host>:9898` (only reachable through NetBird, never publish it) and create the admin user
 * Copy the pCloud remote (`rclone.conf`) to `/root/docker/backrest/rclone/rclone.conf` to restore from pCloud
 * Repos:
-** `s3:http://<docker-host>:8333/<bucket>/docker` (backup target, env `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` set on the repo)
+** `s3:http://<docker-host>:8333/backups/docker` (backup target, keys of the `backrest` identity)
 ** `rclone:pCloud:/Backups/...` (offsite, restore only)
 * Plan `/userdata/docker`: exclude `seaweedfs` and database data directories
 * Restore only into `/restore`, then move the data into place
@@ -33,7 +33,7 @@ to the local SeaweedFS S3 and is used to browse and restore snapshots.
 Databasus makes the logical database backups and writes them to the local SeaweedFS S3.
 
 * `docker compose up -d` in the databasus folder
-* Open `http://<docker-host>:4005`, add the databases and the S3 storage (`http://<docker-host>:8333`)
+* Open `http://<docker-host>:4005`, add the databases and the S3 storage (`http://<docker-host>:8333`, bucket `db`, keys of the `databasus` identity)
 
 == Setup Offsite Sync
 
@@ -43,5 +43,27 @@ pCloud credentials.
 
 * Create the pCloud remote on the docker host with `rclone config` and copy the `rclone.conf`
 to `/root/docker/offsite-sync/rclone/rclone.conf`
-* Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (SeaweedFS S3) and `PUSH_URL` (Uptime Kuma push monitor, heartbeat 26h) in the Arcane project environment
+* Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (keys of the read-only `offsite-sync` identity) and `PUSH_URL` (Uptime Kuma push monitor, heartbeat 26h) in the Arcane project environment
 * `docker compose up -d` in the offsite-sync folder
+
+== Setup SeaweedFS
+
+SeaweedFS is the local S3 staging for all backups. Access is controlled by separate identities in
+`/root/docker/seaweedfs-s3.json` (mounted read-only, contains secrets, never in git):
+
+[cols="1,1,1"]
+|===
+|Identity |Bucket |Rights
+
+|`admin` |all |Admin (only for you, not used by containers)
+|`backrest` |`backups` |Read, Write, List
+|`databasus` |`db` |Read, Write, List
+|`offsite-sync` |all |Read, List (cannot change anything)
+|===
+
+* Run `scripts/docker/setup-backup-host.sh` *before* deploying: it generates the identities and keys
+(`/root/backup-credentials.env`) and prepares the host
+* Deploy the seaweedfs project in Arcane, then run the script again to create the buckets
+* Copy the keys from `/root/backup-credentials.env` into the Arcane environments (backrest, offsite-sync) and the Databasus storage, then delete the file
+* `Write` includes deleting objects in SeaweedFS, so a leaked `backrest` key can delete the local backups. pCloud keeps deleted files (`Backups-deleted`)
+* Only the S3 port `8333` is published. The filer (`8888`) has no authentication and is not exposed
