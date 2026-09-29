@@ -1,0 +1,22 @@
+services:
+  backrest:
+    image: garethgeorge/backrest:v1.14.1@sha256:b852979754281026230cc69fb11428e6d57c9a97784ab4a444ffc7934c53a215
+    container_name: backrest
+    hostname: backrest-docker
+    env_file:
+      - "default.env"
+      - ".env"
+    ports:
+      - "9898:9898"
+    volumes:
+      # Backrest state (config.json, operation log), cache and rclone.conf (pCloud remote)
+      - /root/docker/backrest/data:/data
+      - /root/docker/backrest/config:/config
+      - /root/docker/backrest/cache:/cache
+      - /root/docker/backrest/rclone:/root/.config/rclone
+      # Backup sources, read-only. The plan for /userdata/docker must exclude "seaweedfs"
+      # (the S3 repo target lives there) and the database data dirs (covered by DB backups).
+      - /root/docker:/userdata/docker:ro
+      # Only restore target that is writable
+      - /root/docker/backrest/restore:/restore
+    restart: unless-stopped

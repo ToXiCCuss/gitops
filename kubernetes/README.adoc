@@ -37,7 +37,7 @@ simply has no `helm/` folder.
 . cicd (Harbor, Artifactory, Jenkins) — before `management`, see below
 . management (Backstage, Microcks, Keycloak)
 . kafka (Strimzi, Apicurio Registry, AKHQ)
-. backup (Databasus)
+. backup (Vault backup CronJob)
 . spring
 
 `kube-vault.yaml` (Vault itself) and `kube-app-secrets.yaml` (the
@@ -274,7 +274,6 @@ reference).
 |Backstage |`backstage.k8sdev.rjst.de` |`backstage.backstage:7007` |8448
 |AKHQ |`akhq.k8sdev.rjst.de` |`akhq.kafka:80` |8449
 |Apicurio Registry |`apicurio.k8sdev.rjst.de` |`example-apicurioregistry-mem-service.kafka:8080` |8450
-|Databasus |`databasus.k8sdev.rjst.de` |`databasus-service.databasus:4005` |8451
 |===
 
 Per app, in the dashboard: a CNAME `<app>` ->

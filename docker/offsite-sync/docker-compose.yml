@@ -1,0 +1,15 @@
+services:
+  offsite-sync:
+    image: rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5
+    container_name: offsite-sync
+    env_file:
+      - "default.env"
+      - ".env"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/sh", "/sync.sh"]
+    volumes:
+      - ./sync.sh:/sync.sh:ro
+      # rclone.conf with the pCloud remote (only this container holds the pCloud credentials)
+      - /root/docker/offsite-sync/rclone:/config/rclone
+    restart: unless-stopped

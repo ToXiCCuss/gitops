@@ -9,7 +9,7 @@ data "netbird_group" "services" {
   name = "kubernetes-services"
 }
 
-# Ports of the exposed apps: 80 (ArgoCD, Grafana, Harbor, AKHQ), 4005 (Databasus),
+# Ports of the exposed apps: 80 (ArgoCD, Grafana, Harbor, AKHQ),
 # 7007 (Backstage), 8080 (Jenkins, Apicurio Registry), 8200 (Vault).
 resource "netbird_policy" "kubernetes_access" {
   name        = "kubernetes-access"
@@ -24,6 +24,6 @@ resource "netbird_policy" "kubernetes_access" {
     protocol      = "tcp"
     sources       = [data.netbird_group.clients.id]
     destinations  = [data.netbird_group.services.id]
-    ports         = ["80", "4005", "7007", "8080", "8200"]
+    ports         = ["80", "7007", "8080", "8200"]
   }
 }
