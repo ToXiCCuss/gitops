@@ -8,7 +8,7 @@
   ansible.builtin.assert:
     that:
       - k3s_registries_harbor_password | length > 0
-    fail_msg: "k3s_registries_harbor_password must be set (e.g. via --extra-vars) to create /etc/rancher/k3s/registries.yaml."
+    fail_msg: "k3s_registries_harbor_password must be set to create /etc/rancher/k3s/registries.yaml - run scripts/ansible/setup-secrets.sh."
   when: not k3s_registries_existing.stat.exists
 
 - name: Make sure /etc/rancher/k3s exists
