@@ -1,0 +1,60 @@
+---
+- name: Require the per-host Arcane URL
+  ansible.builtin.assert:
+    that:
+      - arcane_app_url | length > 0
+    fail_msg: >-
+      arcane_app_url is empty. Set
+      host_config['{{ ansible_hostname }}'].arcane_app_url in
+      group_vars/all/main.yml.
+
+- name: Require the Arcane secrets
+  ansible.builtin.assert:
+    that:
+      - arcane_encryption_key | length > 0
+      - arcane_jwt_secret | length > 0
+    fail_msg: >-
+      arcane_encryption_key / arcane_jwt_secret are empty. Run
+      scripts/ansible/setup-secrets.sh --scope {{ ansible_hostname }}.
+      On an existing installation copy the values from the running
+      override.env - new keys make Arcane's stored data unreadable.
+
+- name: Ensure the Arcane directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  loop:
+    - "{{ arcane_dir }}"
+    - "{{ arcane_dir }}/data"
+    - "{{ arcane_dir }}/backups"
+
+- name: Copy the compose project verbatim (keeps Renovate working on the image)
+  ansible.builtin.copy:
+    src: "{{ arcane_compose_src }}/{{ item }}"
+    dest: "{{ arcane_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0640"
+  loop:
+    - docker-compose.yml
+    - default.env
+
+- name: Render override.env with the per-host settings and the secrets
+  ansible.builtin.template:
+    src: override.env.j2
+    dest: "{{ arcane_dir }}/override.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+# docker compose recreates the container by itself when the compose file or the
+# resolved environment changed, so no handler is needed here.
+- name: Deploy the Arcane stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ arcane_dir }}"
+    state: present
+    pull: "{{ arcane_pull }}"

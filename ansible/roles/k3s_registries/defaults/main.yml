@@ -5,7 +5,8 @@ k3s_registries_harbor_host: harbor.k8sdev.rjst.de
 # Harbor account used to pull (a robot account is better than admin).
 k3s_registries_harbor_username: admin
 
-# Must be provided via ansible-vault or --extra-vars, never committed in plain text.
+# Set it in the vault file group_vars/all/secrets.yml via
+# scripts/ansible/setup-secrets.sh - never commit it in plain text.
 # If empty and /etc/rancher/k3s/registries.yaml already exists, the file is left untouched.
 k3s_registries_harbor_password: ""
 
