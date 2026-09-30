@@ -54,7 +54,7 @@
   ansible.builtin.assert:
     that:
       - netbird_setup_key | length > 0
-    fail_msg: "netbird_setup_key must be set (e.g. via --extra-vars) to join the NetBird network."
+    fail_msg: "netbird_setup_key must be set to join the NetBird network - run scripts/ansible/setup-secrets.sh."
   when: "'Management: Connected' not in netbird_status.stdout"
 
 - name: Join NetBird network

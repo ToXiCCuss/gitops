@@ -16,7 +16,8 @@ mongodb_hosts:
 node_exporter_hosts:
    - ansible01
 
-# Add hostnames here once netbird_setup_key is provided (ansible-vault or --extra-vars)
+# Add hostnames here once netbird_setup_key is set in the vault
+# (scripts/ansible/setup-secrets.sh --scope <hostname>)
 netbird_hosts:
    - k8sdev01
    - docker01
@@ -26,5 +27,45 @@ ssh_authorized_keys:
    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ557k6uQaq3TV0Li8Y3+S3tOgQUPU6y0IM8E/TWSJGA robert@pc"
 
 # k3s nodes that should pull images through the Harbor mirror.
-# Needs k3s_registries_harbor_password (ansible-vault or --extra-vars) on the first run.
+# Needs k3s_registries_harbor_password in the vault on the first run
+# (scripts/ansible/setup-secrets.sh).
 k3s_hosts: []
+
+# Hosts that run the Arcane Docker management UI.
+# Needs arcane_app_url in host_config plus the two secrets in the vault.
+arcane_hosts: []
+
+# ── Per-host configuration (plain, NOT secret) ───────────────────────────────
+# Non-confidential settings that differ per host. Same resolution as the
+# secrets below: an entry under the hostname wins over the one under "all".
+host_config:
+  all: {}
+
+  docker01:
+    arcane_app_url: "https://arcane01.proxy.rjst.de"
+
+# ── Resolution helpers ───────────────────────────────────────────────────────
+# Merge the "all" layer with the current host's layer once; host entries win.
+# Defined here so every variable below stays a readable one-liner.
+#
+# Why not host_vars/? inventory.ini only knows "localhost", and Ansible resolves
+# host_vars/ by inventory name - host_vars/docker01.yml would never be loaded.
+# ansible_hostname is a fact and holds the real hostname, which is also what the
+# *_hosts gates above compare against. The fallback to inventory_hostname keeps
+# the lookups working if facts were not gathered.
+_scope_host: "{{ ansible_hostname | default(inventory_hostname) }}"
+_config: "{{ (host_config | default({})).get('all', {}) | combine((host_config | default({})).get(_scope_host, {})) }}"
+_secrets: "{{ (vault_secrets | default({})).get('all', {}) | combine((vault_secrets | default({})).get(_scope_host, {})) }}"
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
+# The values live ansible-vault encrypted in secrets.yml, in the nested dict
+# "vault_secrets" (same host/all layering as host_config above).
+# An unset secret resolves to "" and the role's assert task reports it.
+# Maintain the values with scripts/ansible/setup-secrets.sh.
+netbird_setup_key: "{{ _secrets['netbird_setup_key'] | default('') }}"
+k3s_registries_harbor_password: "{{ _secrets['k3s_registries_harbor_password'] | default('') }}"
+arcane_encryption_key: "{{ _secrets['arcane_encryption_key'] | default('') }}"
+arcane_jwt_secret: "{{ _secrets['arcane_jwt_secret'] | default('') }}"
+
+# ── Resolved per-host settings ───────────────────────────────────────────────
+arcane_app_url: "{{ _config['arcane_app_url'] | default('') }}"
