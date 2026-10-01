@@ -265,30 +265,18 @@ All backups of the Docker host go to a local SeaweedFS S3 first and from there o
 Every service is its own Compose project (Arcane project), the details are in the
 `Setup ...` sections below.
 
-[plantuml, target=backup-flow, format=svg]
-----
-@startuml
-left to right direction
-skinparam shadowing false
-
-rectangle "Docker host" {
-  component "Docker volumes" as vol
-  database "Databases" as db
-  component "Backrest\n(restic)" as backrest
-  component "Databasus\n(dumps)" as databasus
-  database "SeaweedFS S3\nbuckets backups, db" as s3
-  component "offsite-sync\n(rclone, 04:00 UTC)" as sync
-}
-cloud "pCloud" as pcloud
-
-vol --> backrest : read-only
-db --> databasus
-backrest --> s3 : bucket backups
-databasus --> s3 : bucket db
-s3 --> sync : read-only identity
-sync --> pcloud : rclone sync\ndeleted files -> Backups-deleted
-@enduml
-----
+[mermaid]
+....
+flowchart LR
+  subgraph host["Docker host"]
+    vol["Docker volumes"] -->|read-only| backrest["Backrest (restic)"]
+    db[("Databases")] --> databasus["Databasus (dumps)"]
+    backrest -->|bucket backups| s3[("SeaweedFS S3")]
+    databasus -->|bucket db| s3
+    s3 -->|read-only identity| sync["offsite-sync (rclone, 04:00 UTC)"]
+  end
+  sync -->|"rclone sync, deleted files go to Backups-deleted"| pcloud(["pCloud"])
+....
 
 [cols="1,1,2"]
 |===
