@@ -268,13 +268,17 @@ Every service is its own Compose project (Arcane project), the details are in th
 [source,mermaid]
 ----
 flowchart LR
+  subgraph k8s["Kubernetes"]
+    vaultjob["Vault CronJob (restic)"]
+  end
   subgraph host["Docker host"]
     vol["Docker volumes"] -->|read-only| backrest["Backrest (restic)"]
-    db[("Databases")] --> databasus["Databasus (dumps)"]
+    pg[("PostgreSQL")] --> databasus["Databasus (pg_dump)"]
     backrest -->|bucket backups| s3[("SeaweedFS S3")]
     databasus -->|bucket db| s3
-    s3 -->|read-only identity| sync["offsite-sync (rclone, 04:00 UTC)"]
+    s3 -->|read-only identity| sync["offsite-sync (rclone, 05:00 UTC)"]
   end
+  vaultjob -->|bucket vault| s3
   sync -->|"rclone sync, deleted files go to Backups-deleted"| pcloud(["pCloud"])
 ----
 
@@ -283,13 +287,54 @@ flowchart LR
 |Service |Task |Notes
 
 |SeaweedFS |Local S3 staging |One identity per service, the offsite sync can only read
-|Backrest |Physical backups (Docker volumes), browse and restore snapshots |restic, repository `backups/docker`
-|Databasus |Logical database backups (dumps) |bucket `db`
-|Offsite sync |Copies the whole S3 to pCloud |Keeps deleted or overwritten files 30 days in `Backups-deleted`
+|Backrest |Physical backups (Docker volumes), browse, check and restore snapshots |restic, repository `backups/docker`. Also used to check and restore the Vault repository
+|Databasus |Logical PostgreSQL backups (`pg_dump`) |bucket `db`
+|Vault CronJob |Raft snapshot of Vault (Kubernetes) |bucket `vault`, repository `vault/raft`, keeps its own retention
+|Offsite sync |Copies the whole S3 to pCloud and verifies the copy |Keeps deleted or overwritten files 30 days in `Backups-deleted`
 |===
 
-The physical MongoDB backup (`scripts/mongodb/backup/physical_backup.sh`) and the Vault backup
-(CronJob, see Kubernetes) still write directly to pCloud with their own restic repositories.
+Everything writes to the S3 only, pCloud is written by the offsite sync alone. Not covered:
+the PVCs of the Kubernetes apps and MariaDB. There is no MongoDB.
+
+==== Retention, checks and schedule
+
+[cols="2,1,1,1,3"]
+|===
+|Data |Daily |Weekly |Monthly |Set in
+
+|Vault |14 |8 |12 |Vault CronJob (`restic forget --prune` after each run)
+|PostgreSQL dumps |14 |8 |6 |Databasus, per database
+|Docker volumes |7 |4 |6 |Backrest plan (retention policy)
+|Deleted files in pCloud |30 days | | |`RETENTION_DAYS` of the offsite sync
+|===
+
+[cols="1,3"]
+|===
+|Check |How
+
+|Repository structure and a sample of the data
+|Backrest, per repository (`backups/docker` and `vault/raft`): check policy weekly with a 10% read-data subset
+
+|Offsite copy complete and intact
+|`rclone check --one-way` S3 -> pCloud after every sync. A mismatch fails the sync
+
+|Failed or missing jobs
+|Offsite sync and Vault CronJob report to an Uptime Kuma push monitor (alarm when the heartbeat stays out). Databasus has its own notifications, add one to Backrest plans as a hook
+
+|Backups can be restored
+|By hand once per quarter: restore the latest PostgreSQL dump into a scratch database and a Vault snapshot, both from *pCloud*
+|===
+
+[cols="1,2"]
+|===
+|Time (UTC) |Job
+
+|01:00 |Databasus (PostgreSQL dumps)
+|02:30 |Vault CronJob
+|03:00 |Backrest plan for the Docker volumes
+|Sunday 03:30 |Backrest prune and check of both repositories
+|05:00 |Offsite sync with check, runs when nothing writes to the S3 any more
+|===
 
 ==== Setting it up, in this order
 
@@ -318,12 +363,16 @@ sudo scripts/docker/setup-backup-host.sh
 
 |`offsite-sync`
 |`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (`OFFSITE_SYNC_*`), `PUSH_URL`
+
+|Vault KV `backup/vault-backup`
+|`s3_endpoint`, `aws_access_key_id`, `aws_secret_access_key` (`VAULT_*`), `push_url`, `restic_password`. Set with `scripts/vault/generate-secrets.ps1` ("Vault backup")
 |===
 
 . Deploy `backrest`, `databasus` and `offsite-sync` in Arcane.
 . Configure the services in their UIs (see the sections below): Backrest (admin user, repository,
-  plan for `/userdata/docker`) and Databasus (S3 storage with the `databasus` keys, databases,
-  schedule). Databasus is the only place that needs the `databasus` keys.
+  plan for `/userdata/docker`, a second repository `s3:<S3_ENDPOINT>/vault/raft` with the restic
+  password of the Vault backup, only to check and restore) and Databasus (S3 storage with the
+  `databasus` keys, databases, schedule). Databasus is the only place that needs the `databasus` keys.
 . Delete `/root/backup-credentials.env` and store the restic password and `rclone.conf` in your
   password manager. Without them the pCloud backups cannot be read after a total loss.
 
@@ -372,10 +421,15 @@ Databasus makes the logical database backups and writes them to the local Seawee
 
 * `docker compose up -d` in the databasus folder
 * Open `http://<docker-host>:4005`, add the databases and the S3 storage (`http://<docker-host>:8333`, bucket `db`, keys of the `databasus` identity)
+* PostgreSQL 18 runs directly on `docker01` (Ansible role `postgresql`). Create a role with `pg_read_all_data` for
+Databasus (see `scripts/postgresql/user_create.sh`) and connect with the address of the Docker host. The
+`pg_dump` of Databasus must be version 18 or newer. A restore needs the extensions `pg_cron` and `pg_partman` on the target server
+* The role allows connections from every address (`pg_hba.conf` `0.0.0.0/0`, `listen_addresses = '*'`). Restrict it with a firewall
 
 === Setup Offsite Sync
 
-Nightly `rclone sync` of the SeaweedFS S3 to pCloud. Deleted or overwritten files are moved to
+Nightly `rclone sync` of the SeaweedFS S3 to pCloud (05:00 UTC, `SYNC_HOUR`), followed by an
+`rclone check` of the copy. Deleted or overwritten files are moved to
 `Backups-deleted/<date>` and kept for `RETENTION_DAYS`. This is the only container that holds the
 pCloud credentials.
 
@@ -393,8 +447,9 @@ SeaweedFS is the local S3 staging for all backups. Access is controlled by separ
 |Identity |Bucket |Rights
 
 |`admin` |all |Admin (only for you, not used by containers)
-|`backrest` |`backups` |Read, Write, List
+|`backrest` |`backups`, `vault` |Read, Write, List
 |`databasus` |`db` |Read, Write, List
+|`vault` |`vault` |Read, Write, List
 |`offsite-sync` |all |Read, List (cannot change anything)
 |===
 
@@ -573,15 +628,18 @@ later step, app by app.
 
 ===== Vault backups
 
-A `CronJob` (`kubernetes/backup/kubectl/kube-vault-backup.yaml`, daily at 03:00)
-takes a Raft snapshot and pushes it to the restic/pCloud repository
-`rclone:pCloud:/Backups/vault_pb`. It authenticates to Vault
+A `CronJob` (`kubernetes/backup/kubectl/kube-vault-backup.yaml`, daily at 02:30 UTC)
+takes a Raft snapshot and pushes it to the restic repository `vault/raft` on the SeaweedFS S3
+of the Docker host (the offsite sync copies it to pCloud). Afterwards it applies the retention
+(14 daily, 8 weekly, 12 monthly) and reports to an Uptime Kuma push monitor. It authenticates to Vault
 with its own ServiceAccount (`vault-backup-sa` in the `backup` namespace,
-Kubernetes auth, no static token), and reads the restic password + your
-`rclone.conf` (with the pCloud remote) from Vault at
+Kubernetes auth, no static token), and reads the restic password, the S3 endpoint and keys
+(identity `vault`) and the push URL from Vault at
 `backup/data/vault-backup` — set those via `generate-secrets.ps1`'s
-"Vault backup" prompt. `scripts/vault/vault_restore.sh` still works
-unchanged for restores, since it just reads from the same restic repo.
+"Vault backup" prompt. The pod must reach the S3 port `8333` of the Docker host.
+`scripts/vault/vault_restore.sh` restores from the S3 repository, older snapshots are in
+`rclone:pCloud:/Backups/vault_pb` (set `RESTIC_REPOSITORY`). The old `rclone_conf` key in that
+Vault path is not used any more.
 
 ==== 4. Deploy the secrets, then the domains, in this order
 

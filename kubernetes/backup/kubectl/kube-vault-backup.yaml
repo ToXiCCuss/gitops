@@ -19,7 +19,7 @@ metadata:
   name: vault-backup
   namespace: backup
 spec:
-  schedule: "0 3 * * *"
+  schedule: "30 2 * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -52,7 +52,7 @@ spec:
                 - -c
                 - |
                   set -e
-                  apk add --no-cache curl jq restic rclone >/dev/null
+                  apk add --no-cache curl jq restic >/dev/null
 
                   JWT=$(cat /var/run/secrets/vault/token)
                   VAULT_TOKEN=$(curl -sf --request POST \
@@ -61,10 +61,16 @@ spec:
 
                   SECRET=$(curl -sf --header "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/backup/data/vault-backup")
                   echo "$SECRET" | jq -r '.data.data.restic_password' > /tmp/restic-password
-                  mkdir -p /root/.config/rclone
-                  echo "$SECRET" | jq -r '.data.data.rclone_conf' > /root/.config/rclone/rclone.conf
+                  S3_ENDPOINT=$(echo "$SECRET" | jq -r '.data.data.s3_endpoint')
+                  export AWS_ACCESS_KEY_ID=$(echo "$SECRET" | jq -r '.data.data.aws_access_key_id')
+                  export AWS_SECRET_ACCESS_KEY=$(echo "$SECRET" | jq -r '.data.data.aws_secret_access_key')
+                  PUSH_URL=$(echo "$SECRET" | jq -r '.data.data.push_url // empty')
 
-                  export RESTIC_REPOSITORY="rclone:pCloud:/Backups/vault_pb"
+                  # Report to the Uptime Kuma push monitor (optional), also when the job fails
+                  report() { [ -n "$PUSH_URL" ] && curl -fsS -m 10 "$PUSH_URL?status=$1&msg=$2" >/dev/null || true; }
+                  trap 'rc=$?; [ $rc -ne 0 ] && report down vault-backup-failed; exit $rc' EXIT
+
+                  export RESTIC_REPOSITORY="s3:$S3_ENDPOINT/vault/raft"
                   export RESTIC_PASSWORD_FILE="/tmp/restic-password"
                   restic snapshots >/dev/null 2>&1 || restic init
 
@@ -72,8 +78,10 @@ spec:
                   curl -sf --header "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/sys/storage/raft/snapshot" -o "$SNAP"
 
                   restic backup --tag vault-k8s "$SNAP"
+                  restic forget --tag vault-k8s --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune
 
                   rm -f "$SNAP" /tmp/restic-password
+                  report up OK
                   echo "Vault backup completed successfully."
           volumes:
             - name: vault-token
