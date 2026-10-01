@@ -434,23 +434,32 @@ if collect_secrets "$CURRENT_FILE" "$SCOPE"; then
     vault view "$SECRETS_FILE" >/dev/null || {
         error "Verification failed - secrets.yml is not decryptable!"; exit 1; }
     success "$SECRETS_FILE written and verified (scope '$SCOPE', ansible-vault AES256)"
-else
+elif [[ -f "$SECRETS_FILE" ]]; then
     info "No value changed - secrets.yml left as it is."
+else
+    warn "No value was entered, so $SECRETS_FILE was NOT created."
+    warn "Enter at least one value - a plain Enter only keeps an existing one,"
+    warn "and there is nothing to keep yet."
 fi
 
 # --- Summary ----------------------------------------------------------------
 step "Next steps"
-echo "  Run the playbook (ansible.cfg already points at .vault_pass):"
-echo
-echo "      cd $ANSIBLE_DIR"
-echo "      ansible-playbook site.yml --check --diff"
-echo "      ansible-playbook site.yml"
-echo
-echo "  Commit the ENCRYPTED file:"
-echo
-echo "      git add ansible/group_vars/all/secrets.yml"
-echo "      git commit -m \"Update Ansible vault secrets\""
-echo
+if [[ -f "$SECRETS_FILE" ]]; then
+    echo "  Run the playbook (ansible.cfg already points at .vault_pass):"
+    echo
+    echo "      cd $ANSIBLE_DIR"
+    echo "      ansible-playbook site.yml --check --diff"
+    echo "      ansible-playbook site.yml"
+    echo
+    echo "  Commit the ENCRYPTED file:"
+    echo
+    echo "      git add ansible/group_vars/all/secrets.yml"
+    echo "      git commit -m \"Update Ansible vault secrets\""
+    echo
+else
+    echo "  secrets.yml does not exist yet - run the script again and enter a value."
+    echo
+fi
 echo "  Values shared by all hosts:  $0 --scope all"
 echo "  Values for another host:     $0 --scope <hostname>"
 echo "  Show everything:             $0 --view"

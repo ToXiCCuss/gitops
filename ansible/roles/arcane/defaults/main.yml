@@ -1,5 +1,9 @@
 ---
-# Directory on the host that holds the compose project and its data.
+# Directory on the host that holds the compose project. The data volumes in
+# docker-compose.yml point at absolute paths below this path, so the data lives
+# here regardless of where compose is started from. An Arcane started via
+# docker/arcane/start.sh uses the repository checkout as its project directory
+# instead - the role refuses to run in that case until the old stack is stopped.
 arcane_dir: /root/docker/arcane
 
 # Public URL of this instance. Differs per host, so it is resolved from
