@@ -1,20 +1,13 @@
 ---
 docker_hosts:
    - docker01
-   - ansible01
 
-mariadb_hosts:
-   - ansible01
+mariadb_hosts: []
 
 postgresql_hosts:
-   - ansible01
    - docker01
 
-mongodb_hosts:
-   - ansible01
-
-node_exporter_hosts:
-   - ansible01
+node_exporter_hosts: []
 
 # Add hostnames here once netbird_setup_key is set in the vault
 # (scripts/ansible/setup-secrets.sh --scope <hostname>)

@@ -33,13 +33,6 @@
     - role: postgresql
       when: ansible_hostname in postgresql_hosts
 
-- name: Install MongoDB (only on hosts listed in mongodb_hosts)
-  hosts: all
-  become: true
-  roles:
-    - role: mongodb
-      when: ansible_hostname in mongodb_hosts
-
 - name: Install NetBird (only on hosts listed in netbird_hosts)
   hosts: all
   become: true

@@ -8,7 +8,7 @@
 #                               [--s3-endpoint http://127.0.0.1:8333]
 #
 # Creates the pCloud remote in rclone.conf if it is missing (token from `rclone authorize "pcloud"`).
-# Generates the SeaweedFS S3 identities (admin, backrest, databasus, offsite-sync) into
+# Generates the SeaweedFS S3 identities (admin, backrest, databasus, vault, offsite-sync) into
 # /root/docker/seaweedfs-s3.json and the keys into /root/backup-credentials.env. Run it before
 # deploying seaweedfs, then again afterwards to create the buckets (it is idempotent).
 # =============================================================================
@@ -28,6 +28,7 @@ RCLONE_IMAGE="rclone/rclone:1.75.1"
 DATA_ROOT="/root/docker"
 BACKUP_BUCKET="backups"
 DB_BUCKET="db"
+VAULT_BUCKET="vault"
 REGENERATE=""
 S3_ENDPOINT="http://127.0.0.1:8333"
 PCLOUD_REMOTE="pCloud"
@@ -119,6 +120,7 @@ else
     ADMIN_KEY=$(gen_key);     ADMIN_SECRET=$(gen_key)
     BACKREST_KEY=$(gen_key);  BACKREST_SECRET=$(gen_key)
     DATABASUS_KEY=$(gen_key); DATABASUS_SECRET=$(gen_key)
+    VAULT_KEY=$(gen_key);     VAULT_SECRET=$(gen_key)
     SYNC_KEY=$(gen_key);      SYNC_SECRET=$(gen_key)
 
     umask 077
@@ -128,9 +130,12 @@ else
     {"name": "admin", "credentials": [{"accessKey": "$ADMIN_KEY", "secretKey": "$ADMIN_SECRET"}],
      "actions": ["Admin", "Read", "Write", "List", "Tagging"]},
     {"name": "backrest", "credentials": [{"accessKey": "$BACKREST_KEY", "secretKey": "$BACKREST_SECRET"}],
-     "actions": ["Read:$BACKUP_BUCKET", "Write:$BACKUP_BUCKET", "List:$BACKUP_BUCKET"]},
+     "actions": ["Read:$BACKUP_BUCKET", "Write:$BACKUP_BUCKET", "List:$BACKUP_BUCKET",
+                 "Read:$VAULT_BUCKET", "Write:$VAULT_BUCKET", "List:$VAULT_BUCKET"]},
     {"name": "databasus", "credentials": [{"accessKey": "$DATABASUS_KEY", "secretKey": "$DATABASUS_SECRET"}],
      "actions": ["Read:$DB_BUCKET", "Write:$DB_BUCKET", "List:$DB_BUCKET"]},
+    {"name": "vault", "credentials": [{"accessKey": "$VAULT_KEY", "secretKey": "$VAULT_SECRET"}],
+     "actions": ["Read:$VAULT_BUCKET", "Write:$VAULT_BUCKET", "List:$VAULT_BUCKET"]},
     {"name": "offsite-sync", "credentials": [{"accessKey": "$SYNC_KEY", "secretKey": "$SYNC_SECRET"}],
      "actions": ["Read", "List"]}
   ]
@@ -145,6 +150,8 @@ BACKREST_ACCESS_KEY_ID=$BACKREST_KEY
 BACKREST_SECRET_ACCESS_KEY=$BACKREST_SECRET
 DATABASUS_ACCESS_KEY_ID=$DATABASUS_KEY
 DATABASUS_SECRET_ACCESS_KEY=$DATABASUS_SECRET
+VAULT_ACCESS_KEY_ID=$VAULT_KEY
+VAULT_SECRET_ACCESS_KEY=$VAULT_SECRET
 OFFSITE_SYNC_ACCESS_KEY_ID=$SYNC_KEY
 OFFSITE_SYNC_SECRET_ACCESS_KEY=$SYNC_SECRET
 ENV
@@ -155,7 +162,7 @@ ENV
 fi
 
 # ── Buckets ───────────────────────────────────────────────────────────────────
-step "Creating the S3 buckets '$BACKUP_BUCKET' and '$DB_BUCKET'"
+step "Creating the S3 buckets '$BACKUP_BUCKET', '$DB_BUCKET' and '$VAULT_BUCKET'"
 # shellcheck disable=SC1090
 source "$CREDENTIALS_FILE"
 
@@ -169,7 +176,7 @@ s3_rclone() {
         "$RCLONE_IMAGE" "$@"
 }
 
-if s3_rclone mkdir "SEAWEED:$BACKUP_BUCKET" && s3_rclone mkdir "SEAWEED:$DB_BUCKET"; then
+if s3_rclone mkdir "SEAWEED:$BACKUP_BUCKET" && s3_rclone mkdir "SEAWEED:$DB_BUCKET" && s3_rclone mkdir "SEAWEED:$VAULT_BUCKET"; then
     success "Buckets exist on $S3_ENDPOINT"
 else
     warn "SeaweedFS S3 at $S3_ENDPOINT is not reachable yet: deploy the seaweedfs project in Arcane, then run this script again"
