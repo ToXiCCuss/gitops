@@ -4,9 +4,10 @@
 # Prepares the Docker host for the backup projects (backrest, offsite-sync,
 # databasus, seaweedfs). Deploying the projects themselves is done in Arcane.
 #
-#   sudo ./setup-backup-host.sh --rclone-conf ~/rclone.conf [--regenerate-s3]
+#   sudo ./setup-backup-host.sh [--rclone-conf /root/.config/rclone/rclone.conf] [--regenerate-s3]
 #                               [--s3-endpoint http://127.0.0.1:8333]
 #
+# Creates the pCloud remote in rclone.conf if it is missing (token from `rclone authorize "pcloud"`).
 # Generates the SeaweedFS S3 identities (admin, backrest, databasus, offsite-sync) into
 # /root/docker/seaweedfs-s3.json and the keys into /root/backup-credentials.env. Run it before
 # deploying seaweedfs, then again afterwards to create the buckets (it is idempotent).
@@ -30,7 +31,7 @@ DB_BUCKET="db"
 REGENERATE=""
 S3_ENDPOINT="http://127.0.0.1:8333"
 PCLOUD_REMOTE="pCloud"
-RCLONE_CONF=""
+RCLONE_CONF="/root/.config/rclone/rclone.conf"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -47,8 +48,41 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 command -v docker >/dev/null 2>&1 || { error "docker is required"; exit 1; }
-[[ -f "$RCLONE_CONF" ]] || { error "--rclone-conf <file> is required (rclone.conf with the $PCLOUD_REMOTE remote)"; exit 1; }
-grep -q "^\[$PCLOUD_REMOTE\]" "$RCLONE_CONF" || { error "Remote [$PCLOUD_REMOTE] not found in $RCLONE_CONF"; exit 1; }
+
+# ── pCloud remote ─────────────────────────────────────────────────────────────
+step "Checking the pCloud remote in $RCLONE_CONF"
+if [[ -f "$RCLONE_CONF" ]] && grep -q "^\[$PCLOUD_REMOTE\]" "$RCLONE_CONF"; then
+    info "Remote [$PCLOUD_REMOTE] exists, keeping it"
+else
+    info "Remote [$PCLOUD_REMOTE] not found, creating it"
+    info "pCloud needs a browser login. On a machine with a browser and rclone run: rclone authorize \"pcloud\""
+    if [[ -z "${PCLOUD_HOSTNAME:-}" ]]; then
+        read -r -p "pCloud data region (eu/us) [eu]: " region
+        case "${region:-eu}" in
+            eu) PCLOUD_HOSTNAME="eapi.pcloud.com" ;;
+            us) PCLOUD_HOSTNAME="api.pcloud.com" ;;
+            *)  error "Unknown region: $region"; exit 1 ;;
+        esac
+    fi
+    if [[ -z "${PCLOUD_TOKEN:-}" ]]; then
+        read -r -s -p "Paste the token JSON printed by rclone authorize: " PCLOUD_TOKEN
+        echo
+    fi
+    [[ "$PCLOUD_TOKEN" == *access_token* ]] || { error "That does not look like the token JSON from rclone authorize"; exit 1; }
+    mkdir -p "$(dirname "$RCLONE_CONF")"
+    (
+        umask 077
+        {
+            echo
+            echo "[$PCLOUD_REMOTE]"
+            echo "type = pcloud"
+            echo "hostname = $PCLOUD_HOSTNAME"
+            echo "token = $PCLOUD_TOKEN"
+        } >> "$RCLONE_CONF"
+    )
+    unset PCLOUD_TOKEN
+    success "Remote [$PCLOUD_REMOTE] added to $RCLONE_CONF"
+fi
 
 # ── Directories ───────────────────────────────────────────────────────────────
 step "Creating data directories"
