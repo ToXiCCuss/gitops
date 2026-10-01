@@ -28,6 +28,18 @@ run_backup() {
     restic forget --tag vault --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" --prune || return 1
 }
 
+# One run right now and exit with its result (for tests): docker exec vault-backup sh /backup.sh now
+if [ "${1:-}" = "now" ]; then
+    if run_backup; then
+        echo "Backup finished"
+        push up OK
+        exit 0
+    fi
+    echo "Backup FAILED" >&2
+    push down backup-failed
+    exit 1
+fi
+
 while true; do
     h=$(date +%H); m=$(date +%M); s=$(date +%S)
     now=$(( ${h#0} * 3600 + ${m#0} * 60 + ${s#0} ))
