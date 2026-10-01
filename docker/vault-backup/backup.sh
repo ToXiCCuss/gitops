@@ -10,7 +10,8 @@ export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY RESTIC_PASSWORD
 export RESTIC_REPOSITORY="s3:${S3_ENDPOINT}/vault/raft"
 
 push() {
-    [ -n "${PUSH_URL:-}" ] && curl -fsS -m 10 "${PUSH_URL}?status=$1&msg=$2" >/dev/null || true
+    # Uptime Kuma shows the URL with ?status=up&msg=OK&ping=, cut the query off, it is added here
+    [ -n "${PUSH_URL:-}" ] && curl -fsS -m 10 "${PUSH_URL%%\?*}?status=$1&msg=$2" >/dev/null || true
 }
 
 run_backup() {

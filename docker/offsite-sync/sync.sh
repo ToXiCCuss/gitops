@@ -10,7 +10,8 @@ export RCLONE_CONFIG_SEAWEED_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
 export RCLONE_CONFIG_SEAWEED_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 
 push() {
-    [ -n "${PUSH_URL:-}" ] && wget -q -O /dev/null "${PUSH_URL}?status=$1&msg=$2" || true
+    # Uptime Kuma shows the URL with ?status=up&msg=OK&ping=, cut the query off, it is added here
+    [ -n "${PUSH_URL:-}" ] && wget -q -O /dev/null "${PUSH_URL%%\?*}?status=$1&msg=$2" || true
 }
 
 run_sync() {
