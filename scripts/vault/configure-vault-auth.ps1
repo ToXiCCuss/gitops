@@ -3,7 +3,7 @@
     Vault-side preparation for Kubernetes auth: enables the kubernetes auth
     method, creates the KV v2 secrets engines this repo's consumers need,
     and writes the policies + auth roles for ArgoCD, Jenkins, Spring
-    (dev/prod), and the Vault backup job.
+    (dev/prod).
 
 .DESCRIPTION
     This is infrastructure prep only - it does NOT wire any app up to
@@ -125,7 +125,7 @@ Write-Ok "auth/kubernetes/config written."
 # ── 3. KV v2 engines this repo's consumers read from ────────────────────────
 Write-Step "Ensuring KV v2 secrets engines exist"
 $mounts = Invoke-RestMethod -Uri "$VaultAddr/v1/sys/mounts" -Method Get -Headers $Headers
-foreach ($engine in @("argocd", "jenkins", "dev", "prod", "backup")) {
+foreach ($engine in @("argocd", "jenkins", "dev", "prod")) {
     $mountNames = @($mounts.PSObject.Properties.Name)
     if ($mounts.data) { $mountNames += @($mounts.data.PSObject.Properties.Name) }
     if ($mountNames -contains "$engine/") {
@@ -190,17 +190,6 @@ path "prod/data/*" {
 '@
 Set-VaultK8sRole -Name "spring_prod" -ServiceAccountNames "spring" -ServiceAccountNamespaces "prod" -Policies "spring_prod"
 
-Write-Step "Vault backup"
-Set-VaultPolicy -Name "vault_backup" -Hcl @'
-path "sys/storage/raft/snapshot" {
-  capabilities = ["read"]
-}
-path "backup/data/vault-backup" {
-  capabilities = ["read"]
-}
-'@
-Set-VaultK8sRole -Name "vault_backup" -ServiceAccountNames "vault-backup-sa" -ServiceAccountNamespaces "backup" -Policies "vault_backup"
-
 Write-Step "Done"
-Write-Ok "Auth backend, 4 KV engines, and 5 policy/role pairs are in place."
+Write-Ok "Auth backend, 4 KV engines, and 4 policy/role pairs are in place."
 Write-Warn2 "Nothing reads from jenkins/dev/prod yet - that's app-side wiring (Vault Agent injector, Spring Cloud Vault, etc.) for a later step."
