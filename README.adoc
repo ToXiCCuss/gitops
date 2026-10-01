@@ -431,8 +431,10 @@ Databasus makes the logical database backups and writes them to the local Seawee
 
 * `docker compose up -d` in the databasus folder
 * Open `http://<docker-host>:4005`, add the databases and the S3 storage (`http://<docker-host>:8333`, bucket `databases`, keys of the `databasus` identity)
-* PostgreSQL 18 runs directly on `docker01` (Ansible role `postgresql`). Create a role with `pg_read_all_data` for
-Databasus (see `scripts/postgresql/user_create.sh`) and connect with the address of the Docker host. The
+* PostgreSQL 18 runs directly on `docker01` (Ansible role `postgresql`). Create the login role for Databasus once with
+`scripts/postgresql/backup_user_create.sh`: it gets `pg_read_all_data`, which covers all databases and schemas of the
+DBMS (the `ro` role of `user_create.sh` only sees the `public` schema of one database and would miss e.g. the `partman` schema).
+Connect with the address of the Docker host. The
 `pg_dump` of Databasus must be version 18 or newer. A restore needs the extensions `pg_cron` and `pg_partman` on the target server
 * The role allows connections from every address (`pg_hba.conf` `0.0.0.0/0`, `listen_addresses = '*'`). Restrict it with a firewall
 
