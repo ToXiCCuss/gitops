@@ -9,7 +9,7 @@
       that already exists.
     - External values are prompted for interactively and written to Vault:
       the Hetzner and NetBird API tokens, the docker01 DB credentials for
-      Harbor/Keycloak/Microcks, and the vault-backup CronJob's restic
+      Harbor/Keycloak, and the vault-backup CronJob's restic
       password + rclone.conf. Leave blank to skip a value - existing Vault
       data for that key is left untouched.
     - Safe to re-run: it asks before overwriting a value you provide if it
@@ -136,12 +136,6 @@ $kcDbUser = Read-Host "Keycloak external DB username (blank to skip)"
 if ($kcDbUser) {
     $kcDbPass = Read-OptionalSecret "Keycloak external DB password"
     Set-VaultKV -Path "keycloak" -Data @{ "postgresql.username" = $kcDbUser; "postgresql.password" = $kcDbPass }
-}
-
-$microcksDbUser = Read-Host "Microcks MongoDB username (blank to skip)"
-if ($microcksDbUser) {
-    $microcksDbPass = Read-OptionalSecret "Microcks MongoDB password"
-    Set-VaultKV -Path "microcks" -Data @{ "username" = $microcksDbUser; "password" = $microcksDbPass }
 }
 
 # ── 3. Vault backup CronJob (reads these via Kubernetes auth at runtime,

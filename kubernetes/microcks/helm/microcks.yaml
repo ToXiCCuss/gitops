@@ -175,26 +175,12 @@ spec:
               serviceAccountCredentials: ab54d329-e435-41ae-a900-ec6b3fe15c54
             
             mongodb:
-              # You can turn off mongodb installation if you use an external one
-              install: false
-            
-              uri: mongodb://<path:argocd/data/microcks#username>:<path:argocd/data/microcks#password>@docker01.vpn.rjst.de
-            
-              # MongoDB database name (default to appName if not set)
+              # MongoDB runs inside the chart (own PVC), Microcks needs no external database or secret
+              install: true
               database: microcks
-            
-              # MongoDB uri parameters are appended after the database name
-              #uriParameters: "?ssl=true"
-            
-                
-                # Or you can uncomment secretRef block if username and password are provided through a Secret.
-              secretRef:
-                usernameKey: "username"
-                passwordKey: "password"
-                
-                #pvcAnnotations:
-              #helm.sh/resource-policy: keep
-            
+              persistent: true
+              volumeSize: 2Gi
+
               resources:
                 requests:
                   cpu: 250m

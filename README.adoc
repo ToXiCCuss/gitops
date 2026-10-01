@@ -488,7 +488,7 @@ simply has no `helm/` folder.
 . infra (cert-manager, ClusterIssuer, Istio security policies, NetBird operator)
 . monitoring (Prometheus, exporters, Istio dashboards)
 . cicd (Harbor, Artifactory, Jenkins) — before `management`, see below
-. management (Backstage, Microcks, Keycloak)
+. management (Backstage, Keycloak)
 . kafka (Strimzi, Apicurio Registry, AKHQ)
 . backup (Vault backup CronJob)
 . spring
@@ -587,8 +587,6 @@ from step 2 (port-forward it first: `kubectl port-forward -n vault svc/vault 820
 |`argocd/data/keycloak`
 |`postgresql.username`, `postgresql.password`
 
-|`argocd/data/microcks`
-|`username`, `password` (MongoDB connection on `docker01`)
 |===
 
 NOTE: Everything is in Vault except Vault's own unseal keys. Those aren't in
@@ -652,6 +650,15 @@ kubectl apply -f kubernetes/kube-app-kafka.yaml       # 4. onwards: order doesn'
 kubectl apply -f kubernetes/kube-app-management.yaml
 kubectl apply -f kubernetes/kube-app-backup.yaml
 kubectl apply -f kubernetes/kube-app-spring.yaml
+----
+
+Microcks is not part of this order. It is its own domain (`kubernetes/microcks/`, with its own
+MongoDB inside the chart, no Vault secret needed) and is deployed or removed on its own, once `infra`
+is healthy:
+
+----
+kubectl apply -f kubernetes/kube-app-microcks.yaml
+kubectl delete -f kubernetes/kube-app-microcks.yaml
 ----
 
 Why the secrets are a separate app that comes first: some Helm apps need
