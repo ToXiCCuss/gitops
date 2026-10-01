@@ -10,6 +10,9 @@ services:
     dns:
       - 1.1.1.1
       - 9.9.9.9
+    # host.docker.internal points to the Docker host, where the SeaweedFS S3 listens
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "9898:9898"
     volumes:
