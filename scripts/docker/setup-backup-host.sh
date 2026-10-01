@@ -30,6 +30,7 @@ BACKUP_BUCKET="backups"
 DB_BUCKET="databases"
 VAULT_BUCKET="vault"
 REGENERATE=""
+NEW_KEYS=""
 S3_ENDPOINT="http://127.0.0.1:8333"
 PCLOUD_REMOTE="pCloud"
 RCLONE_CONF="/root/.config/rclone/rclone.conf"
@@ -121,6 +122,7 @@ gen_key() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 if [[ -f "$S3_CONFIG" && -f "$CREDENTIALS_FILE" && -z "$REGENERATE" ]]; then
     info "$S3_CONFIG exists, keeping it (use --regenerate-s3 to create new keys)"
 else
+    NEW_KEYS=1
     ADMIN_KEY=$(gen_key);     ADMIN_SECRET=$(gen_key)
     BACKREST_KEY=$(gen_key);  BACKREST_SECRET=$(gen_key)
     DATABASUS_KEY=$(gen_key); DATABASUS_SECRET=$(gen_key)
@@ -171,6 +173,12 @@ chmod 644 "$S3_CONFIG"
 
 # ── Buckets ───────────────────────────────────────────────────────────────────
 step "Creating the S3 buckets '$BACKUP_BUCKET', '$DB_BUCKET' and '$VAULT_BUCKET'"
+
+if [[ -n "$NEW_KEYS" ]]; then
+    warn "New S3 keys were generated. Restart the seaweedfs container so that it loads them, then run this script again (without --regenerate-s3) to create the buckets"
+    exit 0
+fi
+
 # shellcheck disable=SC1090
 source "$CREDENTIALS_FILE"
 
@@ -181,15 +189,31 @@ s3_rclone() {
         -e RCLONE_CONFIG_SEAWEED_ENDPOINT="$S3_ENDPOINT" \
         -e RCLONE_CONFIG_SEAWEED_ACCESS_KEY_ID="$ADMIN_ACCESS_KEY_ID" \
         -e RCLONE_CONFIG_SEAWEED_SECRET_ACCESS_KEY="$ADMIN_SECRET_ACCESS_KEY" \
-        "$RCLONE_IMAGE" "$@"
+        "$RCLONE_IMAGE" "$@" --retries 1 --low-level-retries 1 --timeout 30s --contimeout 10s
 }
 
-if s3_rclone mkdir "SEAWEED:$BACKUP_BUCKET" && s3_rclone mkdir "SEAWEED:$DB_BUCKET" && s3_rclone mkdir "SEAWEED:$VAULT_BUCKET"; then
-    success "Buckets exist on $S3_ENDPOINT"
-else
-    warn "SeaweedFS S3 at $S3_ENDPOINT is not reachable yet: deploy the seaweedfs project in Arcane, then run this script again"
-    exit 0
-fi
+for bucket in "$BACKUP_BUCKET" "$DB_BUCKET" "$VAULT_BUCKET"; do
+    if out=$(s3_rclone mkdir "SEAWEED:$bucket" 2>&1); then
+        success "Bucket '$bucket' exists on $S3_ENDPOINT"
+        continue
+    fi
+
+    echo "$out" | grep -E "ERROR|Failed" | tail -n 3 >&2 || true
+    case "$out" in
+        *"connection refused"*|*"connection reset"*|*"i/o timeout"*|*"no such host"*|*"EOF"*)
+            warn "SeaweedFS S3 at $S3_ENDPOINT is not reachable: deploy or start the seaweedfs project in Arcane (check 'docker logs seaweedfs'), then run this script again"
+            exit 0 ;;
+        *InvalidAccessKeyId*|*SignatureDoesNotMatch*|*AccessDenied*)
+            error "SeaweedFS does not accept the admin key of $CREDENTIALS_FILE: the server runs with other keys. Restart the seaweedfs container so that it reloads $S3_CONFIG; check that it is mounted as a file"
+            exit 1 ;;
+        *InvalidBucketName*)
+            error "S3 rejected the bucket name '$bucket' (3 to 63 characters, lower case)"
+            exit 1 ;;
+        *)
+            error "Cannot create the bucket '$bucket' on $S3_ENDPOINT, see the message above"
+            exit 1 ;;
+    esac
+done
 
 echo
 success "Host is prepared. Next: set the secrets in Arcane and deploy backrest, databasus and offsite-sync."
