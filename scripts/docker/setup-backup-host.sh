@@ -103,7 +103,8 @@ done
 
 # ── pCloud check ──────────────────────────────────────────────────────────────
 step "Checking the pCloud remote"
-if docker run --rm --dns "$DNS_SERVER" -v "$DATA_ROOT/offsite-sync/rclone:/config/rclone:ro" "$RCLONE_IMAGE" \n        lsd "$PCLOUD_REMOTE:/" --timeout 30s --contimeout 15s --retries 1 --low-level-retries 1 >/dev/null; then
+if docker run --rm --dns "$DNS_SERVER" -v "$DATA_ROOT/offsite-sync/rclone:/config/rclone:ro" "$RCLONE_IMAGE" \
+        lsd "$PCLOUD_REMOTE:/" --timeout 30s --contimeout 15s --retries 1 --low-level-retries 1 >/dev/null; then
     success "pCloud remote works"
 else
     error "Cannot list $PCLOUD_REMOTE:/ - check the error above: DNS/network, wrong region (eu/us) or an expired token"
