@@ -8,9 +8,9 @@
 #                               [--s3-endpoint http://127.0.0.1:8333] [--dns 1.1.1.1]
 #
 # Creates the pCloud remote in rclone.conf if it is missing (token from `rclone authorize "pcloud"`).
-# Maintains the SeaweedFS S3 identities (admin, backrest, databasus, vault, pelican, offsite-sync) in
+# Maintains the SeaweedFS S3 identities (admin, backrest, databasus, vault, pelican, netbird, offsite-sync) in
 # /root/docker/seaweedfs-s3.json and writes the keys of NEW identities to /root/backup-credentials.env.
-# Existing identities and keys are never changed, so new ones (and buckets) can be added at any time;
+# Existing keys are never changed (rights of existing identities are kept up to date), so new ones (and buckets) can be added at any time;
 # --regenerate-s3 starts over with new keys for all. Needs jq. Run it before deploying seaweedfs,
 # then again afterwards to create the buckets (it is idempotent).
 # =============================================================================
@@ -32,8 +32,10 @@ BACKUP_BUCKET="backups"
 DB_BUCKET="databases"
 VAULT_BUCKET="vault"
 PELICAN_BUCKET="pelican"
+NETBIRD_BUCKET="netbird"
 REGENERATE=""
 NEW_KEYS=""
+S3_CHANGED=""
 S3_ENDPOINT="http://127.0.0.1:8333"
 PCLOUD_REMOTE="pCloud"
 RCLONE_CONF="/root/.config/rclone/rclone.conf"
@@ -142,7 +144,15 @@ fi
 ensure_identity() {
     local name="$1" actions="$2" key secret prefix
     if jq -e --arg n "$name" '.identities[] | select(.name == $n)' "$S3_CONFIG" >/dev/null; then
-        info "Identity '$name' exists, keys unchanged"
+        # keep the keys, but bring the rights up to date (e.g. a new bucket for an existing identity)
+        if [[ "$(jq -c --arg n "$name" '.identities[] | select(.name == $n) | .actions' "$S3_CONFIG")" != "$(echo "$actions" | jq -c .)" ]]; then
+            jq --arg n "$name" --argjson a "$actions" '(.identities[] | select(.name == $n) | .actions) = $a' \
+                "$S3_CONFIG" > "$S3_CONFIG.tmp" && mv "$S3_CONFIG.tmp" "$S3_CONFIG"
+            S3_CHANGED=1
+            success "Identity '$name': rights updated, keys unchanged"
+        else
+            info "Identity '$name' exists, keys unchanged"
+        fi
         return
     fi
     key=$(gen_key); secret=$(gen_key)
@@ -164,16 +174,19 @@ bucket_actions() {
 }
 
 ensure_identity admin '["Admin", "Read", "Write", "List", "Tagging"]'
-ensure_identity backrest "$(bucket_actions "$BACKUP_BUCKET" "$VAULT_BUCKET")"
+ensure_identity backrest "$(bucket_actions "$BACKUP_BUCKET" "$VAULT_BUCKET" "$NETBIRD_BUCKET")"
 ensure_identity databasus "$(bucket_actions "$DB_BUCKET")"
 ensure_identity vault "$(bucket_actions "$VAULT_BUCKET")"
 ensure_identity pelican "$(bucket_actions "$PELICAN_BUCKET")"
+ensure_identity netbird "$(bucket_actions "$NETBIRD_BUCKET")"
 ensure_identity offsite-sync '["Read", "List"]'
 umask 022
 
 if [[ -n "$NEW_KEYS" ]]; then
-    warn "Copy the new keys from $CREDENTIALS_FILE to Arcane (and Databasus/Pelican), then delete the file"
-    warn "SeaweedFS must be (re)started to load the new identities"
+    warn "Copy the new keys from $CREDENTIALS_FILE to Arcane (and Databasus/Pelican/NetBird), then delete the file"
+fi
+if [[ -n "$NEW_KEYS" || -n "$S3_CHANGED" ]]; then
+    warn "SeaweedFS must be (re)started to load the new identities and rights"
 fi
 
 # The seaweedfs container drops to the user "seaweed", root-only (600) would be "permission denied".
@@ -181,10 +194,10 @@ fi
 chmod 644 "$S3_CONFIG"
 
 # ── Buckets ───────────────────────────────────────────────────────────────────
-step "Creating the S3 buckets '$BACKUP_BUCKET', '$DB_BUCKET', '$VAULT_BUCKET' and '$PELICAN_BUCKET'"
+step "Creating the S3 buckets '$BACKUP_BUCKET', '$DB_BUCKET', '$VAULT_BUCKET', '$PELICAN_BUCKET' and '$NETBIRD_BUCKET'"
 
-if [[ -n "$NEW_KEYS" ]]; then
-    warn "New S3 identities were created. Restart the seaweedfs container so that it loads them, then run this script again to create the buckets"
+if [[ -n "$NEW_KEYS" || -n "$S3_CHANGED" ]]; then
+    warn "New S3 identities or rights were created. Restart the seaweedfs container so that it loads them, then run this script again to create the buckets"
     exit 0
 fi
 
@@ -201,7 +214,7 @@ s3_rclone() {
         "$RCLONE_IMAGE" "$@" --retries 1 --low-level-retries 1 --timeout 30s --contimeout 10s
 }
 
-for bucket in "$BACKUP_BUCKET" "$DB_BUCKET" "$VAULT_BUCKET" "$PELICAN_BUCKET"; do
+for bucket in "$BACKUP_BUCKET" "$DB_BUCKET" "$VAULT_BUCKET" "$PELICAN_BUCKET" "$NETBIRD_BUCKET"; do
     if out=$(s3_rclone mkdir "SEAWEED:$bucket" 2>&1); then
         success "Bucket '$bucket' exists on $S3_ENDPOINT"
         continue

@@ -40,7 +40,9 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 NETBIRD_DIR="${NETBIRD_DIR:-/opt/netbird}"
-RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-rclone:pCloud:/Backups/netbird}"
+# Local SeaweedFS S3. Older snapshots are in rclone:pCloud:/Backups/netbird (set RESTIC_REPOSITORY)
+RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-s3:http://127.0.0.1:8333/netbird/restic}"
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/root/restic}"
 
 # ── 1. Check Dependencies ─────────────────────────────────────────────────────

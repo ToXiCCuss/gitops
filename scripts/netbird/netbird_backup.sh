@@ -17,7 +17,9 @@
 #
 # Optional overrides in /etc/netbird-backup.cred:
 #   NETBIRD_DIR, DISCORD_WEBHOOK_URL, DISCORD_USER_ID, RESTIC_REPOSITORY,
-#   RESTIC_PASSWORD_FILE, BACKUP_DIR, RESTIC_KEEP_DAILY/WEEKLY/MONTHLY
+#   RESTIC_PASSWORD_FILE, BACKUP_DIR, RESTIC_KEEP_DAILY/WEEKLY/MONTHLY,
+#   PUSH_URL (Uptime Kuma push monitor), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#   (keys of the S3 identity "netbird")
 #
 # Environment (used by netbird_upgrade.sh):
 #   KEEP_STAGING_DIR  move the staged backup there instead of deleting it
@@ -100,7 +102,9 @@ DISCORD_ERROR_TITLE="NetBird Backup"
 
 NETBIRD_DIR="${NETBIRD_DIR:-/opt/netbird}"
 
-RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-rclone:pCloud:/Backups/netbird}"
+# Local SeaweedFS S3 of this Docker host (offsite sync copies it to pCloud)
+RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-s3:http://127.0.0.1:8333/netbird/restic}"
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/root/restic}"
 RESTIC_KEEP_DAILY="${RESTIC_KEEP_DAILY:-7}"
 RESTIC_KEEP_WEEKLY="${RESTIC_KEEP_WEEKLY:-4}"
@@ -112,9 +116,15 @@ STAGING_DIR="$BACKUP_DIR/latest"
 CONFIG_FILES=(docker-compose.yml config.yaml dashboard.env proxy.env traefik-dynamic.yaml
               management.json turnserver.conf relay.env zitadel.env .env)
 
+# Report to the Uptime Kuma push monitor (optional). The URL may contain the query Kuma shows, it is cut off
+push_status() {
+    [ -n "${PUSH_URL:-}" ] && curl -fsS -m 10 "${PUSH_URL%%\?*}?status=$1&msg=$2" >/dev/null || true
+}
+
 fail() {
     echo "[ERROR] $1"
     send_discord_error "$1"
+    push_status down backup-failed
     exit 1
 }
 
@@ -233,3 +243,4 @@ DURATION=$(format_duration $DURATION_SECONDS)
 
 echo "[INFO] NetBird backup completed successfully in $DURATION."
 send_notification "$DISCORD_ERROR_TITLE" "Backup completed successfully" "success" "$DURATION"
+push_status up OK

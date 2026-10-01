@@ -276,6 +276,7 @@ flowchart LR
     backrest -->|bucket backups| s3[("SeaweedFS S3")]
     databasus -->|bucket databases| s3
     vaultbackup -->|bucket vault| s3
+    netbird["NetBird server (netbird_backup.sh, restic)"] -->|bucket netbird| s3
     s3 -->|read-only identity| sync["offsite-sync (rclone, 05:00 UTC)"]
   end
   sync -->|"rclone sync, deleted files go to Backups-deleted"| pcloud(["pCloud"])
@@ -289,6 +290,7 @@ flowchart LR
 |Backrest |Physical backups (Docker volumes), browse, check and restore snapshots |restic, repository `backups/docker`. Also used to check and restore the Vault repository
 |Databasus |Logical PostgreSQL backups (`pg_dump`) |bucket `databases`
 |vault-backup |Daily Raft snapshot of Vault |Periodic token that may only read the snapshot, bucket `vault`, repository `vault/raft`, keeps its own retention
+|NetBird backup |Config and database of the self-hosted NetBird server (`scripts/netbird/`) |bucket `netbird`, repository `netbird/restic`, keeps its own retention
 |Offsite sync |Copies the whole S3 to pCloud and verifies the copy |Keeps deleted or overwritten files 30 days in `Backups-deleted`
 |===
 
@@ -305,6 +307,7 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 |Vault |14 |8 |12 |`vault-backup` (`restic forget --prune` after each run)
 |PostgreSQL dumps |14 |8 |6 |Databasus, per database
 |Docker volumes |7 |4 |6 |Backrest plan (retention policy)
+|NetBird |7 |4 |6 |`netbird_backup.sh` (`RESTIC_KEEP_*` in `/etc/netbird-backup.cred`)
 |Deleted files in pCloud |30 days | | |`RETENTION_DAYS` of the offsite sync
 |===
 
@@ -319,7 +322,7 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 |`rclone check --one-way --size-only` S3 -> pCloud after every sync (S3 and pCloud have no common hash, so it compares sizes). A mismatch fails the sync
 
 |Failed or missing jobs
-|Offsite sync and `vault-backup` report to an Uptime Kuma push monitor (alarm when the heartbeat stays out). Databasus has its own notifications, add one to Backrest plans as a hook
+|Offsite sync, `vault-backup` and `netbird_backup.sh` (`PUSH_URL`) report to an Uptime Kuma push monitor (alarm when the heartbeat stays out). Databasus has its own notifications, add one to Backrest plans as a hook
 
 |Backups can be restored
 |By hand once per quarter: restore the latest PostgreSQL dump into a scratch database and a Vault snapshot, both from *pCloud*
@@ -331,6 +334,7 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 
 |01:00 |Databasus (PostgreSQL dumps)
 |02:30 |vault-backup (Vault snapshot)
+|02:45 |`netbird_backup.sh` (cron, local time of the host; stops NetBird for a moment)
 |03:00 |Backrest plan for the Docker volumes
 |Sunday 03:30 |Backrest prune and check of both repositories
 |05:00 |Offsite sync with check, runs when nothing writes to the S3 any more
@@ -350,7 +354,7 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 sudo scripts/docker/setup-backup-host.sh
 ----
 . Deploy the `seaweedfs` project in Arcane.
-. Run the script again, now it creates the buckets `backups`, `databases`, `vault` and `pelican`.
+. Run the script again, now it creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird`.
 . Put the secrets into the Arcane project environments (`.env`), the values come from
   `/root/backup-credentials.env`:
 +
@@ -470,6 +474,10 @@ SeaweedFS S3, checks the repositories and is used to browse and restore snapshot
 Files of running databases are copied while they change. Uptime Kuma (SQLite) and the internal database of Databasus
 may be inconsistent in the snapshot. PostgreSQL itself is not part of this, Databasus backs it up.
 
+A fourth repository `netbird` (URI `s3:http://host.docker.internal:8333/netbird/restic`, the identity `backrest` also has this
+bucket) is added like `vault`: prune off (`netbird_backup.sh` runs `forget --prune` itself), check weekly. The password is the content of
+`/root/restic` on the NetBird server.
+
 Test it: "Backup now" on the plan, then "Check" on the repository and restore a file into `/restore`. Restoring from
 pCloud (repository `pcloud`) is done after the first offsite sync.
 
@@ -558,10 +566,11 @@ SeaweedFS is the local S3 staging for all backups. Access is controlled by separ
 |Identity |Bucket |Rights
 
 |`admin` |all |Admin (only for you, not used by containers)
-|`backrest` |`backups`, `vault` |Read, Write, List
+|`backrest` |`backups`, `vault`, `netbird` |Read, Write, List
 |`databasus` |`databases` |Read, Write, List
 |`vault` |`vault` |Read, Write, List
 |`pelican` |`pelican` |Read, Write, List (for the S3 backups of Pelican)
+|`netbird` |`netbird` |Read, Write, List (for `netbird_backup.sh`)
 |`offsite-sync` |all |Read, List (cannot change anything)
 |===
 
@@ -573,7 +582,7 @@ replaces all keys
 * Deploy the seaweedfs project in Arcane, then run the script again to create the buckets
 * Copy the keys from `/root/backup-credentials.env` into the Arcane environments (backrest, offsite-sync) and the Databasus storage, then delete the file
 * `Write` includes deleting objects in SeaweedFS, so a leaked `backrest` key can delete the local backups. pCloud keeps deleted files (`Backups-deleted`)
-* The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `databases`, `vault` and `pelican` on start (`-bucket=`)
+* The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird` on start (`-bucket=`)
 * Only the S3 port `8333` is published. The filer (`8888`) and the admin UI (`23646`) have no authentication and are not exposed
 
 === Setup Pelican S3 backups
@@ -585,6 +594,33 @@ on this bucket only) are created by the setup script. Settings for Pelican, the 
 * Access key and secret: `PELICAN_ACCESS_KEY_ID` and `PELICAN_SECRET_ACCESS_KEY` of `/root/backup-credentials.env`
 * The endpoint must be reachable from the Panel, from the Wings nodes and for downloads from the browser (the Panel hands
 out presigned URLs). The firewall must allow the Wings and the Panel to reach port 8333
+
+=== Setup NetBird backup
+
+The self-hosted NetBird server runs as a Docker Compose project on `docker01` (default `/opt/netbird`). The scripts in
+`scripts/netbird/` back it up, restore it and upgrade it with a rollback point:
+
+* `netbird_backup.sh`: stops NetBird for a moment, copies the config files, `/var/lib/netbird` (SQLite store and keys),
+CrowdSec data and certificates, starts NetBird again (also on errors), writes everything with restic to the
+repository `netbird/restic` on the local SeaweedFS S3 and applies the retention (7 daily, 4 weekly, 6 monthly). It reports
+to Uptime Kuma (`PUSH_URL`) and Discord. A PostgreSQL or MySQL store would have to be backed up separately
+* `netbird_restore.sh`, `netbird_upgrade.sh` (creates a pre-upgrade backup and a local rollback point), `netbird_rollback.sh`
+* `netbird_backup_setup.sh` installs them to `/usr/local/bin`, writes `/etc/netbird-backup.cred` and a cron job
+
+Set it up on `docker01`, the S3 is reached on `127.0.0.1:8333`, no NetBird is involved:
+
+. Add the identity and bucket `netbird`: run `scripts/docker/setup-backup-host.sh`, restart SeaweedFS and run it again. The keys
+  `NETBIRD_ACCESS_KEY_ID` and `NETBIRD_SECRET_ACCESS_KEY` are in `/root/backup-credentials.env`
+. Create an Uptime Kuma push monitor (heartbeat 26 hours)
+. Run the setup (installs restic if missing, asks for the S3 keys and the restic password, initialises the repository):
++
+----
+cd scripts/netbird
+sudo ./netbird_backup_setup.sh --push-url <push url> --run
+----
+. The restic password is in `/root/restic`, store it in your password manager (without it the backups are unreadable)
+. Test later with `sudo netbird_backup.sh`. Snapshots from before the move are in `rclone:pCloud:/Backups/netbird`
+  (set `RESTIC_REPOSITORY` for `netbird_restore.sh`)
 
 === Setup Vault backup
 
