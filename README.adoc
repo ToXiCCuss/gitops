@@ -459,7 +459,8 @@ SeaweedFS is the local S3 staging for all backups. Access is controlled by separ
 * Deploy the seaweedfs project in Arcane, then run the script again to create the buckets
 * Copy the keys from `/root/backup-credentials.env` into the Arcane environments (backrest, offsite-sync) and the Databasus storage, then delete the file
 * `Write` includes deleting objects in SeaweedFS, so a leaked `backrest` key can delete the local backups. pCloud keeps deleted files (`Backups-deleted`)
-* Only the S3 port `8333` is published. The filer (`8888`) has no authentication and is not exposed
+* The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `db` and `vault` on start
+* Only the S3 port `8333` is published. The filer (`8888`) and the admin UI (`23646`) have no authentication and are not exposed
 
 == Kubernetes
 
