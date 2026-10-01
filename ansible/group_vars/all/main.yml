@@ -7,6 +7,8 @@ mariadb_hosts: []
 postgresql_hosts:
    - docker01
 
+mongodb_hosts: []
+
 node_exporter_hosts: []
 
 # Add hostnames here once netbird_setup_key is set in the vault

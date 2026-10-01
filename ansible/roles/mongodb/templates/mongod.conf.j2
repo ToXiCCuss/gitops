@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+storage:
+  dbPath: /var/lib/mongodb
+systemLog:
+  destination: file
+  logAppend: true
+  path: /var/log/mongodb/mongod.log
+net:
+  port: 27017
+  bindIp: 0.0.0.0
+processManagement:
+  timeoutSecs: 0
+  pidFilePath: /var/run/mongodb/mongod.pid
+  fork: false
+security:
+  authorization: enabled
