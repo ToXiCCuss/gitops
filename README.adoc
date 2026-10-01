@@ -434,7 +434,7 @@ Databasus makes the logical database backups and writes them to the local Seawee
 * PostgreSQL 18 runs directly on `docker01` (Ansible role `postgresql`). Create the login role for Databasus once with
 `scripts/postgresql/backup_user_create.sh`: it gets `pg_read_all_data`, which covers all databases and schemas of the
 DBMS (the `ro` role of `user_create.sh` only sees the `public` schema of one database and would miss e.g. the `partman` schema).
-Connect with the address of the Docker host. The
+Connect with the host `host.docker.internal` (points to the Docker host, set in the compose file). The firewall of the host must allow the Docker network to reach port 5432, e.g. `ufw allow from 172.16.0.0/12 to any port 5432 proto tcp`. The
 `pg_dump` of Databasus must be version 18 or newer. A restore needs the extensions `pg_cron` and `pg_partman` on the target server
 * The role allows connections from every address (`pg_hba.conf` `0.0.0.0/0`, `listen_addresses = '*'`). Restrict it with a firewall
 
