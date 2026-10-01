@@ -265,8 +265,8 @@ All backups of the Docker host go to a local SeaweedFS S3 first and from there o
 Every service is its own Compose project (Arcane project), the details are in the
 `Setup ...` sections below.
 
-[mermaid]
-....
+[source,mermaid]
+----
 flowchart LR
   subgraph host["Docker host"]
     vol["Docker volumes"] -->|read-only| backrest["Backrest (restic)"]
@@ -276,7 +276,7 @@ flowchart LR
     s3 -->|read-only identity| sync["offsite-sync (rclone, 04:00 UTC)"]
   end
   sync -->|"rclone sync, deleted files go to Backups-deleted"| pcloud(["pCloud"])
-....
+----
 
 [cols="1,1,2"]
 |===
