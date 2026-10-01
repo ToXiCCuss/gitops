@@ -1,6 +1,6 @@
 # NetBird groups. The access policies between them are created by hand in the
 # dashboard (the operator writes none, NetBird is deny-by-default) - see
-# kubernetes/README.adoc, section 5.
+# README.adoc, Kubernetes > Deployment Guide > NetBird configuration.
 #
 #   k8s-admins          peers/users that may reach every app (policy -> kubernetes-services)
 #   kubernetes-services every NetworkResource is in this group

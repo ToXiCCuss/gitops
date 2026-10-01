@@ -4,7 +4,7 @@
 # know the NetBird domain. Forward only this zone to the NetBird resolver of the
 # node (k8sdev01 = NetBird IP 100.67.2.1, port 53); everything else is untouched.
 # Pods then reach NetBird peers through the node's NetBird tunnel (the node has to
-# be a peer and a policy has to allow it, see kubernetes/README.adoc).
+# be a peer and a policy has to allow it, see README.adoc, Kubernetes > NetBird configuration).
 #
 # k3s imports /etc/coredns/custom/*.server from this ConfigMap. If CoreDNS was
 # already running when the ConfigMap first appears, restart it once:

@@ -3,7 +3,7 @@
     One-time Vault initialization: runs `vault operator init`, unseals Vault,
     and applies the vault-unsealer-config Secret directly via kubectl
     (bypassing AVP, since Vault can't read its own unseal keys from itself
-    before it's unsealed the first time - see kubernetes/README.adoc).
+    before it's unsealed the first time - see README.adoc).
     Nothing is written to disk: the root token and unseal keys are only
     shown in the console, and the Secret is piped straight into kubectl.
 

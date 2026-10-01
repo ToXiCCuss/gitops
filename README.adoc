@@ -1,9 +1,357 @@
-= GitOps Kubernetes
-:sectnums:
+= GitOps
+:toc: left
+:toclevels: 3
 
-== Setup
+Infrastructure as code for the two servers (a Docker host and a k3s node).
 
-=== ArgoCD
+[cols="1,3"]
+|===
+|Folder |Content
+
+|`ansible/`
+|Host setup with Ansible: base system, Docker, NetBird, k3s registry mirror, database servers, node exporter, Arcane. Secrets in an ansible-vault file.
+
+|`docker/`
+|One Docker Compose project per service on the Docker host (Arcane, Backrest, Databasus, SeaweedFS, offsite sync, Uptime Kuma, ...). Images are pinned by digest and updated by Renovate.
+
+|`kubernetes/`
+|ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, backup, spring).
+
+|`terraform/`
+|NetBird account configuration (DNS zone and access policy).
+
+|`scripts/`
+|Helper scripts: Ansible secrets, backup host setup, Vault (PowerShell), database administration, Linux benchmarks.
+|===
+
+== Ansible
+
+Run everything in this section from the `ansible/` folder.
+
+=== Install Ansible
+
+Install Ansible and Git on Debian:
+
+[source,bash]
+----
+sudo apt update
+sudo apt install -y ansible git && git clone https://github.com/ToXiCCuss/gitops.git
+----
+
+Then switch to the repository and install the required collections:
+
+[source,bash]
+----
+cd gitops-ansible
+ansible-galaxy collection install -r requirements.yml
+----
+
+=== Dry Run
+
+Before the actual execution, check the playbook in check mode. This does not make any changes:
+
+[source,bash]
+----
+ansible-playbook -i inventory.ini site.yml --check --diff
+----
+
+=== Apply Changes
+
+If the dry run completes without unexpected errors, run the playbook:
+
+[source,bash]
+----
+ansible-playbook -i inventory.ini site.yml
+----
+
+=== Secrets (ansible-vault)
+
+Secrets do *not* live in `group_vars/all/main.yml` but in
+`group_vars/all/secrets.yml`. That file is encrypted with `ansible-vault`
+(AES256) and *is committed to Git* in encrypted form. Ansible loads it
+automatically, so no playbook or role needs changing.
+
+Managed secrets:
+
+[cols="2,2,3"]
+|===
+|Variable |Used by |Source
+
+|`netbird_setup_key`
+|`roles/netbird`
+|NetBird dashboard -> Setup Keys
+
+|`k3s_registries_harbor_password`
+|`roles/k3s_registries`
+|Harbor account / robot account
+
+|`arcane_encryption_key`
+|`roles/arcane`
+|existing `override.env` - see the Arcane section below
+
+|`arcane_jwt_secret`
+|`roles/arcane`
+|existing `override.env` - see the Arcane section below
+|===
+
+==== Per-host values
+
+Values are stored per scope in the nested dict `vault_secrets`:
+
+[source,yaml]
+----
+vault_secrets:
+  all:                                        # fallback for every host
+    k3s_registries_harbor_password: ...
+  docker01:                                   # overrides "all" on that host
+    netbird_setup_key: ...
+  k8sdev01:
+    netbird_setup_key: ...
+----
+
+The very same layering exists in plain text for *non-secret* per-host
+settings, in `host_config` in `group_vars/all/main.yml`:
+
+[source,yaml]
+----
+host_config:
+  all: {}
+  docker01:
+    arcane_app_url: "https://arcane01.proxy.rjst.de"
+----
+
+`group_vars/all/main.yml` merges the `all` layer with the current host's layer
+once (`_secrets` / `_config`) and resolves each variable in this order:
+
+. `vault_secrets[<ansible_hostname>][<name>]` - host specific
+. `vault_secrets["all"][<name>]` - shared by every host
+. `""` - the role's `assert` task reports the missing value
+
+NOTE: *Why not `host_vars/`?* `inventory.ini` only knows `localhost`, and Ansible
+resolves `host_vars/` by _inventory_ name - `host_vars/docker01.yml` would
+never be loaded. `ansible_hostname` is a fact and holds the real hostname,
+which is also what the `*_hosts` gates compare against.
+
+Note that this is organisation, not isolation: the encrypted file is in Git and
+every host with `.vault_pass` can decrypt *all* scopes. Real per-host
+separation would need several vault IDs (`vault_identity_list`).
+
+==== First setup on a host
+
+[source,bash]
+----
+../scripts/ansible/setup-secrets.sh
+----
+
+Without arguments the script uses *this machine's own short hostname* as the
+scope (`hostname -s`, falling back to `uname -n`) - that is exactly the key
+`ansible_hostname` resolves to later, since the playbook runs locally on each
+host. It then asks for each secret; input is not echoed. It writes the
+encrypted `group_vars/all/secrets.yml` and creates the vault password file
+`ansible/.vault_pass` (`chmod 600`, gitignored). On a fresh setup it can
+generate a random vault password - *store it in your password manager*,
+otherwise the committed `secrets.yml` is unreadable everywhere else.
+
+Afterwards commit the encrypted file:
+
+[source,bash]
+----
+git add ansible/group_vars/all/secrets.yml && git commit -m "Update Ansible vault secrets"
+----
+
+==== Additional host (secrets.yml already in Git)
+
+Only the password file is missing there:
+
+[source,bash]
+----
+../scripts/ansible/setup-secrets.sh --password
+----
+
+The script asks for the vault password and verifies it against the checked-out
+`secrets.yml` before writing `.vault_pass`.
+
+==== Day-to-day
+
+[source,bash]
+----
+../scripts/ansible/setup-secrets.sh                    # THIS host (auto-detected)
+../scripts/ansible/setup-secrets.sh --scope all        # shared by every host
+../scripts/ansible/setup-secrets.sh --scope docker01   # another host
+../scripts/ansible/setup-secrets.sh --view             # show the decrypted content
+../scripts/ansible/setup-secrets.sh --edit             # raw edit in $EDITOR
+../scripts/ansible/setup-secrets.sh --rekey            # rotate the vault password
+----
+
+At each prompt: Enter keeps the current value, `-` removes the entry. A removed
+host entry falls back to the value from scope `all`. Scopes that run empty are
+dropped from the file.
+
+The script prints the scope it is about to write to, and warns when the detected
+hostname appears in none of the `*_hosts` lists in `main.yml` - usually a sign
+that the host has not been wired into the playbook yet.
+
+==== Adding a new secret
+
+. Add the variable with an empty default to the role's `defaults/main.yml`.
+. Append its name to `SECRET_NAMES` and a description to `SECRET_HINTS` in
+  `scripts/ansible/setup-secrets.sh`.
+. Add the host -> all -> `""` look-up to the _Secrets_ block in
+  `group_vars/all/main.yml` (copy an existing one).
+. Run the script - existing values are preserved.
+
+NOTE: `ansible.cfg` sets `vault_password_file = .vault_pass`. If that file
+is missing, _every_ `ansible-playbook` run aborts with
+`The vault password file .vault_pass was not found` - run the script first.
+Tasks that use secrets already have `no_log: true`, so the values do not show
+up in the output or in `--check --diff`.
+
+=== Arcane
+
+`roles/arcane` deploys the Arcane Docker UI from `docker/arcane/`. It runs only
+on the hosts listed in `arcane_hosts` (`group_vars/all/main.yml`), which is
+empty by default.
+
+The role copies `docker-compose.yml` and `default.env` to `/root/docker/arcane`
+*verbatim* - the compose file is deliberately not a Jinja template, so
+Renovate keeps updating the pinned image digest. Only `override.env` is
+rendered, from `arcane_app_url` plus the two vault secrets, with `mode 0600`
+and `no_log: true`. Because `docker-compose.yml` loads `override.env` after
+`default.env`, those values win.
+
+==== Enabling it
+
+[source,yaml]
+----
+# group_vars/all/main.yml
+arcane_hosts:
+   - docker01
+
+host_config:
+   docker01:
+     arcane_app_url: "https://arcane01.proxy.rjst.de"
+----
+
+[source,bash]
+----
+# on docker01 itself - the scope is detected automatically
+../scripts/ansible/setup-secrets.sh
+----
+
+WARNING: On a host where Arcane already runs, copy the existing keys - do not
+generate new ones. `ENCRYPTION_KEY` decrypts Arcane's stored data; a new key
+makes it unreadable. Read them off the host first:
+
+[source,bash]
+----
+cat <repo checkout>/docker/arcane/override.env
+----
+
+Note the path: `start.sh` generates `override.env` next to itself, so the file
+sits in the *repository checkout* (e.g. `/root/gitops/docker/arcane/`), not
+below `/root/docker/arcane/`.
+
+Putting them in the vault is an improvement over `start.sh`: so far the key
+existed only on that host, now it survives a rebuild.
+
+`docker/arcane/start.sh` still works as a manual fallback. Its `override.env` is
+gitignored, since it holds both secrets in plain text.
+
+==== Taking over a stack that start.sh already deployed
+
+`start.sh` runs `docker compose up` from the repository checkout, so an existing
+Arcane uses that directory as its compose project while the role uses
+`arcane_dir` (`/root/docker/arcane`). Both compose files set
+`container_name: arcane`, so the role would hit `container name /arcane is
+already in use`. It therefore checks for this and aborts with an explanatory
+message instead.
+
+Stop the old stack once, then let the role take over:
+
+[source,bash]
+----
+cd <repo checkout>/docker/arcane && docker compose down
+----
+
+The data is not affected - `docker-compose.yml` mounts
+`/root/docker/arcane/data` and `/root/docker/arcane/backups` by absolute path,
+so it already lives where the role deploys to.
+
+== Docker
+
+=== Setup Arcane
+
+* Clone this repository to your local machine.
+* Add in arcane folder override.env with the following content and replace the values with your own:
++
+----
+APP_URL=https://arcane.vpn.rjst.de
+ENCRYPTION_KEY=default-encryption-key
+JWT_SECRET=default-jwt-secret
+----
+* docker-compose up -d in the arcane folder
+
+=== Setup Backrest
+
+Backrest is the web UI for restic on the Docker host. It backs up the Docker volumes read-only
+to the local SeaweedFS S3 and is used to browse and restore snapshots.
+
+* Secrets are set in `.env` (in Arcane: project environment). `default.env` lists all variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (SeaweedFS S3) and `RESTIC_PASSWORD`
+* `docker compose up -d` in the backrest folder
+* Open `http://<docker-host>:9898` (only reachable through NetBird, never publish it) and create the admin user
+* Copy the pCloud remote (`rclone.conf`) to `/root/docker/backrest/rclone/rclone.conf` to restore from pCloud
+* Repos:
+** `s3:http://<docker-host>:8333/backups/docker` (backup target, keys of the `backrest` identity)
+** `rclone:pCloud:/Backups/...` (offsite, restore only)
+* Plan `/userdata/docker`: exclude `seaweedfs` and database data directories
+* Restore only into `/restore`, then move the data into place
+* Store the restic password and `rclone.conf` outside the server as well (password manager)
+
+=== Setup Databasus
+
+Databasus makes the logical database backups and writes them to the local SeaweedFS S3.
+
+* `docker compose up -d` in the databasus folder
+* Open `http://<docker-host>:4005`, add the databases and the S3 storage (`http://<docker-host>:8333`, bucket `db`, keys of the `databasus` identity)
+
+=== Setup Offsite Sync
+
+Nightly `rclone sync` of the SeaweedFS S3 to pCloud. Deleted or overwritten files are moved to
+`Backups-deleted/<date>` and kept for `RETENTION_DAYS`. This is the only container that holds the
+pCloud credentials.
+
+* Create the pCloud remote on the docker host with `rclone config` and copy the `rclone.conf`
+to `/root/docker/offsite-sync/rclone/rclone.conf`
+* Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (keys of the read-only `offsite-sync` identity) and `PUSH_URL` (Uptime Kuma push monitor, heartbeat 26h) in the Arcane project environment
+* `docker compose up -d` in the offsite-sync folder
+
+=== Setup SeaweedFS
+
+SeaweedFS is the local S3 staging for all backups. Access is controlled by separate identities in
+`/root/docker/seaweedfs-s3.json` (mounted read-only, contains secrets, never in git):
+
+[cols="1,1,1"]
+|===
+|Identity |Bucket |Rights
+
+|`admin` |all |Admin (only for you, not used by containers)
+|`backrest` |`backups` |Read, Write, List
+|`databasus` |`db` |Read, Write, List
+|`offsite-sync` |all |Read, List (cannot change anything)
+|===
+
+* Run `scripts/docker/setup-backup-host.sh` *before* deploying: it generates the identities and keys
+(`/root/backup-credentials.env`) and prepares the host
+* Deploy the seaweedfs project in Arcane, then run the script again to create the buckets
+* Copy the keys from `/root/backup-credentials.env` into the Arcane environments (backrest, offsite-sync) and the Databasus storage, then delete the file
+* `Write` includes deleting objects in SeaweedFS, so a leaked `backrest` key can delete the local backups. pCloud keeps deleted files (`Backups-deleted`)
+* Only the S3 port `8333` is published. The filer (`8888`) has no authentication and is not exposed
+
+== Kubernetes
+
+=== Setup
+
+==== ArgoCD
 
 ----
 helm repo add argo https://argoproj.github.io/argo-helm
@@ -56,9 +404,9 @@ installation are deliberately kept outside of GitOps (`istioctl` /
 `helm install` per above), since both carry too much blast radius for
 automated sync.
 
-== Deployment Guide
+=== Deployment Guide
 
-=== 0. Prerequisites (outside of GitOps, done once manually)
+==== 0. Prerequisites (outside of GitOps, done once manually)
 
 . Kubernetes cluster reachable, `kubectl`/`helm` configured against it.
 . Istio installed via `istioctl` (base + istiod + ingressgateway) — still
@@ -71,14 +419,14 @@ automated sync.
   operator.
 
 
-=== 1. Bootstrap ArgoCD
+==== 1. Bootstrap ArgoCD
 
 ----
 helm repo add argo https://argoproj.github.io/argo-helm
 helm install argocd argo/argo-cd -n argocd --values argocd-values.yaml --create-namespace
 ----
 
-=== 2. Deploy Vault standalone
+==== 2. Deploy Vault standalone
 
 ----
 kubectl apply -f kubernetes/kube-vault.yaml
@@ -88,7 +436,7 @@ Vault is deliberately *not* part of a domain app: everything that needs
 AVP depends on Vault being up, unsealed and populated, so Vault is deployed
 on its own first and populated (next step) before any Secret is rendered.
 
-=== 3. Populate Vault secrets
+==== 3. Populate Vault secrets
 
 The `avp-helm`/`avp` ArgoCD CMP plugins read secrets from Vault at sync time —
 if a path is missing, that Application's manifests simply fail to render.
@@ -144,7 +492,7 @@ creates them via `vault operator init`, unseals Vault, and applies the
 keys are only printed to the console, once - it waits for Enter so you can
 copy them into your password manager. They are not saved anywhere else.
 
-==== Kubernetes auth (required)
+===== Kubernetes auth (required)
 
 Run `scripts/vault/configure-vault-auth.ps1` once, after `init-vault.ps1`
 (it needs `kubectl` against the cluster and a Vault token with admin rights,
@@ -170,7 +518,7 @@ later step, app by app.
 .\scripts\vault\configure-vault-auth.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <token>
 ----
 
-==== Vault backups
+===== Vault backups
 
 A `CronJob` (`kubernetes/backup/kubectl/kube-vault-backup.yaml`, daily at 03:00)
 takes a Raft snapshot and pushes it to the same restic/pCloud repository
@@ -184,7 +532,7 @@ Kubernetes auth, no static token), and reads the restic password + your
 "Vault backup" prompt. `scripts/vault/vault_restore.sh` still works
 unchanged for restores, since it just reads from the same restic repo.
 
-=== 4. Deploy the secrets, then the domains, in this order
+==== 4. Deploy the secrets, then the domains, in this order
 
 ----
 kubectl apply -f kubernetes/kube-app-secrets.yaml     # 0. renders the Secrets from Vault via AVP, must be healthy before infra
@@ -212,7 +560,7 @@ objects.
 Watch `infra` reach Healthy in the ArgoCD UI/CLI before applying the rest —
 nothing else will work without its ClusterIssuer and cert-manager.
 
-=== 5. NetBird configuration
+==== 5. NetBird configuration
 
 What lives in Git, and what doesn't:
 
@@ -283,7 +631,7 @@ distribution group of the zone, and the policy `<app>-users` -> `k8s-<app>`
 (`harbor.k8sdev.rjst.de` has a valid certificate, so k3s needs no
 insecure-registry setting): put the node peers into `harbor-users`.
 
-==== HTTPS entry for internal apps (`istio-internal`)
+===== HTTPS entry for internal apps (`istio-internal`)
 
 Apps are reached as `https://<app>.k8sdev.rjst.de` (port 443, Let's Encrypt
 wildcard `*.k8sdev.rjst.de` via the `letsencrypt` ClusterIssuer, DNS-01 at
@@ -297,7 +645,7 @@ only accepts that app's hostname, so per-app groups stay meaningful. Vault is
 the first app there. The earlier direct `NetworkResource` on port 8200 is parked
 in `kubernetes/parked/`, so the HTTPS route is the only way in.
 
-==== kubectl through NetBird (API server proxy)
+===== kubectl through NetBird (API server proxy)
 
 `infra/kubectl/kube-netbird-apiproxy.yaml` deploys the operator's `ClusterProxy` `k8sdev`
 (https://docs.netbird.io/use-cases/kubernetes/api-server-proxy). The proxy pod is a NetBird peer
@@ -326,7 +674,7 @@ kubectl --context k8sdev get pods -A
 The proxy service account may impersonate any user and group, so the proxy pod is as sensitive as
 `cluster-admin`.
 
-=== 6. Verify
+==== 6. Verify
 
 ----
 kubectl get applications -n argocd
@@ -338,3 +686,59 @@ kubectl get networkresources -A
 All `Application` rows should show `Synced`/`Healthy`, and each
 `NetworkResource` should have a matching entry in the NetBird dashboard
 under the `k8sdev.rjst.de` zone.
+
+== Terraform (NetBird)
+
+Manages the self-hosted NetBird account-level things that the Kubernetes
+operator doesn't (or can't) do. This is the officially maintained provider
+(`registry.terraform.io/netbirdio/netbird`), separate from GitOps/ArgoCD -
+nothing here is applied automatically, you run it yourself. Two independent
+configs, because they have to run at different times:
+
+[cols="1,2,2"]
+|===
+|Folder |What |When
+
+|`dns/`
+|The `k8sdev.rjst.de` DNS zone.
+|*Before* `infra` syncs the `NetworkRouter`, otherwise the router fails.
+Creating the zone in the dashboard instead (`DNS > Zones > Add Zone`) works
+just as well.
+
+|`access/`
+|The access policy: `kubernetes-clients` may reach `kubernetes-services` on
+the app ports.
+|*After* `infra` has synced - the two groups are created by the NetBird
+operator (`kubernetes/infra/kubectl/kube-netbird-access.yaml`), and the config
+looks them up by name.
+|===
+
+The operator's own `NBPolicy` resource is not used: it only derives ports from
+the deprecated ingress flow and creates nothing for `NetworkResource`s.
+
+NOTE: don't add `netbird_reverse_proxy_service` resources for the internal
+apps. Provider v0.0.10 has no way to mark a service private (NetBird-only),
+so it would be reachable from the internet.
+
+=== Token and URL
+
+Never put the PAT in a `.tf` file or pass it with `-var` (ends up in shell
+history). The provider reads both values natively from env vars. The URL is
+your self-hosted NetBird management URL (the provider's default points at
+NetBird Cloud, not at your server):
+
+----
+$env:NB_PAT = "<your netbird PAT>"
+$env:NB_MANAGEMENT_URL = "https://<your netbird domain>"
+----
+
+=== Run
+
+----
+terraform -chdir=terraform/access init
+terraform -chdir=terraform/access plan
+terraform -chdir=terraform/access apply
+----
+
+Same for `terraform/dns`. State stays local (`terraform.tfstate` is
+git-ignored) - keep it, or a second `apply` will try to create things again.
