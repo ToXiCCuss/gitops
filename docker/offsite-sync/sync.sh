@@ -24,6 +24,18 @@ run_sync() {
     rclone rmdirs "$PCLOUD_REMOTE:$PCLOUD_DELETED" --leave-root || return 1
 }
 
+# One run right now and exit with its result (for tests): docker exec offsite-sync sh /sync.sh now
+if [ "${1:-}" = "now" ]; then
+    if run_sync; then
+        echo "Sync finished"
+        push up OK
+        exit 0
+    fi
+    echo "Sync FAILED" >&2
+    push down sync-failed
+    exit 1
+fi
+
 while true; do
     h=$(date +%H); m=$(date +%M); s=$(date +%S)
     now=$(( ${h#0} * 3600 + ${m#0} * 60 + ${s#0} ))
