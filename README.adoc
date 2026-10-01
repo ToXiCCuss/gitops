@@ -259,6 +259,76 @@ gitignored, since it holds both secrets in plain text.
 
 == Docker
 
+=== Backups
+
+All backups of the Docker host go to a local SeaweedFS S3 first and from there once a night to pCloud.
+Every service is its own Compose project (Arcane project), the details are in the
+`Setup ...` sections below.
+
+----
+Docker volumes  --Backrest (restic)-->  SeaweedFS S3 (bucket backups) --+
+Databases       --Databasus (dumps)-->  SeaweedFS S3 (bucket db)      --+--offsite-sync (rclone, 04:00 UTC)--> pCloud
+----
+
+[cols="1,1,2"]
+|===
+|Service |Task |Notes
+
+|SeaweedFS |Local S3 staging |One identity per service, the offsite sync can only read
+|Backrest |Physical backups (Docker volumes), browse and restore snapshots |restic, repository `backups/docker`
+|Databasus |Logical database backups (dumps) |bucket `db`
+|Offsite sync |Copies the whole S3 to pCloud |Keeps deleted or overwritten files 30 days in `Backups-deleted`
+|===
+
+The physical MongoDB backup (`scripts/mongodb/backup/physical_backup.sh`) and the Vault backup
+(CronJob, see Kubernetes) still write directly to pCloud with their own restic repositories.
+
+==== Setting it up, in this order
+
+. Create the pCloud remote on the Docker host with `rclone config` (remote name `pCloud`).
+. Create an Uptime Kuma push monitor (heartbeat 26 hours) and note its push URL.
+. Prepare the host. It creates the data directories, installs `rclone.conf`, checks pCloud and
+  generates the S3 identities and keys (`/root/backup-credentials.env`). The bucket step reports
+  that S3 is not reachable yet, that is expected:
++
+----
+sudo scripts/docker/setup-backup-host.sh --rclone-conf ~/.config/rclone/rclone.conf
+----
+. Deploy the `seaweedfs` project in Arcane.
+. Run the script again, now it creates the buckets `backups` and `db`.
+. Put the secrets into the Arcane project environments (`.env`), the values come from
+  `/root/backup-credentials.env`:
++
+[cols="1,3"]
+|===
+|Project |Variables
+
+|`backrest`
+|`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (`BACKREST_*`), `RESTIC_PASSWORD` (choose one)
+
+|`offsite-sync`
+|`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (`OFFSITE_SYNC_*`), `PUSH_URL`
+|===
+
+. Deploy `backrest`, `databasus` and `offsite-sync` in Arcane.
+. Configure the services in their UIs (see the sections below): Backrest (admin user, repository,
+  plan for `/userdata/docker`) and Databasus (S3 storage with the `databasus` keys, databases,
+  schedule). Databasus is the only place that needs the `databasus` keys.
+. Delete `/root/backup-credentials.env` and store the restic password and `rclone.conf` in your
+  password manager. Without them the pCloud backups cannot be read after a total loss.
+. Optional: stop Duplicati. The setup script can do that with `--remove-duplicati <folder>`.
+
+Backrest (`9898`), Databasus (`4005`) and the S3 port (`8333`) are published on all interfaces
+of the host. Restrict them to NetBird with a host firewall and allow them for your peers with
+NetBird policies. The backups should run before the sync, so schedule them between 01:00 and 03:00.
+
+==== Test the restore
+
+A backup that was never restored is not a backup. After the first nightly sync, and then once per
+quarter, restore a volume or a database from *pCloud*, not from the local S3: add the pCloud
+repository (`rclone:pCloud:/Backups/s3/backups/docker`) in Backrest as an additional repository and
+restore into `/restore`.
+
 === Setup Arcane
 
 * Clone this repository to your local machine.
