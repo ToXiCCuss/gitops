@@ -148,17 +148,19 @@ if ($microcksDbUser) {
 #      not AVP - see kubernetes/backup/kubectl/kube-vault-backup.yaml) ─────────────
 Write-Step "Vault backup (K8s CronJob) - leave blank to skip"
 
-$resticPassword = Read-OptionalSecret "Restic repository password for the vault_pb backup repo"
-$rcloneConfPath = Read-Host "Path to an rclone.conf containing the pCloud remote (blank to skip)"
-if ($resticPassword -or $rcloneConfPath) {
-    $backupData = @{}
-    if ($resticPassword) { $backupData["restic_password"] = $resticPassword }
-    if ($rcloneConfPath) {
-        if (Test-Path $rcloneConfPath) {
-            $backupData["rclone_conf"] = Get-Content $rcloneConfPath -Raw
-        } else {
-            Write-Warn2 "File not found: $rcloneConfPath - skipping rclone_conf."
-        }
+$resticPassword = Read-OptionalSecret "Restic repository password for the vault backup repo"
+$s3Endpoint = Read-Host "S3 endpoint of the SeaweedFS, e.g. http://docker01.vpn.rjst.de:8333 (blank to skip)"
+$s3KeyId = Read-Host "S3 access key id of the identity 'vault' (blank to skip)"
+$s3Secret = ""
+if ($s3KeyId) { $s3Secret = Read-OptionalSecret "S3 secret access key of the identity 'vault'" }
+$pushUrl = Read-OptionalSecret "Uptime Kuma push URL for the vault backup, without parameters (blank to skip)"
+if ($resticPassword -or $s3Endpoint -or $s3KeyId -or $pushUrl) {
+    $backupData = @{
+        "restic_password"       = $resticPassword
+        "s3_endpoint"           = $s3Endpoint
+        "aws_access_key_id"     = $s3KeyId
+        "aws_secret_access_key" = $s3Secret
+        "push_url"              = $pushUrl
     }
     Set-VaultKV -Path "vault-backup" -Engine "backup" -Data $backupData
 }
