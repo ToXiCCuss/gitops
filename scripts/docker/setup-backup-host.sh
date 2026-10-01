@@ -165,6 +165,10 @@ ENV
     warn "SeaweedFS must be (re)started to load the new identities"
 fi
 
+# The seaweedfs container drops to the user "seaweed", root-only (600) would be "permission denied".
+# The file stays inside /root, which is not accessible for other users of the host.
+chmod 644 "$S3_CONFIG"
+
 # ── Buckets ───────────────────────────────────────────────────────────────────
 step "Creating the S3 buckets '$BACKUP_BUCKET', '$DB_BUCKET' and '$VAULT_BUCKET'"
 # shellcheck disable=SC1090
