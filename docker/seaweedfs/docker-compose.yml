@@ -2,9 +2,17 @@ services:
   seaweedfs:
     image: chrislusf/seaweedfs@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     container_name: seaweedfs
-    # Master, volume server, filer and S3 gateway in one process. Only the S3 port is published,
-    # the filer has no authentication. Access is controlled by the identities in s3.json.
-    command: ["server", "-dir=/data", "-filer", "-s3", "-s3.port=8333", "-s3.config=/etc/seaweedfs/s3.json"]
+    # The default command of the image is `weed mini` (master, volume server, filer and S3 in one process),
+    # this is also what this project ran before. Only the S3 port is published, the filer and the admin UI
+    # have no authentication. Access to S3 is controlled by the identities in s3.json.
+    command:
+      - "mini"
+      - "-s3.config=/etc/seaweedfs/s3.json"
+      - "-bucket=backups,db,vault"
+      - "-webdav=false"
+      - "-admin.ui=false"
+      - "-s3.port.iceberg=0"
+      - "-s3.port.lance=0"
     ports:
       - "8333:8333"
     restart: unless-stopped
