@@ -19,8 +19,11 @@ run_sync() {
     rclone sync "SEAWEED:" "$PCLOUD_REMOTE:$PCLOUD_TARGET" \
         --backup-dir "$PCLOUD_REMOTE:$PCLOUD_DELETED/$day" \
         --transfers 4 --checkers 4 --stats-one-line -v || return 1
-    # Verify that everything in the S3 arrived in pCloud (size and hash where both sides have one)
-    rclone check "SEAWEED:" "$PCLOUD_REMOTE:$PCLOUD_TARGET" --one-way --checkers 4 || return 1
+    # Verify that everything in the S3 arrived in pCloud. S3 and pCloud have no hash in common,
+    # so this compares the sizes (restic check on the pCloud repository verifies the content)
+    rclone check "SEAWEED:" "$PCLOUD_REMOTE:$PCLOUD_TARGET" --one-way --size-only --checkers 4 || return 1
+    # The folder only exists after the first file was overwritten or deleted
+    rclone mkdir "$PCLOUD_REMOTE:$PCLOUD_DELETED" || return 1
     rclone delete "$PCLOUD_REMOTE:$PCLOUD_DELETED" --min-age "${RETENTION_DAYS}d" || return 1
     rclone rmdirs "$PCLOUD_REMOTE:$PCLOUD_DELETED" --leave-root || return 1
 }
