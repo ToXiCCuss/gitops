@@ -350,7 +350,7 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 sudo scripts/docker/setup-backup-host.sh
 ----
 . Deploy the `seaweedfs` project in Arcane.
-. Run the script again, now it creates the buckets `backups`, `databases` and `vault`.
+. Run the script again, now it creates the buckets `backups`, `databases`, `vault` and `pelican`.
 . Put the secrets into the Arcane project environments (`.env`), the values come from
   `/root/backup-credentials.env`:
 +
@@ -561,16 +561,30 @@ SeaweedFS is the local S3 staging for all backups. Access is controlled by separ
 |`backrest` |`backups`, `vault` |Read, Write, List
 |`databasus` |`databases` |Read, Write, List
 |`vault` |`vault` |Read, Write, List
+|`pelican` |`pelican` |Read, Write, List (for the S3 backups of Pelican)
 |`offsite-sync` |all |Read, List (cannot change anything)
 |===
 
-* Run `scripts/docker/setup-backup-host.sh` *before* deploying: it generates the identities and keys
-(`/root/backup-credentials.env`) and prepares the host
+* Run `scripts/docker/setup-backup-host.sh` *before* deploying: it prepares the host and creates the identities
+(`/root/backup-credentials.env`). It is idempotent: existing identities and their keys are never changed, only
+missing identities and buckets are added (needs `jq`). To add a service later, add an `ensure_identity` line and the bucket
+in the script and in the `-bucket=` flag of the compose file, run the script and restart SeaweedFS. `--regenerate-s3`
+replaces all keys
 * Deploy the seaweedfs project in Arcane, then run the script again to create the buckets
 * Copy the keys from `/root/backup-credentials.env` into the Arcane environments (backrest, offsite-sync) and the Databasus storage, then delete the file
 * `Write` includes deleting objects in SeaweedFS, so a leaked `backrest` key can delete the local backups. pCloud keeps deleted files (`Backups-deleted`)
-* The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `databases` and `vault` on start
+* The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `databases`, `vault` and `pelican` on start (`-bucket=`)
 * Only the S3 port `8333` is published. The filer (`8888`) and the admin UI (`23646`) have no authentication and are not exposed
+
+=== Setup Pelican S3 backups
+
+Pelican can store the backups of its servers in an S3. The bucket `pelican` and the identity `pelican` (Read, Write, List
+on this bucket only) are created by the setup script. Settings for Pelican, the names of the fields may differ in your version:
+
+* Endpoint `http://<docker-host>:8333`, bucket `pelican`, path-style on, any region (e.g. `us-east-1`)
+* Access key and secret: `PELICAN_ACCESS_KEY_ID` and `PELICAN_SECRET_ACCESS_KEY` of `/root/backup-credentials.env`
+* The endpoint must be reachable from the Panel, from the Wings nodes and for downloads from the browser (the Panel hands
+out presigned URLs). The firewall must allow the Wings and the Panel to reach port 8333
 
 === Setup Vault backup
 
