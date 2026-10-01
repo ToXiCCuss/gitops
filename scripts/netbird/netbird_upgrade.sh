@@ -16,7 +16,7 @@
 # Usage: sudo ./netbird_upgrade.sh [--yes] [--auto-rollback] [--keep N]
 #
 # Optional in /etc/netbird-backup.cred:
-#   NETBIRD_DIR, BACKUP_DIR, DISCORD_WEBHOOK_URL,
+#   NETBIRD_DIR, BACKUP_DIR,
 #   HEALTH_URL (e.g. https://netbird.example.com - must answer with HTTP 2xx/3xx)
 #   HEALTH_TIMEOUT (seconds, default 120), ROLLBACK_KEEP (default 3)
 # =============================================================================
@@ -44,16 +44,6 @@ check_root() {
         error "This script must be run as root (sudo ./netbird_upgrade.sh)"
         exit 1
     fi
-}
-
-notify() {
-    local message="$1" color="${2:-15158332}"
-    [[ -n "${DISCORD_WEBHOOK_URL:-}" ]] || return 0
-    curl -s -H "Content-Type: application/json" -X POST \
-         -d "{\"username\": \"Backups\", \"content\": \"<@${DISCORD_USER_ID:-261598730027925505}>\",
-              \"embeds\": [{\"title\": \"NetBird Upgrade\", \"description\": \"**$message**\",
-                            \"color\": $color, \"fields\": [{\"name\": \"🖥️ Server\", \"value\": \"$(hostname)\"}]}]}" \
-         "$DISCORD_WEBHOOK_URL" > /dev/null || true
 }
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -183,7 +173,6 @@ create_rollback_point() {
         error "Pre-upgrade backup failed - aborting upgrade. Nothing was changed."
         for svc in "${SERVICES[@]}"; do docker rmi "netbird-rollback/$svc:$TS" >/dev/null || true; done
         rm -rf "$ROLLBACK_POINT"
-        notify "Pre-upgrade backup failed - upgrade aborted"
         exit 1
     fi
 
@@ -268,11 +257,9 @@ main() {
         prune_rollback_points
         success "NetBird upgrade completed. Rollback point: $TS"
         info "Roll back with: netbird_rollback.sh $TS"
-        notify "Upgrade completed successfully" 3066993
         exit 0
     fi
 
-    notify "Upgrade health check FAILED on $(hostname)"
     if $AUTO_ROLLBACK || confirm "Roll back to $TS now?"; then
         "$(find_script netbird_rollback.sh)" --yes "$TS"
     else

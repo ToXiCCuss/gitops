@@ -11,7 +11,7 @@
 # Usage (run from the scripts/netbird directory):
 #   sudo ./netbird_backup_setup.sh [--dir /opt/netbird] [--schedule "45 2 * * *"]
 #                                  [--s3-endpoint http://127.0.0.1:8333] [--push-url URL]
-#                                  [--webhook URL] [--run]
+#                                  [--run]
 # The S3 keys (identity "netbird" of setup-backup-host.sh) are read from AWS_ACCESS_KEY_ID and
 # AWS_SECRET_ACCESS_KEY or asked for. The schedule is in the local time of the host.
 # Re-running is safe: existing password file, cred file and repository are kept.
@@ -55,7 +55,6 @@ PUSH_URL=""
 
 NETBIRD_DIR=""
 SCHEDULE="45 2 * * *"
-WEBHOOK=""
 RUN_NOW=false
 
 usage() {
@@ -69,7 +68,6 @@ while [[ $# -gt 0 ]]; do
         --schedule) SCHEDULE="$2"; shift 2 ;;
         --s3-endpoint) S3_ENDPOINT="$2"; shift 2 ;;
         --push-url) PUSH_URL="$2"; shift 2 ;;
-        --webhook)  WEBHOOK="$2"; shift 2 ;;
         --run)      RUN_NOW=true; shift ;;
         -h|--help)  usage 0 ;;
         *)          error "Unknown argument: $1"; usage 1 ;;
@@ -197,20 +195,11 @@ write_config() {
         if [[ -n "$PUSH_URL" ]]; then
             set_cred "PUSH_URL=" "PUSH_URL=\"$PUSH_URL\""
         fi
-        if [[ -n "$WEBHOOK" ]]; then
-            sed -i '/^DISCORD_WEBHOOK_URL=/d' "$CONFIG_FILE"
-            echo "DISCORD_WEBHOOK_URL=\"$WEBHOOK\"" >> "$CONFIG_FILE"
-        fi
         info "Updated existing config."
     else
-        if [[ -z "$WEBHOOK" ]]; then
-            read -rp "Discord webhook URL (empty = no notifications): " WEBHOOK
-        fi
         (umask 077; cat > "$CONFIG_FILE" <<EOF
 # NetBird backup settings - sourced by netbird_backup.sh / netbird_restore.sh
 NETBIRD_DIR="$NETBIRD_DIR"
-DISCORD_WEBHOOK_URL="$WEBHOOK"
-#DISCORD_USER_ID="261598730027925505"
 RESTIC_REPOSITORY="$RESTIC_REPOSITORY"
 export AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
