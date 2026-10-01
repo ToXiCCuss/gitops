@@ -293,14 +293,16 @@ The physical MongoDB backup (`scripts/mongodb/backup/physical_backup.sh`) and th
 
 ==== Setting it up, in this order
 
-. Create the pCloud remote on the Docker host with `rclone config` (remote name `pCloud`).
+. If there is no pCloud remote yet, get a token: on a machine with a browser and rclone run
+  `rclone authorize "pcloud"` and keep the printed token JSON. The setup script asks for it and
+  creates the remote `pCloud` in `/root/.config/rclone/rclone.conf`. An existing remote is reused.
 . Create an Uptime Kuma push monitor (heartbeat 26 hours) and note its push URL.
 . Prepare the host. It creates the data directories, installs `rclone.conf`, checks pCloud and
   generates the S3 identities and keys (`/root/backup-credentials.env`). The bucket step reports
   that S3 is not reachable yet, that is expected:
 +
 ----
-sudo scripts/docker/setup-backup-host.sh --rclone-conf ~/.config/rclone/rclone.conf
+sudo scripts/docker/setup-backup-host.sh
 ----
 . Deploy the `seaweedfs` project in Arcane.
 . Run the script again, now it creates the buckets `backups` and `db`.
@@ -356,7 +358,7 @@ to the local SeaweedFS S3 and is used to browse and restore snapshots.
 * Secrets are set in `.env` (in Arcane: project environment). `default.env` lists all variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (SeaweedFS S3) and `RESTIC_PASSWORD`
 * `docker compose up -d` in the backrest folder
 * Open `http://<docker-host>:9898` (only reachable through NetBird, never publish it) and create the admin user
-* Copy the pCloud remote (`rclone.conf`) to `/root/docker/backrest/rclone/rclone.conf` to restore from pCloud
+* The pCloud remote (`rclone.conf`) for restoring from pCloud is created and installed to `/root/docker/backrest/rclone/rclone.conf` by `setup-backup-host.sh`
 * Repos:
 ** `s3:http://<docker-host>:8333/backups/docker` (backup target, keys of the `backrest` identity)
 ** `rclone:pCloud:/Backups/...` (offsite, restore only)
@@ -377,8 +379,7 @@ Nightly `rclone sync` of the SeaweedFS S3 to pCloud. Deleted or overwritten file
 `Backups-deleted/<date>` and kept for `RETENTION_DAYS`. This is the only container that holds the
 pCloud credentials.
 
-* Create the pCloud remote on the docker host with `rclone config` and copy the `rclone.conf`
-to `/root/docker/offsite-sync/rclone/rclone.conf`
+* The `rclone.conf` with the pCloud remote is installed to `/root/docker/offsite-sync/rclone/rclone.conf` by `setup-backup-host.sh`
 * Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (keys of the read-only `offsite-sync` identity) and `PUSH_URL` (Uptime Kuma push monitor, heartbeat 26h) in the Arcane project environment
 * `docker compose up -d` in the offsite-sync folder
 
