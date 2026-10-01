@@ -1,0 +1,51 @@
+---
+- name: Install prerequisite packages for MongoDB repository
+  apt:
+    name:
+      - gnupg
+      - curl
+    state: present
+    update_cache: yes
+
+- name: Create keyrings directory
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download MongoDB GPG key
+  get_url:
+    url: "https://pgp.mongodb.com/server-{{ mongodb_version }}.asc"
+    dest: /etc/apt/keyrings/mongodb-server.asc
+    mode: "0644"
+    force: false
+
+- name: Add MongoDB apt repository
+  apt_repository:
+    repo: >-
+      deb [signed-by=/etc/apt/keyrings/mongodb-server.asc]
+      https://repo.mongodb.org/apt/debian {{ ansible_distribution_release }}/mongodb-org/{{ mongodb_version }} main
+    filename: mongodb-org
+    state: present
+    update_cache: yes
+
+- name: Install mongodb-org package
+  apt:
+    name: mongodb-org
+    state: present
+    update_cache: yes
+
+- name: Configure mongod.conf
+  template:
+    src: mongod.conf.j2
+    dest: /etc/mongod.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart mongod
+
+- name: Ensure MongoDB service is enabled and running
+  service:
+    name: mongod
+    state: started
+    enabled: true

@@ -294,7 +294,8 @@ flowchart LR
 |===
 
 Everything writes to the S3 only, pCloud is written by the offsite sync alone. Not covered:
-the PVCs of the Kubernetes apps and MariaDB. There is no MongoDB.
+the PVCs of the Kubernetes apps and MariaDB. MongoDB is not operated (`mongodb_hosts` is empty); its
+scripts in `scripts/mongodb/backup/` are kept, but they still write directly to pCloud.
 
 ==== Retention, checks and schedule
 
