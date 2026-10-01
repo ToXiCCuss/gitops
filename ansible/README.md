@@ -189,11 +189,34 @@ host_config:
 > makes it unreadable. Read them off the host first:
 >
 > ```bash
-> cat /root/docker/arcane/override.env
+> cat <repo checkout>/docker/arcane/override.env
 > ```
+>
+> Note the path: `start.sh` generates `override.env` next to itself, so the file
+> sits in the **repository checkout** (e.g. `/root/gitops/docker/arcane/`), not
+> below `/root/docker/arcane/`.
 >
 > Putting them in the vault is an improvement over `start.sh`: so far the key
 > existed only on that host, now it survives a rebuild.
 
 `docker/arcane/start.sh` still works as a manual fallback. Its `override.env` is
 gitignored, since it holds both secrets in plain text.
+
+### Taking over a stack that start.sh already deployed
+
+`start.sh` runs `docker compose up` from the repository checkout, so an existing
+Arcane uses that directory as its compose project while the role uses
+`arcane_dir` (`/root/docker/arcane`). Both compose files set
+`container_name: arcane`, so the role would hit `container name /arcane is
+already in use`. It therefore checks for this and aborts with an explanatory
+message instead.
+
+Stop the old stack once, then let the role take over:
+
+```bash
+cd <repo checkout>/docker/arcane && docker compose down
+```
+
+The data is not affected — `docker-compose.yml` mounts
+`/root/docker/arcane/data` and `/root/docker/arcane/backups` by absolute path,
+so it already lives where the role deploys to.

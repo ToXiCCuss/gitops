@@ -19,6 +19,36 @@
       On an existing installation copy the values from the running
       override.env - new keys make Arcane's stored data unreadable.
 
+# docker/arcane/start.sh runs "docker compose up" from the repository checkout,
+# so an existing Arcane uses that directory as its compose project while this
+# role uses arcane_dir. Both compose files set container_name: arcane, so the
+# second one would abort with "container name /arcane is already in use".
+# The data is unaffected either way - the volumes in docker-compose.yml point at
+# absolute paths below /root/docker/arcane.
+- name: Check for an already running Arcane container
+  ansible.builtin.command:
+    cmd: docker container inspect arcane
+  register: arcane_existing
+  changed_when: false
+  failed_when: false
+
+- name: Check whether this role already manages the stack
+  ansible.builtin.stat:
+    path: "{{ arcane_dir }}/docker-compose.yml"
+  register: arcane_managed
+
+- name: Require a foreign Arcane stack to be stopped first
+  ansible.builtin.assert:
+    that:
+      - arcane_existing.rc != 0 or arcane_managed.stat.exists
+    fail_msg: >-
+      A container named "arcane" is already running, but {{ arcane_dir }} is not
+      managed by this role yet - it was most likely started with
+      docker/arcane/start.sh from the repository checkout. Stop that stack first
+      ("docker compose down" in the directory it was started from), then run
+      this role again. The data below {{ arcane_dir }} is referenced by absolute
+      path in docker-compose.yml and is not touched.
+
 - name: Ensure the Arcane directories exist
   ansible.builtin.file:
     path: "{{ item }}"
