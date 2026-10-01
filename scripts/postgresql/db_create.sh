@@ -71,4 +71,8 @@ psql_cmd -d "$DB_NAME" <<EOF
   GRANT CONNECT ON DATABASE "$DB_NAME" TO "$ROLE_RO", "$ROLE_RW", "$ROLE_OWNER";
 EOF
 
+# Let the Databasus backup role (backup_user_create.sh) connect to the new database, if it exists
+BACKUP_ROLE="databasus"
+psql_cmd -c "DO \$\$ BEGIN IF EXISTS (SELECT FROM pg_roles WHERE rolname = '$BACKUP_ROLE') THEN EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', '$DB_NAME', '$BACKUP_ROLE'); END IF; END \$\$;"
+
 echo "Setup for $DB_NAME completed successfully."
