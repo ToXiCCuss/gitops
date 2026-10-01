@@ -316,7 +316,7 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 |Backrest, per repository (`backups/docker` and `vault/raft`): check policy weekly with a 10% read-data subset
 
 |Offsite copy complete and intact
-|`rclone check --one-way` S3 -> pCloud after every sync. A mismatch fails the sync
+|`rclone check --one-way --size-only` S3 -> pCloud after every sync (S3 and pCloud have no common hash, so it compares sizes). A mismatch fails the sync
 
 |Failed or missing jobs
 |Offsite sync and `vault-backup` report to an Uptime Kuma push monitor (alarm when the heartbeat stays out). Databasus has its own notifications, add one to Backrest plans as a hook
