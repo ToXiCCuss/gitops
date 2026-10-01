@@ -427,17 +427,67 @@ to the local SeaweedFS S3 and is used to browse and restore snapshots.
 
 === Setup Databasus
 
-Databasus makes the logical database backups and writes them to the local SeaweedFS S3.
+Databasus makes the logical backups (`pg_dump`) of the PostgreSQL databases and writes them to the bucket
+`databases` of the local SeaweedFS S3. PostgreSQL 18 runs directly on the Docker host (Ansible role `postgresql`),
+Databasus reaches it as `host.docker.internal`, which the compose file points to the host.
 
-* `docker compose up -d` in the databasus folder
-* Open `http://<docker-host>:4005`, add the databases and the S3 storage (`http://<docker-host>:8333`, bucket `databases`, keys of the `databasus` identity)
-* PostgreSQL 18 runs directly on `docker01` (Ansible role `postgresql`). Create the login role for Databasus once with
-`scripts/postgresql/backup_user_create.sh`: it gets `pg_read_all_data`, which covers all databases and schemas of the
-DBMS (the `ro` role of `user_create.sh` only sees the `public` schema of one database and would miss e.g. the `partman` schema).
-The role also needs `CONNECT` on each database, because `db_create.sh` revokes it from `PUBLIC` (`pg_read_all_data` does not include it):
-`backup_user_create.sh` grants it on all existing databases, `db_create.sh` on new ones. Connect with the host `host.docker.internal` (points to the Docker host, set in the compose file). The firewall of the host must allow the Docker network to reach port 5432, e.g. `ufw allow from 172.16.0.0/12 to any port 5432 proto tcp`. The
-`pg_dump` of Databasus must be version 18 or newer. A restore needs the extensions `pg_cron` and `pg_partman` on the target server
-* The role allows connections from every address (`pg_hba.conf` `0.0.0.0/0`, `listen_addresses = '*'`). Restrict it with a firewall
+==== On the Docker host
+
+. Create the login role once. It gets `pg_read_all_data` (SELECT on all tables, views and sequences in all
+  databases and schemas, also later ones) and `CONNECT` on every existing database. The `ro` role of
+  `user_create.sh` is not enough, it only sees the `public` schema of one database and would miss e.g. the
+  `partman` schema. The script prints the password once, an existing role keeps its password (`reset` sets a new one):
++
+----
+sudo scripts/postgresql/backup_user_create.sh
+----
+. `CONNECT` is needed because `db_create.sh` revokes it from `PUBLIC` and `pg_read_all_data` does not include it.
+  `db_create.sh` grants it on every new database. Run the script above again for databases created in another way
+  (the error otherwise is `permission denied for database`).
+. The containers of the Docker network must reach PostgreSQL (5432) and the S3 (8333) of the host. The firewall blocks
+  that by default (the test below times out):
++
+----
+sudo ufw allow from 172.16.0.0/12 to any port 5432 proto tcp
+sudo ufw allow from 172.16.0.0/12 to any port 8333 proto tcp
+----
++
+Test it from a container, `open` is the right answer:
++
+----
+docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 5432
+docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 8333
+----
+. Deploy the `databasus` project in Arcane (the container must be recreated for the host entry).
+
+==== In the Databasus UI (`http://<docker-host>:4005`)
+
+The first account becomes the administrator.
+
+[cols="1,3"]
+|===
+|Setting |Value
+
+|Storage: type |S3
+|Storage: endpoint |`http://host.docker.internal:8333` (http, SeaweedFS has no TLS; not `localhost`, that is the container itself)
+|Storage: bucket |`databases`
+|Storage: region |any, e.g. `us-east-1` (SeaweedFS ignores it)
+|Storage: path-style |on (SeaweedFS needs `endpoint/bucket`)
+|Storage: access key and secret |`DATABASUS_ACCESS_KEY_ID` and `DATABASUS_SECRET_ACCESS_KEY` of `/root/backup-credentials.env`. The identity `databasus` may only read, write and list the bucket `databases`
+|Database: host |`host.docker.internal`
+|Database: port |`5432`
+|Database: user |`databasus` (password of the script above)
+|Database: name |one entry per database
+|Schedule |daily 01:00 UTC
+|Retention |14 daily, 8 weekly, 6 monthly (GFS)
+|===
+
+The S3 storage and the connection to `fw_chaos` were tested. Not yet verified: a complete backup run, because the
+`pg_dump` of Databasus must be version 18 or newer, and a restore, which needs the extensions `pg_cron` and `pg_partman` on
+the target server. Test both ("Backup now", then restore into a scratch database) once.
+
+PostgreSQL accepts connections from every address (`pg_hba.conf` `0.0.0.0/0`, `listen_addresses = '*'`), restrict it with a
+firewall (the rules above allow only the Docker network for these ports).
 
 === Setup Offsite Sync
 
