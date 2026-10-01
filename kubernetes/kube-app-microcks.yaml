@@ -1,0 +1,23 @@
+# Optional: not part of the standard deployment order, apply it only when Microcks is wanted.
+# Remove it again with: kubectl delete -f kubernetes/kube-app-microcks.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: microcks
+  namespace: argocd
+spec:
+  destination:
+    namespace: argocd
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://github.com/ToXiCCuss/gitops.git
+    targetRevision: master
+    path: kubernetes/microcks
+    directory:
+      recurse: false
+      include: apps.yaml
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
