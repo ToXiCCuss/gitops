@@ -275,7 +275,7 @@ flowchart LR
     vol["Docker volumes"] -->|read-only| backrest["Backrest (restic)"]
     pg[("PostgreSQL")] --> databasus["Databasus (pg_dump)"]
     backrest -->|bucket backups| s3[("SeaweedFS S3")]
-    databasus -->|bucket db| s3
+    databasus -->|bucket databases| s3
     s3 -->|read-only identity| sync["offsite-sync (rclone, 05:00 UTC)"]
   end
   vaultjob -->|bucket vault| s3
@@ -288,7 +288,7 @@ flowchart LR
 
 |SeaweedFS |Local S3 staging |One identity per service, the offsite sync can only read
 |Backrest |Physical backups (Docker volumes), browse, check and restore snapshots |restic, repository `backups/docker`. Also used to check and restore the Vault repository
-|Databasus |Logical PostgreSQL backups (`pg_dump`) |bucket `db`
+|Databasus |Logical PostgreSQL backups (`pg_dump`) |bucket `databases`
 |Vault CronJob |Raft snapshot of Vault (Kubernetes) |bucket `vault`, repository `vault/raft`, keeps its own retention
 |Offsite sync |Copies the whole S3 to pCloud and verifies the copy |Keeps deleted or overwritten files 30 days in `Backups-deleted`
 |===
@@ -351,7 +351,7 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 sudo scripts/docker/setup-backup-host.sh
 ----
 . Deploy the `seaweedfs` project in Arcane.
-. Run the script again, now it creates the buckets `backups` and `db`.
+. Run the script again, now it creates the buckets `backups`, `databases` and `vault`.
 . Put the secrets into the Arcane project environments (`.env`), the values come from
   `/root/backup-credentials.env`:
 +
@@ -421,7 +421,7 @@ to the local SeaweedFS S3 and is used to browse and restore snapshots.
 Databasus makes the logical database backups and writes them to the local SeaweedFS S3.
 
 * `docker compose up -d` in the databasus folder
-* Open `http://<docker-host>:4005`, add the databases and the S3 storage (`http://<docker-host>:8333`, bucket `db`, keys of the `databasus` identity)
+* Open `http://<docker-host>:4005`, add the databases and the S3 storage (`http://<docker-host>:8333`, bucket `databases`, keys of the `databasus` identity)
 * PostgreSQL 18 runs directly on `docker01` (Ansible role `postgresql`). Create a role with `pg_read_all_data` for
 Databasus (see `scripts/postgresql/user_create.sh`) and connect with the address of the Docker host. The
 `pg_dump` of Databasus must be version 18 or newer. A restore needs the extensions `pg_cron` and `pg_partman` on the target server
@@ -449,7 +449,7 @@ SeaweedFS is the local S3 staging for all backups. Access is controlled by separ
 
 |`admin` |all |Admin (only for you, not used by containers)
 |`backrest` |`backups`, `vault` |Read, Write, List
-|`databasus` |`db` |Read, Write, List
+|`databasus` |`databases` |Read, Write, List
 |`vault` |`vault` |Read, Write, List
 |`offsite-sync` |all |Read, List (cannot change anything)
 |===
@@ -459,7 +459,7 @@ SeaweedFS is the local S3 staging for all backups. Access is controlled by separ
 * Deploy the seaweedfs project in Arcane, then run the script again to create the buckets
 * Copy the keys from `/root/backup-credentials.env` into the Arcane environments (backrest, offsite-sync) and the Databasus storage, then delete the file
 * `Write` includes deleting objects in SeaweedFS, so a leaked `backrest` key can delete the local backups. pCloud keeps deleted files (`Backups-deleted`)
-* The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `db` and `vault` on start
+* The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `databases` and `vault` on start
 * Only the S3 port `8333` is published. The filer (`8888`) and the admin UI (`23646`) have no authentication and are not exposed
 
 == Kubernetes

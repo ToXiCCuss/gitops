@@ -27,7 +27,7 @@ step()    { echo -e "\n${BOLD}${CYAN}▶ $*${RESET}"; }
 RCLONE_IMAGE="rclone/rclone:1.75.1"
 DATA_ROOT="/root/docker"
 BACKUP_BUCKET="backups"
-DB_BUCKET="db"
+DB_BUCKET="databases"
 VAULT_BUCKET="vault"
 REGENERATE=""
 S3_ENDPOINT="http://127.0.0.1:8333"
