@@ -9,8 +9,7 @@
       that already exists.
     - External values are prompted for interactively and written to Vault:
       the Hetzner and NetBird API tokens, the docker01 DB credentials for
-      Harbor/Keycloak, and the vault-backup CronJob's restic
-      password + rclone.conf. Leave blank to skip a value - existing Vault
+      Harbor/Keycloak. Leave blank to skip a value - existing Vault
       data for that key is left untouched.
     - Safe to re-run: it asks before overwriting a value you provide if it
       already has one.
@@ -136,27 +135,6 @@ $kcDbUser = Read-Host "Keycloak external DB username (blank to skip)"
 if ($kcDbUser) {
     $kcDbPass = Read-OptionalSecret "Keycloak external DB password"
     Set-VaultKV -Path "keycloak" -Data @{ "postgresql.username" = $kcDbUser; "postgresql.password" = $kcDbPass }
-}
-
-# ── 3. Vault backup CronJob (reads these via Kubernetes auth at runtime,
-#      not AVP - see kubernetes/backup/kubectl/kube-vault-backup.yaml) ─────────────
-Write-Step "Vault backup (K8s CronJob) - leave blank to skip"
-
-$resticPassword = Read-OptionalSecret "Restic repository password for the vault backup repo"
-$s3Endpoint = Read-Host "S3 endpoint of the SeaweedFS, e.g. http://docker01.vpn.rjst.de:8333 (blank to skip)"
-$s3KeyId = Read-Host "S3 access key id of the identity 'vault' (blank to skip)"
-$s3Secret = ""
-if ($s3KeyId) { $s3Secret = Read-OptionalSecret "S3 secret access key of the identity 'vault'" }
-$pushUrl = Read-OptionalSecret "Uptime Kuma push URL for the vault backup, without parameters (blank to skip)"
-if ($resticPassword -or $s3Endpoint -or $s3KeyId -or $pushUrl) {
-    $backupData = @{
-        "restic_password"       = $resticPassword
-        "s3_endpoint"           = $s3Endpoint
-        "aws_access_key_id"     = $s3KeyId
-        "aws_secret_access_key" = $s3Secret
-        "push_url"              = $pushUrl
-    }
-    Set-VaultKV -Path "vault-backup" -Engine "backup" -Data $backupData
 }
 
 Write-Step "Done"
