@@ -316,7 +316,6 @@ sudo scripts/docker/setup-backup-host.sh --rclone-conf ~/.config/rclone/rclone.c
   schedule). Databasus is the only place that needs the `databasus` keys.
 . Delete `/root/backup-credentials.env` and store the restic password and `rclone.conf` in your
   password manager. Without them the pCloud backups cannot be read after a total loss.
-. Optional: stop Duplicati. The setup script can do that with `--remove-duplicati <folder>`.
 
 Backrest (`9898`), Databasus (`4005`) and the S3 port (`8333`) are published on all interfaces
 of the host. Restrict them to NetBird with a host firewall and allow them for your peers with

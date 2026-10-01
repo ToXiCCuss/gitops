@@ -6,7 +6,6 @@
 #
 #   sudo ./setup-backup-host.sh --rclone-conf ~/rclone.conf [--regenerate-s3]
 #                               [--s3-endpoint http://127.0.0.1:8333]
-#                               [--remove-duplicati /path/to/docker/duplicati]
 #
 # Generates the SeaweedFS S3 identities (admin, backrest, databasus, offsite-sync) into
 # /root/docker/seaweedfs-s3.json and the keys into /root/backup-credentials.env. Run it before
@@ -32,7 +31,6 @@ REGENERATE=""
 S3_ENDPOINT="http://127.0.0.1:8333"
 PCLOUD_REMOTE="pCloud"
 RCLONE_CONF=""
-DUPLICATI_DIR=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -40,7 +38,6 @@ while [[ $# -gt 0 ]]; do
         --regenerate-s3)    REGENERATE=1; shift ;;
         --s3-endpoint)      S3_ENDPOINT="$2"; shift 2 ;;
         --pcloud-remote)    PCLOUD_REMOTE="$2"; shift 2 ;;
-        --remove-duplicati) DUPLICATI_DIR="$2"; shift 2 ;;
         *) error "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -143,13 +140,6 @@ if s3_rclone mkdir "SEAWEED:$BACKUP_BUCKET" && s3_rclone mkdir "SEAWEED:$DB_BUCK
 else
     warn "SeaweedFS S3 at $S3_ENDPOINT is not reachable yet: deploy the seaweedfs project in Arcane, then run this script again"
     exit 0
-fi
-
-# ── Duplicati ─────────────────────────────────────────────────────────────────
-if [[ -n "$DUPLICATI_DIR" ]]; then
-    step "Stopping Duplicati"
-    (cd "$DUPLICATI_DIR" && docker compose down)
-    success "Duplicati stopped (its data stays in $DATA_ROOT/duplicati)"
 fi
 
 echo
