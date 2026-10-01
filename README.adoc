@@ -653,13 +653,12 @@ kubectl apply -f kubernetes/kube-app-backup.yaml
 kubectl apply -f kubernetes/kube-app-spring.yaml
 ----
 
-Microcks is not part of this order. It is its own domain (`kubernetes/microcks/`, with its own
-MongoDB inside the chart, no Vault secret needed) and is deployed or removed on its own, once `infra`
-is healthy:
+Microcks is parked in `kubernetes/parked/microcks/` and not deployed. It is its own domain (with its own
+MongoDB inside the chart, no Vault secret needed). To deploy or remove it, once `infra` is healthy:
 
 ----
-kubectl apply -f kubernetes/kube-app-microcks.yaml
-kubectl delete -f kubernetes/kube-app-microcks.yaml
+kubectl apply -f kubernetes/parked/microcks/kube-app-microcks.yaml
+kubectl delete -f kubernetes/parked/microcks/kube-app-microcks.yaml
 ----
 
 Why the secrets are a separate app that comes first: some Helm apps need

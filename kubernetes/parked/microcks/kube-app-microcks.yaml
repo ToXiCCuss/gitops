@@ -1,5 +1,6 @@
-# Optional: not part of the standard deployment order, apply it only when Microcks is wanted.
-# Remove it again with: kubectl delete -f kubernetes/kube-app-microcks.yaml
+# Parked: not deployed and not part of the deployment order. The paths point into kubernetes/parked/microcks,
+# so it still works from here: kubectl apply -f kubernetes/parked/microcks/kube-app-microcks.yaml
+# Remove it again with: kubectl delete -f kubernetes/parked/microcks/kube-app-microcks.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -13,7 +14,7 @@ spec:
   source:
     repoURL: https://github.com/ToXiCCuss/gitops.git
     targetRevision: master
-    path: kubernetes/microcks
+    path: kubernetes/parked/microcks
     directory:
       recurse: false
       include: apps.yaml
