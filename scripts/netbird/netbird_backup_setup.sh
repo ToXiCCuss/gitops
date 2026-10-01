@@ -2,15 +2,18 @@
 # =============================================================================
 # netbird_backup_setup.sh
 # Sets up netbird_backup.sh / netbird_restore.sh on the NetBird server:
-#   - installs restic + rclone (if missing) and checks the pCloud remote
+#   - installs restic (if missing) and checks the S3 of the Docker host
 #   - creates the restic password file and initializes the repository
-#   - writes /etc/netbird-backup.cred
+#   - writes /etc/netbird-backup.cred (S3 keys, optional Uptime Kuma push URL)
 #   - installs the backup/restore/upgrade/rollback scripts to /usr/local/bin
 #     and a cron job
 #
 # Usage (run from the scripts/netbird directory):
-#   sudo ./netbird_backup_setup.sh [--dir /opt/netbird] [--schedule "0 3 * * *"]
+#   sudo ./netbird_backup_setup.sh [--dir /opt/netbird] [--schedule "45 2 * * *"]
+#                                  [--s3-endpoint http://127.0.0.1:8333] [--push-url URL]
 #                                  [--webhook URL] [--run]
+# The S3 keys (identity "netbird" of setup-backup-host.sh) are read from AWS_ACCESS_KEY_ID and
+# AWS_SECRET_ACCESS_KEY or asked for. The schedule is in the local time of the host.
 # Re-running is safe: existing password file, cred file and repository are kept.
 # =============================================================================
 
@@ -46,17 +49,17 @@ CRON_FILE="/etc/cron.d/netbird-backup"
 LOG_FILE="/var/log/netbird-backup.log"
 INSTALL_DIR="/usr/local/bin"
 
-RESTIC_REPOSITORY="rclone:pCloud:/Backups/netbird"
+S3_ENDPOINT="http://127.0.0.1:8333"
 RESTIC_PASSWORD_FILE="/root/restic"
-RCLONE_REMOTE="pCloud"
+PUSH_URL=""
 
 NETBIRD_DIR=""
-SCHEDULE="0 3 * * *"
+SCHEDULE="45 2 * * *"
 WEBHOOK=""
 RUN_NOW=false
 
 usage() {
-    sed -n '11,13p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '11,16p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -64,6 +67,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --dir)      NETBIRD_DIR="$2"; shift 2 ;;
         --schedule) SCHEDULE="$2"; shift 2 ;;
+        --s3-endpoint) S3_ENDPOINT="$2"; shift 2 ;;
+        --push-url) PUSH_URL="$2"; shift 2 ;;
         --webhook)  WEBHOOK="$2"; shift 2 ;;
         --run)      RUN_NOW=true; shift ;;
         -h|--help)  usage 0 ;;
@@ -110,7 +115,6 @@ install_dependencies() {
 
     local missing=()
     command -v restic >/dev/null 2>&1 || missing+=(restic)
-    command -v rclone >/dev/null 2>&1 || missing+=(rclone)
     command -v curl   >/dev/null 2>&1 || missing+=(curl)
 
     if [[ ${#missing[@]} -gt 0 ]]; then
@@ -118,24 +122,31 @@ install_dependencies() {
         apt-get update -qq
         apt-get install -y -qq "${missing[@]}"
     fi
-    success "restic $(restic version | awk '{print $2}'), rclone $(rclone version | awk 'NR==1{print $2}')"
+    success "restic $(restic version | awk '{print $2}')"
 }
 
-# ── 3. rclone remote ──────────────────────────────────────────────────────────
-check_rclone_remote() {
-    step "Checking rclone remote '$RCLONE_REMOTE:'"
+# ── 3. S3 of the Docker host ──────────────────────────────────────────────────
+check_s3() {
+    step "Checking the S3 at $S3_ENDPOINT"
 
-    if ! rclone listremotes | grep -qx "${RCLONE_REMOTE}:"; then
-        error "rclone remote '$RCLONE_REMOTE' is not configured for root."
-        info  "Run 'rclone config' as root and create a pCloud remote named '$RCLONE_REMOTE'."
-        info  "On a headless server use 'rclone authorize \"pcloud\"' on a machine with a browser."
+    RESTIC_REPOSITORY="s3:${S3_ENDPOINT}/netbird/restic"
+
+    if [[ -z "${AWS_ACCESS_KEY_ID:-}" ]]; then
+        read -rp "S3 access key id of the identity 'netbird': " AWS_ACCESS_KEY_ID
+    fi
+    if [[ -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+        read -rsp "S3 secret access key: " AWS_SECRET_ACCESS_KEY
+        echo ""
+    fi
+    export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+
+    local code
+    code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$S3_ENDPOINT" || true)
+    if [[ "$code" == "000" || -z "$code" ]]; then
+        error "S3 at $S3_ENDPOINT is not reachable. Is the seaweedfs project running?"
         exit 1
     fi
-    if ! rclone lsd "${RCLONE_REMOTE}:" >/dev/null 2>&1; then
-        error "rclone remote '$RCLONE_REMOTE' is configured but not reachable (token expired?)."
-        exit 1
-    fi
-    success "Remote '$RCLONE_REMOTE:' reachable."
+    success "S3 answers (HTTP $code)."
 }
 
 # ── 4. restic password + repository ───────────────────────────────────────────
@@ -167,6 +178,12 @@ setup_restic() {
 }
 
 # ── 5. Config file ────────────────────────────────────────────────────────────
+# set_cred <line prefix> <full line>: replaces a line of the config file or appends it
+set_cred() {
+    sed -i "\|^$1|d" "$CONFIG_FILE"
+    echo "$2" >> "$CONFIG_FILE"
+}
+
 write_config() {
     step "Writing $CONFIG_FILE"
 
@@ -174,6 +191,12 @@ write_config() {
         # Keep existing values, only update what was passed / detected
         sed -i "s|^NETBIRD_DIR=.*|NETBIRD_DIR=\"$NETBIRD_DIR\"|" "$CONFIG_FILE"
         grep -q '^NETBIRD_DIR=' "$CONFIG_FILE" || echo "NETBIRD_DIR=\"$NETBIRD_DIR\"" >> "$CONFIG_FILE"
+        set_cred "RESTIC_REPOSITORY=" "RESTIC_REPOSITORY=\"$RESTIC_REPOSITORY\""
+        set_cred "export AWS_ACCESS_KEY_ID=" "export AWS_ACCESS_KEY_ID=\"$AWS_ACCESS_KEY_ID\""
+        set_cred "export AWS_SECRET_ACCESS_KEY=" "export AWS_SECRET_ACCESS_KEY=\"$AWS_SECRET_ACCESS_KEY\""
+        if [[ -n "$PUSH_URL" ]]; then
+            set_cred "PUSH_URL=" "PUSH_URL=\"$PUSH_URL\""
+        fi
         if [[ -n "$WEBHOOK" ]]; then
             sed -i '/^DISCORD_WEBHOOK_URL=/d' "$CONFIG_FILE"
             echo "DISCORD_WEBHOOK_URL=\"$WEBHOOK\"" >> "$CONFIG_FILE"
@@ -188,7 +211,10 @@ write_config() {
 NETBIRD_DIR="$NETBIRD_DIR"
 DISCORD_WEBHOOK_URL="$WEBHOOK"
 #DISCORD_USER_ID="261598730027925505"
-#RESTIC_REPOSITORY="$RESTIC_REPOSITORY"
+RESTIC_REPOSITORY="$RESTIC_REPOSITORY"
+export AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
+export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+PUSH_URL="$PUSH_URL"
 #RESTIC_PASSWORD_FILE="$RESTIC_PASSWORD_FILE"
 #BACKUP_DIR="/var/backups/netbird"
 #RESTIC_KEEP_DAILY=7
@@ -251,7 +277,7 @@ main() {
 
     install_dependencies
     find_netbird_dir
-    check_rclone_remote
+    check_s3
     setup_restic
     write_config
     install_scripts
