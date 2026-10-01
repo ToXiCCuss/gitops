@@ -16,9 +16,9 @@
 # NOTE: with a PostgreSQL/MySQL store the database must be backed up separately.
 #
 # Optional overrides in /etc/netbird-backup.cred:
-#   NETBIRD_DIR, DISCORD_WEBHOOK_URL, DISCORD_USER_ID, RESTIC_REPOSITORY,
+#   NETBIRD_DIR, RESTIC_REPOSITORY,
 #   RESTIC_PASSWORD_FILE, BACKUP_DIR, RESTIC_KEEP_DAILY/WEEKLY/MONTHLY,
-#   PUSH_URL (Uptime Kuma push monitor), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#   PUSH_URL (Uptime Kuma push monitor, the only notification), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 #   (keys of the S3 identity "netbird")
 #
 # Environment (used by netbird_upgrade.sh):
@@ -31,9 +31,6 @@ if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
 fi
 
-# Notification Settings
-DISCORD_WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}"
-DISCORD_USER_ID="${DISCORD_USER_ID:-261598730027925505}"
 
 format_duration() {
     local seconds=$1
@@ -49,56 +46,6 @@ format_duration() {
         echo "${s}s"
     fi
 }
-
-send_notification() {
-    local title="$1"
-    local message="$2"
-    local type="${3:-error}"
-    local duration="$4"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    local hostname=$(hostname)
-
-    if [ -n "$DISCORD_WEBHOOK_URL" ]; then
-        local color=15158332
-        local emoji="🚨"
-
-        if [ "$type" == "success" ]; then
-            color=3066993 # green
-            emoji="✅"
-        elif [ "$type" == "info" ]; then
-            color=3447003 # blue
-            emoji="ℹ️"
-        fi
-
-        local fields="[
-            { \"name\": \"🖥️ Server\", \"value\": \"$hostname\", \"inline\": true },
-            { \"name\": \"🕒 Time\", \"value\": \"$timestamp\", \"inline\": true }"
-
-        if [ -n "$duration" ]; then
-            fields+=", { \"name\": \"⏱️ Duration\", \"value\": \"$duration\", \"inline\": true }"
-        fi
-        fields+="]"
-
-        curl -s -H "Content-Type: application/json" \
-             -X POST \
-             -d "{
-                \"username\": \"Backups\",
-                \"content\": \"<@${DISCORD_USER_ID}>\",
-                \"embeds\": [{
-                    \"title\": \"$emoji $title\",
-                    \"description\": \"**$message**\",
-                    \"color\": $color,
-                    \"fields\": $fields
-                }]
-             }" \
-             "$DISCORD_WEBHOOK_URL" > /dev/null
-    fi
-}
-
-send_discord_error() {
-    send_notification "${DISCORD_ERROR_TITLE:-Error}" "$1" "error"
-}
-DISCORD_ERROR_TITLE="NetBird Backup"
 
 NETBIRD_DIR="${NETBIRD_DIR:-/opt/netbird}"
 
@@ -123,7 +70,6 @@ push_status() {
 
 fail() {
     echo "[ERROR] $1"
-    send_discord_error "$1"
     push_status down backup-failed
     exit 1
 }
@@ -162,7 +108,6 @@ restart_services() {
     echo "[INFO] Starting NetBird services..."
     if ! docker compose start; then
         echo "[ERROR] docker compose start failed"
-        send_discord_error "docker compose start failed - NetBird is DOWN"
     fi
 }
 trap restart_services EXIT
@@ -242,5 +187,4 @@ DURATION_SECONDS=$((END_TIME - START_TIME))
 DURATION=$(format_duration $DURATION_SECONDS)
 
 echo "[INFO] NetBird backup completed successfully in $DURATION."
-send_notification "$DISCORD_ERROR_TITLE" "Backup completed successfully" "success" "$DURATION"
 push_status up OK

@@ -603,7 +603,7 @@ The self-hosted NetBird server runs as a Docker Compose project on `docker01` (d
 * `netbird_backup.sh`: stops NetBird for a moment, copies the config files, `/var/lib/netbird` (SQLite store and keys),
 CrowdSec data and certificates, starts NetBird again (also on errors), writes everything with restic to the
 repository `netbird/restic` on the local SeaweedFS S3 and applies the retention (7 daily, 4 weekly, 6 monthly). It reports
-to Uptime Kuma (`PUSH_URL`) and Discord. A PostgreSQL or MySQL store would have to be backed up separately
+to Uptime Kuma (`PUSH_URL`). A PostgreSQL or MySQL store would have to be backed up separately
 * `netbird_restore.sh`, `netbird_upgrade.sh` (creates a pre-upgrade backup and a local rollback point), `netbird_rollback.sh`
 * `netbird_backup_setup.sh` installs them to `/usr/local/bin`, writes `/etc/netbird-backup.cred` and a cron job
 
