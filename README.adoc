@@ -18,7 +18,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 |ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, backup, spring).
 
 |`terraform/`
-|NetBird account configuration (DNS zone and access policy).
+|NetBird account configuration (the `k8sdev.rjst.de` DNS zone).
 
 |`scripts/`
 |Helper scripts: Ansible secrets, backup host setup, Vault (PowerShell), database administration, Linux benchmarks.
@@ -42,7 +42,7 @@ Then switch to the repository and install the required collections:
 
 [source,bash]
 ----
-cd gitops-ansible
+cd gitops/ansible
 ansible-galaxy collection install -r requirements.yml
 ----
 
@@ -257,26 +257,6 @@ existed only on that host, now it survives a rebuild.
 `docker/arcane/start.sh` still works as a manual fallback. Its `override.env` is
 gitignored, since it holds both secrets in plain text.
 
-==== Taking over a stack that start.sh already deployed
-
-`start.sh` runs `docker compose up` from the repository checkout, so an existing
-Arcane uses that directory as its compose project while the role uses
-`arcane_dir` (`/root/docker/arcane`). Both compose files set
-`container_name: arcane`, so the role would hit `container name /arcane is
-already in use`. It therefore checks for this and aborts with an explanatory
-message instead.
-
-Stop the old stack once, then let the role take over:
-
-[source,bash]
-----
-cd <repo checkout>/docker/arcane && docker compose down
-----
-
-The data is not affected - `docker-compose.yml` mounts
-`/root/docker/arcane/data` and `/root/docker/arcane/backups` by absolute path,
-so it already lives where the role deploys to.
-
 == Docker
 
 === Setup Arcane
@@ -351,14 +331,6 @@ SeaweedFS is the local S3 staging for all backups. Access is controlled by separ
 
 === Setup
 
-==== ArgoCD
-
-----
-helm repo add argo https://argoproj.github.io/argo-helm
-helm install argocd argo/argo-cd -n argocd --values argocd-values.yaml --create-namespace
-helm upgrade argocd argo/argo-cd -n argocd --values argocd-values.yaml
-----
-
 Each top-level folder is its own independently deployable ArgoCD app-of-apps
 (`kube-app-<name>.yaml`), so a domain can be bootstrapped on its own via
 `kubectl apply -f kubernetes/kube-app-<name>.yaml`. Inside a domain, the
@@ -424,6 +396,9 @@ automated sync.
 ----
 helm repo add argo https://argoproj.github.io/argo-helm
 helm install argocd argo/argo-cd -n argocd --values argocd-values.yaml --create-namespace
+
+# later, to apply changes to argocd-values.yaml:
+helm upgrade argocd argo/argo-cd -n argocd --values argocd-values.yaml
 ----
 
 ==== 2. Deploy Vault standalone
@@ -521,10 +496,8 @@ later step, app by app.
 ===== Vault backups
 
 A `CronJob` (`kubernetes/backup/kubectl/kube-vault-backup.yaml`, daily at 03:00)
-takes a Raft snapshot and pushes it to the same restic/pCloud repository
-your old Linux cron job used (`rclone:pCloud:/Backups/vault_pb`) — it
-replaces that cron entirely; remove it from the old host's crontab
-yourself, this repo can't reach that machine. It authenticates to Vault
+takes a Raft snapshot and pushes it to the restic/pCloud repository
+`rclone:pCloud:/Backups/vault_pb`. It authenticates to Vault
 with its own ServiceAccount (`vault-backup-sa` in the `backup` namespace,
 Kubernetes auth, no static token), and reads the restic password + your
 `rclone.conf` (with the pCloud remote) from Vault at
@@ -573,8 +546,7 @@ What lives in Git, and what doesn't:
   deployed. Removing a domain deletes them again - delete the policy that uses
   them (and the zone's distribution-group entry) first, NetBird refuses to
   delete a group that is still referenced.
-* *By hand in the dashboard* (no Terraform for now; `terraform/` is optional and
-  not needed for this):
+* *By hand in the dashboard*:
   . `DNS > Zones > Add Zone`: name and domain `k8sdev.rjst.de` (a separate internal
     zone: `proxy.rjst.de` is the NetBird host's own public domain and must not
     be shadowed; a subdomain of `rjst.de` so Let's Encrypt DNS-01 can issue for
@@ -592,23 +564,14 @@ What lives in Git, and what doesn't:
     deliberately not used).
   . `Peers`: put each peer/user into `k8s-admins` and/or the matching
     `<app>-users`. Nothing is reachable until a peer is in a group with a policy.
-  . The group formerly called `kubernetes-clients` is renamed to `k8s-admins` by
-    the operator (same group ID, so existing peers and policies stay).
 * Guide this follows: https://docs.netbird.io/use-cases/kubernetes/route-to-a-kubernetes-service[Route to a Kubernetes service].
   The router runs a single routing peer (`workloadOverride.replicas: 1`,
   single-node cluster); raise it to 3+ for failover.
-* The manual Traefik routes on the NetBird host (`<app>.proxy.rjst.de`) are no
-  longer needed for these apps: clients reach them directly through NetBird. If
-  you still publish anything through NetBird's reverse proxy, don't create it
-  with the Terraform provider (v0.0.10): it can't mark a service as
-  private/NetBird-only, so it would be reachable from the internet.
 
 Every app is reached as `https://<app>.k8sdev.rjst.de` (see the next section):
 its own Gateway, Service, VirtualService and `NetworkResource` live next to the
 app (`kube-gw-argocd.yaml` in `infra`, the others in their domain's `kubectl/`
-folder) and create the record `gw-<app>.istio-internal.k8sdev.rjst.de`. Nothing
-syncs the `kubernetes/parked/` folder (old direct NetworkResources, kept for
-reference).
+folder) and create the record `gw-<app>.istio-internal.k8sdev.rjst.de`.
 
 [cols="1,2,1,1"]
 |===
@@ -624,10 +587,8 @@ reference).
 |Apicurio Registry |`apicurio.k8sdev.rjst.de` |`example-apicurioregistry-mem-service.kafka:8080` |8450
 |===
 
-Per app, in the dashboard: a CNAME `<app>` ->
-`gw-<app>.istio-internal.k8sdev.rjst.de`, the app's `<app>-users` group as a
-distribution group of the zone, and the policy `<app>-users` -> `k8s-<app>`
-(TCP 443). The nodes need the same to pull from Harbor
+Each app needs the CNAME, the `<app>-users` distribution group and the policy
+from above. The nodes need access to pull from Harbor too
 (`harbor.k8sdev.rjst.de` has a valid certificate, so k3s needs no
 insecure-registry setting): put the node peers into `harbor-users`.
 
@@ -641,9 +602,7 @@ outside the cluster can reach it except through the NetBird routing peer.
 NetBird separates access per destination, not per hostname, so every app gets
 its own Service, its own listener port on the gateway and its own
 `NetworkResource` (`infra/kubectl/kube-istio-internal.yaml`). Each listener
-only accepts that app's hostname, so per-app groups stay meaningful. Vault is
-the first app there. The earlier direct `NetworkResource` on port 8200 is parked
-in `kubernetes/parked/`, so the HTTPS route is the only way in.
+only accepts that app's hostname, so per-app groups stay meaningful.
 
 ===== kubectl through NetBird (API server proxy)
 
@@ -689,36 +648,14 @@ under the `k8sdev.rjst.de` zone.
 
 == Terraform (NetBird)
 
-Manages the self-hosted NetBird account-level things that the Kubernetes
-operator doesn't (or can't) do. This is the officially maintained provider
+Manages the `k8sdev.rjst.de` DNS zone in the self-hosted NetBird account, which the
+Kubernetes operator can't create (`terraform/dns/`). This is the officially maintained provider
 (`registry.terraform.io/netbirdio/netbird`), separate from GitOps/ArgoCD -
-nothing here is applied automatically, you run it yourself. Two independent
-configs, because they have to run at different times:
-
-[cols="1,2,2"]
-|===
-|Folder |What |When
-
-|`dns/`
-|The `k8sdev.rjst.de` DNS zone.
-|*Before* `infra` syncs the `NetworkRouter`, otherwise the router fails.
-Creating the zone in the dashboard instead (`DNS > Zones > Add Zone`) works
-just as well.
-
-|`access/`
-|The access policy: `kubernetes-clients` may reach `kubernetes-services` on
-the app ports.
-|*After* `infra` has synced - the two groups are created by the NetBird
-operator (`kubernetes/infra/kubectl/kube-netbird-access.yaml`), and the config
-looks them up by name.
-|===
-
-The operator's own `NBPolicy` resource is not used: it only derives ports from
-the deprecated ingress flow and creates nothing for `NetworkResource`s.
-
-NOTE: don't add `netbird_reverse_proxy_service` resources for the internal
-apps. Provider v0.0.10 has no way to mark a service private (NetBird-only),
-so it would be reachable from the internet.
+nothing here is applied automatically, you run it yourself. Apply it *before*
+`infra` syncs the `NetworkRouter`, otherwise the router fails. Creating the zone in
+the dashboard instead (`DNS > Zones > Add Zone`) works just as well. The access
+policies are created by hand in the dashboard, see
+<<5. NetBird configuration>>.
 
 === Token and URL
 
@@ -735,10 +672,10 @@ $env:NB_MANAGEMENT_URL = "https://<your netbird domain>"
 === Run
 
 ----
-terraform -chdir=terraform/access init
-terraform -chdir=terraform/access plan
-terraform -chdir=terraform/access apply
+terraform -chdir=terraform/dns init
+terraform -chdir=terraform/dns plan
+terraform -chdir=terraform/dns apply
 ----
 
-Same for `terraform/dns`. State stays local (`terraform.tfstate` is
-git-ignored) - keep it, or a second `apply` will try to create things again.
+State stays local (`terraform.tfstate` is git-ignored) - keep it, or a second
+`apply` will try to create things again.
