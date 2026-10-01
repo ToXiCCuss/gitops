@@ -5,7 +5,7 @@
 # databasus, seaweedfs). Deploying the projects themselves is done in Arcane.
 #
 #   sudo ./setup-backup-host.sh [--rclone-conf /root/.config/rclone/rclone.conf] [--regenerate-s3]
-#                               [--s3-endpoint http://127.0.0.1:8333]
+#                               [--s3-endpoint http://127.0.0.1:8333] [--dns 1.1.1.1]
 #
 # Creates the pCloud remote in rclone.conf if it is missing (token from `rclone authorize "pcloud"`).
 # Generates the SeaweedFS S3 identities (admin, backrest, databasus, vault, offsite-sync) into
@@ -33,12 +33,15 @@ REGENERATE=""
 S3_ENDPOINT="http://127.0.0.1:8333"
 PCLOUD_REMOTE="pCloud"
 RCLONE_CONF="/root/.config/rclone/rclone.conf"
+# Containers inherit the NetBird DNS (100.x) of the host, which they cannot reach: use a public resolver
+DNS_SERVER="1.1.1.1"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --rclone-conf)      RCLONE_CONF="$2"; shift 2 ;;
         --regenerate-s3)    REGENERATE=1; shift ;;
         --s3-endpoint)      S3_ENDPOINT="$2"; shift 2 ;;
+        --dns)              DNS_SERVER="$2"; shift 2 ;;
         --pcloud-remote)    PCLOUD_REMOTE="$2"; shift 2 ;;
         *) error "Unknown argument: $1"; exit 1 ;;
     esac
@@ -100,10 +103,10 @@ done
 
 # ── pCloud check ──────────────────────────────────────────────────────────────
 step "Checking the pCloud remote"
-if docker run --rm -v "$DATA_ROOT/offsite-sync/rclone:/config/rclone:ro" "$RCLONE_IMAGE" lsd "$PCLOUD_REMOTE:/" >/dev/null; then
+if docker run --rm --dns "$DNS_SERVER" -v "$DATA_ROOT/offsite-sync/rclone:/config/rclone:ro" "$RCLONE_IMAGE" \n        lsd "$PCLOUD_REMOTE:/" --timeout 30s --contimeout 15s --retries 1 --low-level-retries 1 >/dev/null; then
     success "pCloud remote works"
 else
-    error "Cannot list $PCLOUD_REMOTE:/ - the token in rclone.conf may be expired"
+    error "Cannot list $PCLOUD_REMOTE:/ - check the error above: DNS/network, wrong region (eu/us) or an expired token"
     exit 1
 fi
 

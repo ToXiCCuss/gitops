@@ -7,6 +7,10 @@ services:
       - ".env"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # The host DNS is the NetBird resolver (100.x), which containers cannot reach
+    dns:
+      - 1.1.1.1
+      - 9.9.9.9
     entrypoint: ["/bin/sh", "/sync.sh"]
     volumes:
       - ./sync.sh:/sync.sh:ro

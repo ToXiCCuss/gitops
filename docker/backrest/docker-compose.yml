@@ -6,6 +6,10 @@ services:
     env_file:
       - "default.env"
       - ".env"
+    # The host DNS is the NetBird resolver (100.x), which containers cannot reach (needed for pCloud restores)
+    dns:
+      - 1.1.1.1
+      - 9.9.9.9
     ports:
       - "9898:9898"
     volumes:
