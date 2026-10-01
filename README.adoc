@@ -411,19 +411,67 @@ JWT_SECRET=default-jwt-secret
 
 === Setup Backrest
 
-Backrest is the web UI for restic on the Docker host. It backs up the Docker volumes read-only
-to the local SeaweedFS S3 and is used to browse and restore snapshots.
+Backrest is the web UI for restic on the Docker host. It backs up the Docker volumes read-only to the local
+SeaweedFS S3, checks the repositories and is used to browse and restore snapshots. It reaches the S3 as
+`host.docker.internal` (set in the compose file), the firewall must allow the Docker network to reach port 8333
+(see Setup Databasus).
 
-* Secrets are set in `.env` (in Arcane: project environment). `default.env` lists all variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (SeaweedFS S3) and `RESTIC_PASSWORD`
-* `docker compose up -d` in the backrest folder
-* Open `http://<docker-host>:9898` (only reachable through NetBird, never publish it) and create the admin user
+* Secrets are set in `.env` (in Arcane: project environment). `default.env` lists all variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (identity `backrest`) and `RESTIC_PASSWORD`
+* Deploy the project in Arcane, open `http://<docker-host>:9898` and create the admin user (set a strong password, Hooks run shell commands)
 * The pCloud remote (`rclone.conf`) for restoring from pCloud is created and installed to `/root/docker/backrest/rclone/rclone.conf` by `setup-backup-host.sh`
-* Repos:
-** `s3:http://<docker-host>:8333/backups/docker` (backup target, keys of the `backrest` identity)
-** `rclone:pCloud:/Backups/...` (offsite, restore only)
-* Plan `/userdata/docker`: exclude `seaweedfs` and database data directories
 * Restore only into `/restore`, then move the data into place
-* Store the restic password and `rclone.conf` outside the server as well (password manager)
+* Store the restic passwords and `rclone.conf` outside the server as well (password manager)
+
+==== Repositories
+
+[cols="1,2,2,2"]
+|===
+|Setting |Repository `docker` |Repository `vault` |Repository `pcloud` (restore only)
+
+|URI
+|`s3:http://host.docker.internal:8333/backups/docker`
+|`s3:http://host.docker.internal:8333/vault/raft`
+|`rclone:pCloud:/Backups/s3/backups/docker`
+
+|Password
+|`RESTIC_PASSWORD` of the `backrest` project
+|`RESTIC_PASSWORD` of the `vault-backup` project
+|the one of the `docker` repository
+
+|Environment variables
+|`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (`BACKREST_*`). Try without, enter them if the S3 answers with access denied
+|the same keys of `backrest` (the identity also has the bucket `vault`)
+|none
+
+|Prune policy
+|weekly, Sunday 03:30 UTC (`30 3 * * 0`), max unused 10%
+|*off*: `vault-backup` runs `forget --prune` itself
+|off
+
+|Check policy
+|weekly, Sunday 04:00 UTC (`0 4 * * 0`), read data subset 10%
+|weekly, Sunday 04:00 UTC, read data subset 10%
+|off, check manually
+|===
+
+==== Plan for the Docker volumes
+
+[cols="1,3"]
+|===
+|Setting |Value
+
+|Repository |`docker`
+|Paths |`/userdata/docker`
+|Excludes |`/userdata/docker/seaweedfs` (the S3 target must not back up itself), `/userdata/docker/backrest/cache`, `/userdata/docker/backrest/restore`
+|Schedule |`0 3 * * *`, UTC
+|Retention |daily 7, weekly 4, monthly 6
+|===
+
+Files of running databases are copied while they change. Uptime Kuma (SQLite) and the internal database of Databasus
+may be inconsistent in the snapshot. PostgreSQL itself is not part of this, Databasus backs it up.
+
+Test it: "Backup now" on the plan, then "Check" on the repository and restore a file into `/restore`. Restoring from
+pCloud (repository `pcloud`) is done after the first offsite sync.
 
 === Setup Databasus
 
