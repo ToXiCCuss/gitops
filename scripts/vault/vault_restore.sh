@@ -44,7 +44,8 @@ export VAULT_TOKEN=${VAULT_TOKEN:-""}
 export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
 export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
 RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-s3:${S3_ENDPOINT:-http://docker01.vpn.rjst.de:8333}/vault/raft}"
-RESTIC_PASSWORD_FILE="/root/restic"
+# Password of the vault repository, set RESTIC_PASSWORD_FILE if it is not in /root/restic (that file is used by NetBird)
+RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/root/restic}"
 
 # ── 1. Check Dependencies ─────────────────────────────────────────────────────
 check_dependencies() {

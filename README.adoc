@@ -401,6 +401,91 @@ quarter, restore a volume or a database from *pCloud*, not from the local S3: ad
 repository (`rclone:pCloud:/Backups/s3/backups/docker`) in Backrest as an additional repository and
 restore into `/restore`.
 
+=== Restore
+
+Keep these in the password manager, nothing can be read without them and they are not on the servers:
+
+* the restic passwords of the repositories `docker` (Backrest), `vault` (project `vault-backup`) and `netbird` (`/root/restic`)
+* the `rclone.conf` of pCloud (the token)
+* the Vault unseal keys and the root token (printed once by `init-vault.ps1`) and the Ansible vault password (`ansible/.vault_pass`)
+
+[cols="1,2"]
+|===
+|Data |Restore with
+
+|Docker volumes (`/root/docker`) |Backrest, repository `docker` (below)
+|PostgreSQL |Databasus (below)
+|Vault |`scripts/vault/vault_restore.sh` (below)
+|NetBird server |`netbird_restore.sh` (below)
+|Pelican game servers |Pelican Panel (below), the Panel and Wings data are not backed up
+|The whole S3 is lost |restic directly from pCloud (below)
+|===
+
+==== Docker volumes
+
+. Stop the container whose data you restore (Arcane).
+. Backrest: repository `docker` -> snapshots -> browse the snapshot, select the folder -> restore to a path below `/restore`
+  (the only writable path, `/root/docker/backrest/restore` on the host).
+. Copy the data from `/root/docker/backrest/restore/...` to its place in `/root/docker/<service>`, check the owner, start the container.
+
+The files of running databases (Uptime Kuma, the internal database of Databasus) are copied while they change, a restore may need
+a check. After a total loss restore the data of `seaweedfs-s3.json` first (it is in the snapshot) or create it again with
+`setup-backup-host.sh`.
+
+==== PostgreSQL
+
+. Databasus: select the database, then the backup and restore it. Restore into a scratch database first to look at the result.
+. On a new server: run the Ansible role `postgresql` (PostgreSQL 18 with `pg_cron` and `pg_partman`), create the database with
+  `db_create.sh <name>` and the backup role with `backup_user_create.sh`, then restore the dump with Databasus.
+. The configuration of Databasus itself is in `/root/docker/databasus` (restore it from the Backrest snapshot before the first start).
+  Whether a new Databasus instance lists the existing backups of the S3 storage again, has not been tested.
+
+==== Vault
+
+. Vault runs (Argo, `kube-vault.yaml`) and is initialised and unsealed (`init-vault.ps1` on a fresh Vault).
+. On a host with the `vault` CLI: `VAULT_ADDR` and `VAULT_TOKEN` (root token) set, and `/etc/vault-backup.cred` with the lines
+  `S3_ENDPOINT=...`, `AWS_ACCESS_KEY_ID=...` and `AWS_SECRET_ACCESS_KEY=...` (identity `vault` or `backrest`).
+. Put the restic password of the Vault repository into a file and run the script, it lists the snapshots and asks which one to restore:
++
+----
+sudo RESTIC_PASSWORD_FILE=/root/restic-vault scripts/vault/vault_restore.sh
+----
+
+A snapshot replaces all data of Vault. After restoring a snapshot of another cluster the unseal keys of the backed up
+cluster apply, and the restore may need `-force`. Snapshots from before the move are in `rclone:pCloud:/Backups/vault_pb`
+(set `RESTIC_REPOSITORY`).
+
+==== NetBird
+
+`netbird_restore.sh` works on the original server and on a new one (Docker and Compose installed, the same domain pointing to it,
+TCP 80 and 443 and UDP 3478 open). It needs `/etc/netbird-backup.cred` with the S3 keys of the identity `netbird` and
+`/root/restic`, both are written by `netbird_backup_setup.sh`. It lists the snapshots and restores the selected one:
+
+----
+sudo netbird_restore.sh
+----
+
+After a failed upgrade `netbird_rollback.sh` goes back to the rollback point made by `netbird_upgrade.sh`.
+
+==== Pelican game servers
+
+Panel -> server -> Backups -> Restore. Pelican fetches the backup from the bucket `pelican`, the Wings must reach port 8333 of the S3.
+The Panel and the Wings configuration themselves are not backed up (see Setup Pelican).
+
+==== The S3 is lost (restore from pCloud)
+
+The offsite sync keeps a copy of every bucket in `pCloud:/Backups/s3/<bucket>/`. The restic repositories can be read from there
+directly, without the S3, with the `rclone.conf` and the restic password:
+
+----
+restic -r rclone:pCloud:/Backups/s3/backups/docker snapshots
+restic -r rclone:pCloud:/Backups/s3/vault/raft restore latest --target /restore/vault
+restic -r rclone:pCloud:/Backups/s3/netbird/restic restore latest --target /restore/netbird
+----
+
+In Backrest the repository `pcloud` does the same in the UI. To fill a new SeaweedFS again, run the nightly sync the other way
+round: `rclone sync pCloud:/Backups/s3 SEAWEED:` (with an S3 remote named `SEAWEED` and the admin key).
+
 === Setup Arcane
 
 * Clone this repository to your local machine.
@@ -428,35 +513,50 @@ SeaweedFS S3, checks the repositories and is used to browse and restore snapshot
 
 ==== Repositories
 
-[cols="1,2,2,2"]
+The repository `docker` is new, you choose its password. `vault` and `netbird` already exist (created by `vault-backup`
+and `netbird_backup.sh`): enter their existing passwords and leave auto initialize off. The S3 keys in the environment
+variables of every repository are the ones of the identity `backrest` (`jq -r '.identities[] | select(.name=="backrest") |
+.credentials[0]' /root/docker/seaweedfs-s3.json`): `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, one entry each, without spaces or
+quotes (the Backrest docs list them in the environment variables of the repository, they do not say whether the environment
+of the container is passed on). `SignatureDoesNotMatch` means a wrong secret, "wrong password" a wrong repository password.
+
+[cols="1,2,2,2,2"]
 |===
-|Setting |Repository `docker` |Repository `vault` |Repository `pcloud` (restore only)
+|Setting |`docker` |`vault` |`netbird` |`pcloud` (restore only)
 
 |URI
 |`s3:http://host.docker.internal:8333/backups/docker`
 |`s3:http://host.docker.internal:8333/vault/raft`
+|`s3:http://host.docker.internal:8333/netbird/restic`
 |`rclone:pCloud:/Backups/s3/backups/docker`
 
 |Password
-|`RESTIC_PASSWORD` of the `backrest` project
+|new, store it in the password manager
 |`RESTIC_PASSWORD` of the `vault-backup` project
-|the one of the `docker` repository
+|content of `/root/restic` on the Docker host
+|the one of `docker`
 
-|Environment variables
-|`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (`BACKREST_*`), entered in the environment variables of the repository (the Backrest docs list them there, they do not say whether the environment of the container is passed on). `SignatureDoesNotMatch` means a wrong secret
-|the same keys of `backrest` (the identity also has the bucket `vault`)
-|none
+|Auto initialize
+|on
+|off
+|off
+|off
 
 |Prune policy
 |weekly, Sunday 03:30 UTC (`30 3 * * 0`), max unused 10%
-|*off*: `vault-backup` runs `forget --prune` itself
+|*off*, `vault-backup` runs `forget --prune` itself
+|*off*, `netbird_backup.sh` runs `forget --prune` itself
 |off
 
 |Check policy
 |weekly, Sunday 04:00 UTC (`0 4 * * 0`), read data subset 10%
-|weekly, Sunday 04:00 UTC, read data subset 10%
-|off, check manually
+|the same
+|the same
+|off, check by hand
 |===
+
+You see the existing snapshots of `vault` and `netbird` right after saving the repository. That also proves that the identity `backrest`
+may read these buckets (`access denied` for `netbird` means that SeaweedFS was not restarted after the rights were updated).
 
 ==== Plan for the Docker volumes
 
@@ -473,10 +573,6 @@ SeaweedFS S3, checks the repositories and is used to browse and restore snapshot
 
 Files of running databases are copied while they change. Uptime Kuma (SQLite) and the internal database of Databasus
 may be inconsistent in the snapshot. PostgreSQL itself is not part of this, Databasus backs it up.
-
-A fourth repository `netbird` (URI `s3:http://host.docker.internal:8333/netbird/restic`, the identity `backrest` also has this
-bucket) is added like `vault`: prune off (`netbird_backup.sh` runs `forget --prune` itself), check weekly. The password is the content of
-`/root/restic` on the NetBird server.
 
 Test it: "Backup now" on the plan, then "Check" on the repository and restore a file into `/restore`. Restoring from
 pCloud (repository `pcloud`) is done after the first offsite sync.
@@ -594,6 +690,15 @@ on this bucket only) are created by the setup script. Settings for Pelican, the 
 * Access key and secret: `PELICAN_ACCESS_KEY_ID` and `PELICAN_SECRET_ACCESS_KEY` of `/root/backup-credentials.env`
 * The endpoint must be reachable from the Panel, from the Wings nodes and for downloads from the browser (the Panel hands
 out presigned URLs). The firewall must allow the Wings and the Panel to reach port 8333
+
+What this covers and what not: the S3 backups are the backups of the game *servers* (their files, made by Pelican). The data of
+Pelican itself is *not* covered by any backup so far, it does not live under `/root/docker`, which the Backrest plan sees:
+
+* the Panel (database, `.env`, application key) is in the Docker volume `pelican_panel_data` (`/var/lib/docker/volumes/`)
+* the Wings configuration (`/etc/pelican`, contains the node token) and the server files (`/var/lib/pelican`)
+
+Without the application key of the Panel the encrypted data of the Panel cannot be restored. To cover it, add these paths as
+read-only mounts to the Backrest container and as sources to the plan (not done yet).
 
 === Setup NetBird backup
 
