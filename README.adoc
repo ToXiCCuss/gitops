@@ -674,10 +674,22 @@ replaces all keys
 Pelican can store the backups of its servers in an S3. The bucket `pelican` and the identity `pelican` (Read, Write, List
 on this bucket only) are created by the setup script. Settings for Pelican, the names of the fields may differ in your version:
 
-* Endpoint `http://<docker-host>:8333`, bucket `pelican`, path-style on, any region (e.g. `us-east-1`)
-* Access key and secret: `PELICAN_ACCESS_KEY_ID` and `PELICAN_SECRET_ACCESS_KEY` of `/root/backup-credentials.env`
-* The endpoint must be reachable from the Panel, from the Wings nodes and for downloads from the browser (the Panel hands
-out presigned URLs). The firewall must allow the Wings and the Panel to reach port 8333
+* Backup driver S3 in the admin settings (Backups), endpoint `http://100.67.0.1:8333` (the NetBird address of `docker01`), bucket `pelican`,
+path-style on, any region (e.g. `us-east-1`)
+* Access key and secret of the identity `pelican`, without spaces or quotes (the password manager of the browser may fill them into a wrong field):
+`jq -r '.identities[] | select(.name=="pelican") | .credentials[0]' /root/docker/seaweedfs-s3.json`
+* Why the IP: the endpoint must be reachable from the Panel and the Wings (containers in Docker networks), and for downloads from the browser (the
+Panel hands out presigned URLs). Containers do not know `host.docker.internal` there and cannot resolve `docker01.vpn.rjst.de` (the host DNS is the
+NetBird resolver), an IP works for both. The browser must be in the NetBird network.
+* The firewall must let the Docker networks reach port 8333 (`ufw allow from 172.16.0.0/12 to any port 8333 proto tcp`, it covers the
+destination `100.67.0.1`). Test it from the networks of the Wings and the Panel, `open` is the right answer:
++
+----
+docker run --rm --network wings0 alpine nc -zv -w 5 100.67.0.1 8333
+docker run --rm --network pelicanpanel_default alpine nc -zv -w 5 100.67.0.1 8333
+----
+* Test a backup of a server, the download and a restore on a test server. Set the number of backups per server in Pelican, every backup is a
+full archive
 
 What this covers and what not: the S3 backups are the backups of the game *servers*. Pelican writes them as plain `.tar.gz`
 archives into the bucket `pelican`, restic is not involved. They are *not encrypted*: readable without a password in the S3 and,
