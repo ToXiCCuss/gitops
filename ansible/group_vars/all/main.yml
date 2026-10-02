@@ -24,7 +24,8 @@ ssh_authorized_keys:
 # k3s nodes that should pull images through the Harbor mirror.
 # Needs k3s_registries_harbor_password in the vault on the first run
 # (scripts/ansible/setup-secrets.sh).
-k3s_hosts: []
+k3s_hosts:
+   - k8sdev01
 
 # ── Per-host configuration (plain, NOT secret) ───────────────────────────────
 # Non-confidential settings that differ per host. Same resolution as the
