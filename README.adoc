@@ -443,7 +443,7 @@ SeaweedFS S3, checks the repositories and is used to browse and restore snapshot
 |the one of the `docker` repository
 
 |Environment variables
-|`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (`BACKREST_*`). Try without, enter them if the S3 answers with access denied
+|`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (`BACKREST_*`), entered in the environment variables of the repository (the Backrest docs list them there, they do not say whether the environment of the container is passed on). `SignatureDoesNotMatch` means a wrong secret
 |the same keys of `backrest` (the identity also has the bucket `vault`)
 |none
 
