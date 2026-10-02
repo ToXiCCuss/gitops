@@ -397,8 +397,10 @@ Keep these in the password manager, nothing can be read without them and they ar
 
 ==== Key files
 
-. Backrest: repository `docker` -> snapshots -> browse the snapshot, select the file -> restore to a path below `/restore`
-  (the only writable path, `/root/docker/backrest/restore` on the host).
+. Backrest: repository `docker` -> snapshots -> browse the snapshot, select the file -> restore to a *new* folder below `/restore`,
+  e.g. `/restore/test1` (`/restore` is the only writable path, `/root/docker/backrest/restore` on the host). Backrest refuses a target that
+  exists already (`target directory "/restore" already exists`), so use a new name each time or delete the old folder. The restored
+  files hold secrets in plain text, delete the folder afterwards.
 . Copy the file back to its place (`/root/gitops/docker/<project>/override.env`, `/root/docker/seaweedfs-s3.json`,
   `/root/docker/backrest/rclone/rclone.conf`, `/root/docker/offsite-sync/rclone/rclone.conf`, `/root/docker/databasus/secret.key`),
   check the owner and mode (`override.env` `600`) and deploy the project with `deploy.sh`.
