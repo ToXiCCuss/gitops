@@ -691,14 +691,20 @@ on this bucket only) are created by the setup script. Settings for Pelican, the 
 * The endpoint must be reachable from the Panel, from the Wings nodes and for downloads from the browser (the Panel hands
 out presigned URLs). The firewall must allow the Wings and the Panel to reach port 8333
 
-What this covers and what not: the S3 backups are the backups of the game *servers* (their files, made by Pelican). The data of
-Pelican itself is *not* covered by any backup so far, it does not live under `/root/docker`, which the Backrest plan sees:
+What this covers and what not: the S3 backups are the backups of the game *servers*. Pelican writes them as plain `.tar.gz`
+archives into the bucket `pelican`, restic is not involved. They are *not encrypted*: readable without a password in the S3 and,
+after the nightly sync, in pCloud (`Backups/s3/pelican/`, deleted or overwritten archives stay 30 days in `Backups-deleted`).
+This is intended, the game server data is not put into a restic repository. Every backup is a full archive (no deduplication),
+so set the number of backups per server and the schedule in Pelican to what the storage and the upload can take.
 
-* the Panel (database, `.env`, application key) is in the Docker volume `pelican_panel_data` (`/var/lib/docker/volumes/`)
-* the Wings configuration (`/etc/pelican`, contains the node token) and the server files (`/var/lib/pelican`)
+Not covered by any backup so far, because it does not live under `/root/docker`, which the Backrest plan sees:
 
-Without the application key of the Panel the encrypted data of the Panel cannot be restored. To cover it, add these paths as
-read-only mounts to the Backrest container and as sources to the plan (not done yet).
+* the Panel (database, `.env`, application key) in the Docker volume `pelican_panel_data` (`/var/lib/docker/volumes/`)
+* the Wings configuration (`/etc/pelican`, contains the node token)
+
+Both are small. Without the application key of the Panel its encrypted data cannot be restored. If you want them covered, add these
+two paths as read-only mounts to the Backrest container and as sources to the plan (not done yet). The server files in
+`/var/lib/pelican` are left out on purpose, the S3 backups cover them.
 
 === Setup NetBird backup
 
