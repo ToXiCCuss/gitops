@@ -53,10 +53,3 @@
   roles:
     - role: k3s_registries
       when: ansible_hostname in k3s_hosts
-
-- name: Deploy Arcane (only on hosts listed in arcane_hosts)
-  hosts: all
-  become: true
-  roles:
-    - role: arcane
-      when: ansible_hostname in arcane_hosts

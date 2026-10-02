@@ -8,7 +8,7 @@ services:
     command:
       - "mini"
       - "-s3.config=/etc/seaweedfs/s3.json"
-      - "-bucket=backups,databases,vault,pelican,netbird,arcane"
+      - "-bucket=backups,databases,vault,pelican,netbird"
       - "-webdav=false"
       - "-admin.ui=false"
       - "-s3.port.iceberg=0"
