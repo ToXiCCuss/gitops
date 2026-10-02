@@ -8,8 +8,8 @@
     (never expires as long as it is renewed within the period; the backup renews
     it on every run) and an orphan (not bound to the token that created it).
 
-    The token is printed once and not saved anywhere. Put it into the Arcane
-    project environment of vault-backup as VAULT_TOKEN.
+    The token is printed once and not saved anywhere. Put it into
+    docker/vault-backup/override.env as VAULT_TOKEN.
 
 .PARAMETER VaultAddr
     Vault API address reachable from this machine.
@@ -61,7 +61,7 @@ Write-Host "==============================================================" -For
 Write-Host "  VAULT_TOKEN for docker/vault-backup:  $token" -ForegroundColor Yellow
 Write-Host "==============================================================" -ForegroundColor Yellow
 Write-Host ""
-Read-Host "Press Enter once you've put it into the Arcane environment" | Out-Null
+Read-Host "Press Enter once you've put it into docker/vault-backup/override.env" | Out-Null
 
 Write-Step "Done"
 Write-Ok "The token can only read sys/storage/raft/snapshot and is renewed by every backup run."

@@ -4,7 +4,7 @@ services:
     container_name: vault-backup
     env_file:
       - "default.env"
-      - ".env"
+      - "override.env"
     # Host network: the container uses the resolver of the host (NetBird DNS, needed for
     # vault.k8sdev.rjst.de, which containers on the bridge cannot reach) and reaches the S3 on 127.0.0.1
     network_mode: host
