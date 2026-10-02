@@ -16,6 +16,28 @@
     update_cache: yes
     cache_valid_time: 3600
 
+# 'a' = restart services with outdated libraries automatically, never ask
+# interactively (the dialog blocks apt upgrade). Services that carry
+# workloads or the connection to the host are excluded (override_rc => 0)
+# and must be restarted by hand; they still show up in the needrestart list.
+- name: Set needrestart to automatic restart mode
+  copy:
+    dest: /etc/needrestart/conf.d/50-auto-restart.conf
+    content: |
+      $nrconf{restart} = 'a';
+      $nrconf{override_rc}->{q(^docker)} = 0;
+      $nrconf{override_rc}->{q(^containerd)} = 0;
+      $nrconf{override_rc}->{q(^k3s)} = 0;
+      $nrconf{override_rc}->{q(^ssh)} = 0;
+      $nrconf{override_rc}->{q(^netbird)} = 0;
+      $nrconf{override_rc}->{q(^systemd-networkd)} = 0;
+    mode: "0644"
+
+- name: Remove old needrestart list-only config
+  file:
+    path: /etc/needrestart/conf.d/50-list-only.conf
+    state: absent
+
 # Default is 128 instances / 8192 watches; many pods (fsnotify, Promtail,
 # config reloaders) exhaust that with "too many open files"
 - name: Raise inotify limits
