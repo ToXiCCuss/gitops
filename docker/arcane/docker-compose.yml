@@ -5,6 +5,8 @@ services:
     # host.docker.internal points to the Docker host, where the SeaweedFS S3 listens (system backup of Arcane)
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # As in the installation guide of Arcane (https://getarcane.app/docs/get-started/installation)
+    cgroup: host
     ports:
       - '3552:3552'
     volumes:
