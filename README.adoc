@@ -117,7 +117,7 @@ settings, in `host_config` in `group_vars/all/main.yml`:
 host_config:
   all: {}
   docker01:
-    arcane_app_url: "https://arcane01.proxy.rjst.de"
+    arcane_app_url: "https://arcane.proxy.rjst.de"
 ----
 
 `group_vars/all/main.yml` merges the `all` layer with the current host's layer
@@ -229,7 +229,7 @@ arcane_hosts:
 
 host_config:
    docker01:
-     arcane_app_url: "https://arcane01.proxy.rjst.de"
+     arcane_app_url: "https://arcane.proxy.rjst.de"
 ----
 
 [source,bash]

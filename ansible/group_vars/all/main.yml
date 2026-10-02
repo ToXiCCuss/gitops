@@ -37,7 +37,7 @@ host_config:
   all: {}
 
   docker01:
-    arcane_app_url: "https://arcane01.proxy.rjst.de"
+    arcane_app_url: "https://arcane.proxy.rjst.de"
 
 # ── Resolution helpers ───────────────────────────────────────────────────────
 # Merge the "all" layer with the current host's layer once; host entries win.
