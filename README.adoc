@@ -720,7 +720,7 @@ SeaweedFS is the local S3 staging for all backups. Access is controlled by separ
 * Run `scripts/docker/setup-backup-host.sh` *before* deploying: it prepares the host and creates the identities
 (`/root/backup-credentials.env`). It is idempotent: existing identities and their keys are never changed, only
 missing identities and buckets are added (needs `jq`). To add a service later, add an `ensure_identity` line and the bucket
-in the script and in the `-bucket=` flag of the compose file, run the script and restart SeaweedFS. `--regenerate-s3`
+in the script and in the `-bucket=` flag of the compose file, run the script (it restarts SeaweedFS when identities or rights changed, `--no-restart` skips that). `--regenerate-s3`
 replaces all keys
 * Deploy the seaweedfs project in Arcane, then run the script again to create the buckets
 * Copy the keys from `/root/backup-credentials.env` into the Arcane environments (backrest, offsite-sync) and the Databasus storage, then delete the file
@@ -765,7 +765,7 @@ to Uptime Kuma (`PUSH_URL`). A PostgreSQL or MySQL store would have to be backed
 
 Set it up on `docker01`, the S3 is reached on `127.0.0.1:8333`, no NetBird is involved:
 
-. Add the identity and bucket `netbird`: run `scripts/docker/setup-backup-host.sh`, restart SeaweedFS and run it again. The keys
+. Add the identity and bucket `netbird`: run `scripts/docker/setup-backup-host.sh` (it restarts SeaweedFS itself and creates the bucket). The keys
   `NETBIRD_ACCESS_KEY_ID` and `NETBIRD_SECRET_ACCESS_KEY` are in `/root/backup-credentials.env`
 . Create an Uptime Kuma push monitor (heartbeat 26 hours)
 . Run the setup (installs restic if missing, asks for the S3 keys and the restic password, initialises the repository):
