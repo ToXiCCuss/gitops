@@ -50,14 +50,10 @@ step()    { echo -e "\n${BOLD}${CYAN}> $*${RESET}"; }
 SECRET_NAMES=(
     "netbird_setup_key"
     "k3s_registries_harbor_password"
-    "arcane_encryption_key"
-    "arcane_jwt_secret"
 )
 SECRET_HINTS=(
     "NetBird setup key - NetBird dashboard > Setup Keys (roles/netbird)"
     "Harbor password for the k3s pull-through mirror (roles/k3s_registries)"
-    "Arcane ENCRYPTION_KEY - on an existing install COPY it from the running override.env!"
-    "Arcane JWT_SECRET - likewise copy it from the running override.env"
 )
 
 # --- Paths -------------------------------------------------------------------

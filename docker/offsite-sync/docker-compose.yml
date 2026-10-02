@@ -4,7 +4,7 @@ services:
     container_name: offsite-sync
     env_file:
       - "default.env"
-      - ".env"
+      - "override.env"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # The host DNS is the NetBird resolver (100.x), which containers cannot reach

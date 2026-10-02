@@ -5,7 +5,7 @@ services:
     hostname: backrest-docker
     env_file:
       - "default.env"
-      - ".env"
+      - "override.env"
     # The host DNS is the NetBird resolver (100.x), which containers cannot reach (needed for pCloud restores)
     dns:
       - 1.1.1.1
@@ -24,6 +24,8 @@ services:
       # Backup sources, read-only. The plan only takes static files (keys, config), see the README.
       # Never the data directories of running databases, they are not consistent when copied.
       - /root/docker:/userdata/docker:ro
+      # The repository checkout incl. the override.env files with the secrets (not in Git)
+      - /root/gitops:/userdata/gitops:ro
       # Only restore target that is writable
       - /root/docker/backrest/restore:/restore
     restart: unless-stopped

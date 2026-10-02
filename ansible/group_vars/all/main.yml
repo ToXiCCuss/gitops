@@ -26,18 +26,11 @@ ssh_authorized_keys:
 # (scripts/ansible/setup-secrets.sh).
 k3s_hosts: []
 
-# Hosts that run the Arcane Docker management UI.
-# Needs arcane_app_url in host_config plus the two secrets in the vault.
-arcane_hosts: []
-
 # ── Per-host configuration (plain, NOT secret) ───────────────────────────────
 # Non-confidential settings that differ per host. Same resolution as the
 # secrets below: an entry under the hostname wins over the one under "all".
 host_config:
   all: {}
-
-  docker01:
-    arcane_app_url: "https://arcane.proxy.rjst.de"
 
 # ── Resolution helpers ───────────────────────────────────────────────────────
 # Merge the "all" layer with the current host's layer once; host entries win.
@@ -59,8 +52,3 @@ _secrets: "{{ (vault_secrets | default({})).get('all', {}) | combine((vault_secr
 # Maintain the values with scripts/ansible/setup-secrets.sh.
 netbird_setup_key: "{{ _secrets['netbird_setup_key'] | default('') }}"
 k3s_registries_harbor_password: "{{ _secrets['k3s_registries_harbor_password'] | default('') }}"
-arcane_encryption_key: "{{ _secrets['arcane_encryption_key'] | default('') }}"
-arcane_jwt_secret: "{{ _secrets['arcane_jwt_secret'] | default('') }}"
-
-# ── Resolved per-host settings ───────────────────────────────────────────────
-arcane_app_url: "{{ _config['arcane_app_url'] | default('') }}"
