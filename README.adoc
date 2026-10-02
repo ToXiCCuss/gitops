@@ -417,7 +417,7 @@ Keep these in the password manager, nothing can be read without them and they ar
 |PostgreSQL |Databasus (below)
 |Vault |`scripts/vault/vault_restore.sh` (below)
 |NetBird server |`netbird_restore.sh` (below)
-|Pelican game servers |Pelican Panel (below), the Panel and Wings data are not backed up
+|Pelican game servers |Pelican Panel, or unpack the plain `.tar.gz` by hand (below)
 |The whole S3 is lost |restic directly from pCloud (below)
 |===
 
@@ -470,7 +470,7 @@ After a failed upgrade `netbird_rollback.sh` goes back to the rollback point mad
 ==== Pelican game servers
 
 Panel -> server -> Backups -> Restore. Pelican fetches the backup from the bucket `pelican`, the Wings must reach port 8333 of the S3.
-The Panel and the Wings configuration themselves are not backed up (see Setup Pelican).
+The Panel and the Wings configuration are not backed up on purpose (see Setup Pelican). Without the Panel unpack the `.tar.gz` of the server by hand.
 
 ==== The S3 is lost (restore from pCloud)
 
@@ -697,14 +697,12 @@ after the nightly sync, in pCloud (`Backups/s3/pelican/`, deleted or overwritten
 This is intended, the game server data is not put into a restic repository. Every backup is a full archive (no deduplication),
 so set the number of backups per server and the schedule in Pelican to what the storage and the upload can take.
 
-Not covered by any backup so far, because it does not live under `/root/docker`, which the Backrest plan sees:
+The Panel itself is deliberately not backed up. Its database is SQLite (not MariaDB) in the Docker volume `pelican_panel_data`, it holds
+only the configuration of users, nodes and servers and can be set up again. The Wings configuration (`/etc/pelican`, node token) is
+created again with the node. The server files in `/var/lib/pelican` are left out as well, the S3 backups cover them.
 
-* the Panel (database, `.env`, application key) in the Docker volume `pelican_panel_data` (`/var/lib/docker/volumes/`)
-* the Wings configuration (`/etc/pelican`, contains the node token)
-
-Both are small. Without the application key of the Panel its encrypted data cannot be restored. If you want them covered, add these
-two paths as read-only mounts to the Backrest container and as sources to the plan (not done yet). The server files in
-`/var/lib/pelican` are left out on purpose, the S3 backups cover them.
+Because the backups are plain archives, they can be restored without the Panel: download the `.tar.gz` of the server from the S3 or
+from pCloud (`Backups/s3/pelican/`) and unpack it into the data directory of the server.
 
 === Setup NetBird backup
 
