@@ -2,6 +2,10 @@
 # Timezone
 server_timezone: "Europe/Berlin"
 
+# inotify limits (kernel defaults: 128 instances, 8192 watches)
+inotify_max_user_instances: 1024
+inotify_max_user_watches: 524288
+
 # Automatic security updates
 unattended_upgrades_enabled: true
 unattended_upgrades_reboot: false
