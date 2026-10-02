@@ -5,12 +5,12 @@
 # databasus, seaweedfs). Deploying the projects themselves is done in Arcane.
 #
 #   sudo ./setup-backup-host.sh [--rclone-conf /root/.config/rclone/rclone.conf] [--regenerate-s3]
-#                               [--s3-endpoint http://127.0.0.1:8333] [--dns 1.1.1.1]
+#                               [--s3-endpoint http://127.0.0.1:8333] [--dns 1.1.1.1] [--no-restart]
 #
 # Creates the pCloud remote in rclone.conf if it is missing (token from `rclone authorize "pcloud"`).
 # Maintains the SeaweedFS S3 identities (admin, backrest, databasus, vault, pelican, netbird, arcane, offsite-sync) in
 # /root/docker/seaweedfs-s3.json and writes the keys of NEW identities to /root/backup-credentials.env.
-# Existing keys are never changed (rights of existing identities are kept up to date), so new ones (and buckets) can be added at any time;
+# SeaweedFS is restarted when identities or rights changed (--no-restart skips it). Existing keys are never changed (rights of existing identities are kept up to date), so new ones (and buckets) can be added at any time;
 # --regenerate-s3 starts over with new keys for all. Needs jq. Run it before deploying seaweedfs,
 # then again afterwards to create the buckets (it is idempotent).
 # =============================================================================
@@ -37,6 +37,7 @@ ARCANE_BUCKET="arcane"
 REGENERATE=""
 NEW_KEYS=""
 S3_CHANGED=""
+NO_RESTART=""
 S3_ENDPOINT="http://127.0.0.1:8333"
 PCLOUD_REMOTE="pCloud"
 RCLONE_CONF="/root/.config/rclone/rclone.conf"
@@ -47,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --rclone-conf)      RCLONE_CONF="$2"; shift 2 ;;
         --regenerate-s3)    REGENERATE=1; shift ;;
+        --no-restart)       NO_RESTART=1; shift ;;
         --s3-endpoint)      S3_ENDPOINT="$2"; shift 2 ;;
         --dns)              DNS_SERVER="$2"; shift 2 ;;
         --pcloud-remote)    PCLOUD_REMOTE="$2"; shift 2 ;;
@@ -187,9 +189,6 @@ umask 022
 if [[ -n "$NEW_KEYS" ]]; then
     warn "Copy the new keys from $CREDENTIALS_FILE to Arcane (and Databasus/Pelican/NetBird), then delete the file"
 fi
-if [[ -n "$NEW_KEYS" || -n "$S3_CHANGED" ]]; then
-    warn "SeaweedFS must be (re)started to load the new identities and rights"
-fi
 
 # The seaweedfs container drops to the user "seaweed", root-only (600) would be "permission denied".
 # The file stays inside /root, which is not accessible for other users of the host.
@@ -198,9 +197,33 @@ chmod 644 "$S3_CONFIG"
 # ── Buckets ───────────────────────────────────────────────────────────────────
 step "Creating the S3 buckets '$BACKUP_BUCKET', '$DB_BUCKET', '$VAULT_BUCKET', '$PELICAN_BUCKET', '$NETBIRD_BUCKET' and '$ARCANE_BUCKET'"
 
+# SeaweedFS reads s3.json only at start: restart it when identities or rights changed and wait until the S3 answers
+restart_seaweedfs() {
+    local code i
+    if ! docker inspect seaweedfs >/dev/null 2>&1; then
+        warn "The seaweedfs container does not exist yet: deploy the project in Arcane, then run this script again"
+        return 1
+    fi
+    info "Restarting seaweedfs to load the new identities and rights"
+    docker restart seaweedfs >/dev/null
+    for i in $(seq 1 30); do
+        code=$(curl -s -o /dev/null -m 3 -w '%{http_code}' "$S3_ENDPOINT" || true)
+        if [[ -n "$code" && "$code" != "000" ]]; then
+            success "SeaweedFS answers again (HTTP $code)"
+            return 0
+        fi
+        sleep 2
+    done
+    error "SeaweedFS does not answer at $S3_ENDPOINT after the restart (check 'docker logs seaweedfs')"
+    exit 1
+}
+
 if [[ -n "$NEW_KEYS" || -n "$S3_CHANGED" ]]; then
-    warn "New S3 identities or rights were created. Restart the seaweedfs container so that it loads them, then run this script again to create the buckets"
-    exit 0
+    if [[ -n "$NO_RESTART" ]]; then
+        warn "New S3 identities or rights were created (--no-restart). Restart the seaweedfs container, then run this script again to create the buckets"
+        exit 0
+    fi
+    restart_seaweedfs || exit 0
 fi
 
 ADMIN_ACCESS_KEY_ID=$(jq -r '.identities[] | select(.name == "admin") | .credentials[0].accessKey' "$S3_CONFIG")
