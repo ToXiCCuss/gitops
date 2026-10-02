@@ -129,6 +129,12 @@ check_s3() {
 
     RESTIC_REPOSITORY="s3:${S3_ENDPOINT}/netbird/restic"
 
+    # On a re-run take the keys of the existing configuration instead of asking again
+    if [[ -z "${AWS_ACCESS_KEY_ID:-}" && -f "$CONFIG_FILE" ]]; then
+        AWS_ACCESS_KEY_ID=$(grep -m1 '^export AWS_ACCESS_KEY_ID=' "$CONFIG_FILE" | cut -d= -f2- | tr -d "\"'" || true)
+        AWS_SECRET_ACCESS_KEY=$(grep -m1 '^export AWS_SECRET_ACCESS_KEY=' "$CONFIG_FILE" | cut -d= -f2- | tr -d "\"'" || true)
+        [[ -z "$AWS_ACCESS_KEY_ID" ]] || info "Using the S3 keys of $CONFIG_FILE"
+    fi
     if [[ -z "${AWS_ACCESS_KEY_ID:-}" ]]; then
         read -rp "S3 access key id of the identity 'netbird': " AWS_ACCESS_KEY_ID
     fi
