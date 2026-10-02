@@ -449,7 +449,18 @@ pCloud (`Backups/s3/arcane/`).
   `db_create.sh <name>` and the backup role with `backup_user_create.sh`, then restore the dump with Databasus.
 . Databasus itself: its configuration (databases, storage, schedules) is not backed up, set it up again as in Setup Databasus.
   The file `secret.key` is backed up (repository `docker`): put it back into `/root/docker/databasus/` *before* the first start, then
-  the encrypted backups can be restored. Without Databasus the dumps can be restored with the key alone (see the Databasus FAQ).
+  the encrypted backups can be restored.
+. Without Databasus (https://databasus.com/how-to-recover-without-databasus/): take three things from the bucket `databases` (or from
+  pCloud, `Backups/s3/databases/`) and the key file. The backup file `<database>-<timestamp>-<backup id>`, its `.metadata` file (salt and
+  initialisation vector) and `secret.key`. The backups are AES-256-GCM encrypted. Decrypt them with the Python script of that page
+  (`pip install pycryptodome`, enter the paths and the key in `decrypt_backup(...)`), the result is `decrypted_<file>`. Then restore it:
++
+----
+pg_restore -h <host> -U <user> -d <database> decrypted_<file>
+----
++
+The metadata file must belong to the backup file, a wrong key or a damaged file makes the decryption fail. Keep `secret.key` in the
+password manager as well: without it the dumps are unreadable.
 
 ==== Vault
 
