@@ -8,7 +8,7 @@
 #                               [--s3-endpoint http://127.0.0.1:8333] [--dns 1.1.1.1]
 #
 # Creates the pCloud remote in rclone.conf if it is missing (token from `rclone authorize "pcloud"`).
-# Maintains the SeaweedFS S3 identities (admin, backrest, databasus, vault, pelican, netbird, offsite-sync) in
+# Maintains the SeaweedFS S3 identities (admin, backrest, databasus, vault, pelican, netbird, arcane, offsite-sync) in
 # /root/docker/seaweedfs-s3.json and writes the keys of NEW identities to /root/backup-credentials.env.
 # Existing keys are never changed (rights of existing identities are kept up to date), so new ones (and buckets) can be added at any time;
 # --regenerate-s3 starts over with new keys for all. Needs jq. Run it before deploying seaweedfs,
@@ -33,6 +33,7 @@ DB_BUCKET="databases"
 VAULT_BUCKET="vault"
 PELICAN_BUCKET="pelican"
 NETBIRD_BUCKET="netbird"
+ARCANE_BUCKET="arcane"
 REGENERATE=""
 NEW_KEYS=""
 S3_CHANGED=""
@@ -179,6 +180,7 @@ ensure_identity databasus "$(bucket_actions "$DB_BUCKET")"
 ensure_identity vault "$(bucket_actions "$VAULT_BUCKET")"
 ensure_identity pelican "$(bucket_actions "$PELICAN_BUCKET")"
 ensure_identity netbird "$(bucket_actions "$NETBIRD_BUCKET")"
+ensure_identity arcane "$(bucket_actions "$ARCANE_BUCKET")"
 ensure_identity offsite-sync '["Read", "List"]'
 umask 022
 
@@ -194,7 +196,7 @@ fi
 chmod 644 "$S3_CONFIG"
 
 # ── Buckets ───────────────────────────────────────────────────────────────────
-step "Creating the S3 buckets '$BACKUP_BUCKET', '$DB_BUCKET', '$VAULT_BUCKET', '$PELICAN_BUCKET' and '$NETBIRD_BUCKET'"
+step "Creating the S3 buckets '$BACKUP_BUCKET', '$DB_BUCKET', '$VAULT_BUCKET', '$PELICAN_BUCKET', '$NETBIRD_BUCKET' and '$ARCANE_BUCKET'"
 
 if [[ -n "$NEW_KEYS" || -n "$S3_CHANGED" ]]; then
     warn "New S3 identities or rights were created. Restart the seaweedfs container so that it loads them, then run this script again to create the buckets"
@@ -214,7 +216,7 @@ s3_rclone() {
         "$RCLONE_IMAGE" "$@" --retries 1 --low-level-retries 1 --timeout 30s --contimeout 10s
 }
 
-for bucket in "$BACKUP_BUCKET" "$DB_BUCKET" "$VAULT_BUCKET" "$PELICAN_BUCKET" "$NETBIRD_BUCKET"; do
+for bucket in "$BACKUP_BUCKET" "$DB_BUCKET" "$VAULT_BUCKET" "$PELICAN_BUCKET" "$NETBIRD_BUCKET" "$ARCANE_BUCKET"; do
     if out=$(s3_rclone mkdir "SEAWEED:$bucket" 2>&1); then
         success "Bucket '$bucket' exists on $S3_ENDPOINT"
         continue

@@ -271,7 +271,8 @@ flowchart LR
   vault[("Vault (Kubernetes)")]
   subgraph host["Docker host"]
     vault -->|"snapshot API, periodic token"| vaultbackup["vault-backup (restic)"]
-    vol["Docker volumes"] -->|read-only| backrest["Backrest (restic)"]
+    keys["Key files"] -->|read-only| backrest["Backrest (restic)"]
+    arcane["Arcane (system backup)"] -->|bucket arcane| s3
     pg[("PostgreSQL")] --> databasus["Databasus (pg_dump)"]
     backrest -->|bucket backups| s3[("SeaweedFS S3")]
     databasus -->|bucket databases| s3
@@ -287,7 +288,8 @@ flowchart LR
 |Service |Task |Notes
 
 |SeaweedFS |Local S3 staging |One identity per service, the offsite sync can only read
-|Backrest |Physical backups (Docker volumes), browse, check and restore snapshots |restic, repository `backups/docker`. Also used to check and restore the Vault repository
+|Backrest |Backs up a few static key files, checks the repositories and browses and restores snapshots |restic, repository `backups/docker`. Also used to check and restore the Vault and NetBird repositories
+|Arcane |System backup of Arcane itself (its database and settings) |bucket `arcane`, written by Arcane, needs the recovery key
 |Databasus |Logical PostgreSQL backups (`pg_dump`) |bucket `databases`
 |vault-backup |Daily Raft snapshot of Vault |Periodic token that may only read the snapshot, bucket `vault`, repository `vault/raft`, keeps its own retention
 |NetBird backup |Config and database of the self-hosted NetBird server (`scripts/netbird/`) |bucket `netbird`, repository `netbird/restic`, keeps its own retention
@@ -306,7 +308,8 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 
 |Vault |14 |8 |12 |`vault-backup` (`restic forget --prune` after each run)
 |PostgreSQL dumps |14 |8 |6 |Databasus, per database
-|Docker volumes |7 |4 |6 |Backrest plan (retention policy)
+|Key files |7 |4 |6 |Backrest plan (retention policy)
+|Arcane | | | |Retention of the Arcane backup schedule
 |NetBird |7 |4 |6 |`netbird_backup.sh` (`RESTIC_KEEP_*` in `/etc/netbird-backup.cred`)
 |Deleted files in pCloud |30 days | | |`RETENTION_DAYS` of the offsite sync
 |===
@@ -335,7 +338,8 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 |01:00 |Databasus (PostgreSQL dumps)
 |02:30 |vault-backup (Vault snapshot)
 |02:45 |`netbird_backup.sh` (cron, local time of the host; stops NetBird for a moment)
-|03:00 |Backrest plan for the Docker volumes
+|02:00 |Arcane system backup (cron in Arcane, `0 0 2 * * *`)
+|03:00 |Backrest plan (key files)
 |Sunday 03:30 |Backrest prune and check of both repositories
 |05:00 |Offsite sync with check, runs when nothing writes to the S3 any more
 |===
@@ -354,7 +358,7 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 sudo scripts/docker/setup-backup-host.sh
 ----
 . Deploy the `seaweedfs` project in Arcane.
-. Run the script again, now it creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird`.
+. Run the script again, now it creates the buckets `backups`, `databases`, `vault`, `pelican`, `netbird` and `arcane`.
 . Put the secrets into the Arcane project environments (`.env`), the values come from
   `/root/backup-credentials.env`:
 +
@@ -384,7 +388,7 @@ group `vault-users` (the policy `vault-users` -> `k8s-vault` exists, see NetBird
 
 . Deploy `backrest`, `databasus`, `vault-backup` and `offsite-sync` in Arcane.
 . Configure the services in their UIs (see the sections below): Backrest (admin user, repository,
-  plan for `/userdata/docker`, a second repository `s3:<S3_ENDPOINT>/vault/raft` with the restic
+  plan for the key files, a second repository `s3:<S3_ENDPOINT>/vault/raft` with the restic
   password of the Vault backup, only to check and restore) and Databasus (S3 storage with the
   `databasus` keys, databases, schedule). Databasus is the only place that needs the `databasus` keys.
 . Delete `/root/backup-credentials.env` and store the restic password and `rclone.conf` in your
@@ -413,7 +417,8 @@ Keep these in the password manager, nothing can be read without them and they ar
 |===
 |Data |Restore with
 
-|Docker volumes (`/root/docker`) |Backrest, repository `docker` (below)
+|Key files (`rclone.conf`, `seaweedfs-s3.json`, `secret.key`) |Backrest, repository `docker` (below)
+|Arcane |System restore of Arcane with the recovery key (below)
 |PostgreSQL |Databasus (below)
 |Vault |`scripts/vault/vault_restore.sh` (below)
 |NetBird server |`netbird_restore.sh` (below)
@@ -421,24 +426,30 @@ Keep these in the password manager, nothing can be read without them and they ar
 |The whole S3 is lost |restic directly from pCloud (below)
 |===
 
-==== Docker volumes
+==== Key files
 
-. Stop the container whose data you restore (Arcane).
-. Backrest: repository `docker` -> snapshots -> browse the snapshot, select the folder -> restore to a path below `/restore`
+. Backrest: repository `docker` -> snapshots -> browse the snapshot, select the file -> restore to a path below `/restore`
   (the only writable path, `/root/docker/backrest/restore` on the host).
-. Copy the data from `/root/docker/backrest/restore/...` to its place in `/root/docker/<service>`, check the owner, start the container.
+. Copy the file back to its place (`/root/docker/seaweedfs-s3.json`, `/root/docker/backrest/rclone/rclone.conf`,
+  `/root/docker/offsite-sync/rclone/rclone.conf`, `/root/docker/databasus/secret.key`), check the owner and mode and start the service.
 
-The files of running databases (Uptime Kuma, the internal database of Databasus) are copied while they change, a restore may need
-a check. After a total loss restore the data of `seaweedfs-s3.json` first (it is in the snapshot) or create it again with
-`setup-backup-host.sh`.
+After a total loss restore `seaweedfs-s3.json` first or create the identities again with `setup-backup-host.sh`.
+The key files are also in the repository `docker` on pCloud, see the last section.
+
+==== Arcane
+
+Arcane -> backups -> restore the system backup. It asks for the recovery key (8 groups of 6 characters, stored outside Arcane) and
+needs the `ENCRYPTION_KEY` (in the Ansible vault, role `arcane`). The system backups are in the bucket `arcane` of the S3 and in
+pCloud (`Backups/s3/arcane/`).
 
 ==== PostgreSQL
 
 . Databasus: select the database, then the backup and restore it. Restore into a scratch database first to look at the result.
 . On a new server: run the Ansible role `postgresql` (PostgreSQL 18 with `pg_cron` and `pg_partman`), create the database with
   `db_create.sh <name>` and the backup role with `backup_user_create.sh`, then restore the dump with Databasus.
-. The configuration of Databasus itself is in `/root/docker/databasus` (restore it from the Backrest snapshot before the first start).
-  Whether a new Databasus instance lists the existing backups of the S3 storage again, has not been tested.
+. Databasus itself: its configuration (databases, storage, schedules) is not backed up, set it up again as in Setup Databasus.
+  The file `secret.key` is backed up (repository `docker`): put it back into `/root/docker/databasus/` *before* the first start, then
+  the encrypted backups can be restored. Without Databasus the dumps can be restored with the key alone (see the Databasus FAQ).
 
 ==== Vault
 
@@ -498,9 +509,23 @@ JWT_SECRET=default-jwt-secret
 ----
 * docker-compose up -d in the arcane folder
 
+==== System backup to the S3
+
+Arcane backs up itself (database, settings, runtime configuration) on a schedule or on demand and can write to an S3 bucket.
+The bucket `arcane` and the identity `arcane` (Read, Write, List on this bucket only) are created by the setup script. The names
+of the fields may differ in your version:
+
+* Endpoint `http://host.docker.internal:8333` (the compose file points the name to the Docker host, recreate the project), bucket `arcane`,
+path-style on, any region (e.g. `us-east-1`)
+* Access key and secret: `ARCANE_ACCESS_KEY_ID` and `ARCANE_SECRET_ACCESS_KEY` of `/root/backup-credentials.env`
+* Schedule `0 0 2 * * *` (daily 02:00, Arcane uses cron with seconds), keep a number of backups that fits you
+* *Write down the recovery key* (8 groups of 6 characters, shown when the backup is set up) in the password manager. Without it a system
+backup cannot be restored. The `ENCRYPTION_KEY` of the `arcane` role is needed for older volume backups
+* The offsite sync copies the bucket to pCloud (`Backups/s3/arcane/`)
+
 === Setup Backrest
 
-Backrest is the web UI for restic on the Docker host. It backs up the Docker volumes read-only to the local
+Backrest is the web UI for restic on the Docker host. It backs up a few static key files read-only to the local
 SeaweedFS S3, checks the repositories and is used to browse and restore snapshots. It reaches the S3 as
 `host.docker.internal` (set in the compose file), the firewall must allow the Docker network to reach port 8333
 (see Setup Databasus).
@@ -558,21 +583,26 @@ of the container is passed on). `SignatureDoesNotMatch` means a wrong secret, "w
 You see the existing snapshots of `vault` and `netbird` right after saving the repository. That also proves that the identity `backrest`
 may read these buckets (`access denied` for `netbird` means that SeaweedFS was not restarted after the rights were updated).
 
-==== Plan for the Docker volumes
+==== Plan for the key files
+
+The plan only takes files that never change while running. The data directories of running services (Uptime Kuma, the internal database
+of Databasus) are not copied, a copy of a live database is not consistent. Arcane backs up itself, PostgreSQL is backed up by Databasus.
 
 [cols="1,3"]
 |===
 |Setting |Value
 
 |Repository |`docker`
-|Paths |`/userdata/docker`
-|Excludes |`/userdata/docker/seaweedfs` (the S3 target must not back up itself), `/userdata/docker/backrest/cache`, `/userdata/docker/backrest/restore`
+|Paths a|
+* `/userdata/docker/databasus/secret.key`
+* `/userdata/docker/seaweedfs-s3.json`
+* `/userdata/docker/backrest/rclone/rclone.conf`
+* `/userdata/docker/offsite-sync/rclone/rclone.conf`
+* `/userdata/docker/backrest/config`
+|Excludes |none
 |Schedule |`0 3 * * *`, UTC
 |Retention |daily 7, weekly 4, monthly 6
 |===
-
-Files of running databases are copied while they change. Uptime Kuma (SQLite) and the internal database of Databasus
-may be inconsistent in the snapshot. PostgreSQL itself is not part of this, Databasus backs it up.
 
 Test it: "Backup now" on the plan, then "Check" on the repository and restore a file into `/restore`. Restoring from
 pCloud (repository `pcloud`) is done after the first offsite sync.
@@ -634,6 +664,11 @@ The first account becomes the administrator.
 |Retention |14 daily, 8 weekly, 6 monthly (GFS)
 |===
 
+The configuration of Databasus (`/databasus-data/pgdata`, an internal PostgreSQL database) is not backed up: copying a running database
+is not consistent. Keep a list of your databases and the values above, so that you can enter them again. `secret.key` in the same folder is
+the key for the stored credentials and for the encrypted backups, it is backed up by the plan for the key files (and belongs into the
+password manager, the Databasus FAQ recommends this).
+
 The S3 storage and the connection to `fw_chaos` were tested. Not yet verified: a complete backup run, because the
 `pg_dump` of Databasus must be version 18 or newer, and a restore, which needs the extensions `pg_cron` and `pg_partman` on
 the target server. Test both ("Backup now", then restore into a scratch database) once.
@@ -667,6 +702,7 @@ SeaweedFS is the local S3 staging for all backups. Access is controlled by separ
 |`vault` |`vault` |Read, Write, List
 |`pelican` |`pelican` |Read, Write, List (for the S3 backups of Pelican)
 |`netbird` |`netbird` |Read, Write, List (for `netbird_backup.sh`)
+|`arcane` |`arcane` |Read, Write, List (for the system backup of Arcane)
 |`offsite-sync` |all |Read, List (cannot change anything)
 |===
 
@@ -678,7 +714,7 @@ replaces all keys
 * Deploy the seaweedfs project in Arcane, then run the script again to create the buckets
 * Copy the keys from `/root/backup-credentials.env` into the Arcane environments (backrest, offsite-sync) and the Databasus storage, then delete the file
 * `Write` includes deleting objects in SeaweedFS, so a leaked `backrest` key can delete the local backups. pCloud keeps deleted files (`Backups-deleted`)
-* The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird` on start (`-bucket=`)
+* The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `databases`, `vault`, `pelican`, `netbird` and `arcane` on start (`-bucket=`)
 * Only the S3 port `8333` is published. The filer (`8888`) and the admin UI (`23646`) have no authentication and are not exposed
 
 === Setup Pelican S3 backups

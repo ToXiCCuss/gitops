@@ -2,6 +2,9 @@ services:
   arcane:
     image: ghcr.io/getarcaneapp/manager:v2.13.0@sha256:6220640fe97c0d2b96ba0502ec60d057c501e78bcab2bd88f4338a251dc1f75e
     container_name: arcane
+    # host.docker.internal points to the Docker host, where the SeaweedFS S3 listens (system backup of Arcane)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - '3552:3552'
     volumes:
