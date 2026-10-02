@@ -21,8 +21,8 @@ services:
       - /root/docker/backrest/config:/config
       - /root/docker/backrest/cache:/cache
       - /root/docker/backrest/rclone:/root/.config/rclone
-      # Backup sources, read-only. The plan for /userdata/docker must exclude "seaweedfs"
-      # (the S3 repo target lives there) and the database data dirs (covered by DB backups).
+      # Backup sources, read-only. The plan only takes static files (keys, config), see the README.
+      # Never the data directories of running databases, they are not consistent when copied.
       - /root/docker:/userdata/docker:ro
       # Only restore target that is writable
       - /root/docker/backrest/restore:/restore
