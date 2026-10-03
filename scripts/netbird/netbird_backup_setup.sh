@@ -9,7 +9,7 @@
 #     and a cron job
 #
 # Usage (run from the scripts/netbird directory):
-#   sudo ./netbird_backup_setup.sh [--dir /opt/netbird] [--schedule "45 2 * * *"]
+#   sudo ./netbird_backup_setup.sh [--dir /opt/netbird] [--schedule "0 0 * * 1"]
 #                                  [--s3-endpoint http://127.0.0.1:8333] [--push-url URL]
 #                                  [--run]
 # The S3 keys (identity "netbird" of setup-backup-host.sh) are read from AWS_ACCESS_KEY_ID and
@@ -54,7 +54,7 @@ RESTIC_PASSWORD_FILE="/root/restic"
 PUSH_URL=""
 
 NETBIRD_DIR=""
-SCHEDULE="45 2 * * *"
+SCHEDULE="0 0 * * 1"
 RUN_NOW=false
 
 usage() {
@@ -212,8 +212,8 @@ export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 PUSH_URL="$PUSH_URL"
 #RESTIC_PASSWORD_FILE="$RESTIC_PASSWORD_FILE"
 #BACKUP_DIR="/var/backups/netbird"
-#RESTIC_KEEP_DAILY=7
-#RESTIC_KEEP_WEEKLY=4
+#RESTIC_KEEP_DAILY=0
+#RESTIC_KEEP_WEEKLY=8
 #RESTIC_KEEP_MONTHLY=6
 EOF
         )
