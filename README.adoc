@@ -280,7 +280,7 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 |Vault |14 |8 |12 |`vault-backup` (`restic forget --prune` after each run)
 |PostgreSQL dumps |14 |8 |6 |Databasus, per database
 |Key files |7 |4 |6 |Backrest plan (retention policy)
-|NetBird |7 |4 |6 |`netbird_backup.sh` (`RESTIC_KEEP_*` in `/etc/netbird-backup.cred`)
+|NetBird |0 |8 |6 |`netbird_backup.sh` (`RESTIC_KEEP_*` in `/etc/netbird-backup.cred`)
 |Deleted files in pCloud |30 days | | |`RETENTION_DAYS` of the offsite sync
 |===
 
@@ -305,9 +305,9 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 |===
 |Time (UTC) |Job
 
+|Monday 00:00 |`netbird_backup.sh` (weekly, cron, local time of the host; stops NetBird for a moment)
 |01:00 |Databasus (PostgreSQL dumps)
 |02:30 |vault-backup (Vault snapshot)
-|02:45 |`netbird_backup.sh` (cron, local time of the host; stops NetBird for a moment)
 |03:00 |Backrest plan (key files)
 |Sunday 03:30 |Backrest prune and check of both repositories
 |05:00 |Offsite sync with check, runs when nothing writes to the S3 any more
@@ -711,7 +711,7 @@ The self-hosted NetBird server runs as a Docker Compose project on `docker01` (d
 
 * `netbird_backup.sh`: stops NetBird for a moment, copies the config files, `/var/lib/netbird` (SQLite store and keys),
 CrowdSec data and certificates, starts NetBird again (also on errors), writes everything with restic to the
-repository `netbird/restic` on the local SeaweedFS S3 and applies the retention (7 daily, 4 weekly, 6 monthly). It reports
+repository `netbird/restic` on the local SeaweedFS S3 and applies the retention (8 weekly, 6 monthly). It runs weekly (Monday 00:00), so up to a week of changes is lost on a restore. It reports
 to Uptime Kuma (`PUSH_URL`). A PostgreSQL or MySQL store would have to be backed up separately
 * `netbird_restore.sh`, `netbird_upgrade.sh` (creates a pre-upgrade backup and a local rollback point), `netbird_rollback.sh`
 * `netbird_backup_setup.sh` installs them to `/usr/local/bin`, writes `/etc/netbird-backup.cred` and a cron job
@@ -720,7 +720,7 @@ Set it up on `docker01`, the S3 is reached on `127.0.0.1:8333`, no NetBird is in
 
 . Add the identity and bucket `netbird`: run `scripts/docker/setup-backup-host.sh` (it restarts SeaweedFS itself and creates the bucket). The keys
   `NETBIRD_ACCESS_KEY_ID` and `NETBIRD_SECRET_ACCESS_KEY` are in `/root/backup-credentials.env`
-. Create an Uptime Kuma push monitor (heartbeat 26 hours)
+. Create an Uptime Kuma push monitor (heartbeat 8 days, the backup runs weekly)
 . Run the setup (installs restic if missing, asks for the S3 keys and the restic password, initialises the repository):
 +
 ----
