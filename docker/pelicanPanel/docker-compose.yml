@@ -22,7 +22,7 @@ services:
     ports:
       - "81:80"
     labels:
-      # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
+      # Link on the portal page (kubernetes/infra/kubectl/kube-portal.yaml)
       portal.name: "Pelican Panel"
       portal.port: "81"
       portal.group: "Docker"

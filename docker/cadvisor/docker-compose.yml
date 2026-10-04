@@ -11,7 +11,7 @@ services:
     ports:
       - "8081:8080"
     labels:
-      # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
+      # Link on the portal page (kubernetes/infra/kubectl/kube-portal.yaml)
       portal.name: "cAdvisor"
       portal.port: "8081"
       portal.group: "Monitoring"
