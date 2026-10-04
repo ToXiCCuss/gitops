@@ -18,7 +18,7 @@ services:
     labels:
       # Link on the portal page (kubernetes/infra/kubectl/kube-portal.yaml)
       portal.name: "Backrest"
-      portal.port: "9898"
+      portal.url: "https://backrest.proxy.rjst.de"
       portal.group: "Backup"
       portal.description: "Restic-Backups"
       portal.icon: "💾"

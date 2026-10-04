@@ -13,7 +13,7 @@ services:
     labels:
       # Link on the portal page (kubernetes/infra/kubectl/kube-portal.yaml)
       portal.name: "cAdvisor"
-      portal.port: "8081"
+      portal.url: "https://cadvisor.proxy.rjst.de"
       portal.group: "Monitoring"
       portal.description: "Container-Metriken"
       portal.icon: "📊"

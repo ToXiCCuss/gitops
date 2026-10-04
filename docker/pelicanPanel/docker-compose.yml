@@ -24,7 +24,7 @@ services:
     labels:
       # Link on the portal page (kubernetes/infra/kubectl/kube-portal.yaml)
       portal.name: "Pelican Panel"
-      portal.port: "81"
+      portal.url: "https://webinterface.proxy.rjst.de"
       portal.group: "Docker"
       portal.description: "Game-Server-Verwaltung"
       portal.icon: "🎮"

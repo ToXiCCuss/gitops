@@ -1,0 +1,24 @@
+# Parked: not deployed and not part of the deployment order. The paths point into kubernetes/parked/keycloak,
+# so it still works from here: kubectl apply -f kubernetes/parked/keycloak/kube-app-keycloak.yaml
+# Remove it again with: kubectl delete -f kubernetes/parked/keycloak/kube-app-keycloak.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak
+  namespace: argocd
+spec:
+  destination:
+    namespace: argocd
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://github.com/ToXiCCuss/gitops.git
+    targetRevision: master
+    path: kubernetes/parked/keycloak
+    directory:
+      recurse: false
+      include: apps.yaml
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

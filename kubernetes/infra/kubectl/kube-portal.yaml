@@ -4,10 +4,10 @@
 #   Kubernetes  every Istio VirtualService in the cluster (host -> https://<host>). Optional
 #               annotations on the VirtualService: portal.rjst.de/name, /group, /description,
 #               /icon (an emoji), /hidden: "true".
-#   Docker      every service in docker/*/docker-compose.yml that has a portal.name label
-#               (portal.port, portal.group, portal.description, portal.icon, portal.scheme,
-#               portal.path). The repository is read from Git, so a service shows up once it is
-#               merged, not once it runs.
+#   Docker      every service in docker/*/docker-compose.yml that has the labels portal.name
+#               and portal.url (the NetBird reverse proxy address, https://<app>.proxy.rjst.de);
+#               optional portal.group, portal.description, portal.icon. The repository is read
+#               from Git, so a service shows up once it is merged, not once it runs.
 #
 # The sidecar renders /data/services.json every minute, nginx serves it next to index.html.
 # Own Gateway/Service/listener/NetBird resource - see kube-istio-internal.yaml.
@@ -129,12 +129,12 @@ data:
       if [ -d "$WORK/repo/docker" ]; then
         for f in "$WORK"/repo/docker/*/docker-compose.yml; do
           yq -o=json -I=0 '[.services[].labels // {}]' "$f" || echo "cannot read $f" >&2
-        done | jq -s --arg host "$DOCKER_HOST_FQDN" \
+        done | jq -s \
           'add // []
            | [.[]
-              | select(type == "object" and has("portal.name"))
+              | select(type == "object" and has("portal.name") and has("portal.url"))
               | { name: .["portal.name"],
-                  url: ((.["portal.scheme"] // "http") + "://" + $host + ":" + (.["portal.port"] | tostring) + (.["portal.path"] // "")),
+                  url: .["portal.url"],
                   group: (.["portal.group"] // "Docker"),
                   description: (.["portal.description"] // ""),
                   icon: (.["portal.icon"] // "") }]' \
@@ -341,9 +341,6 @@ spec:
               value: https://github.com/ToXiCCuss/gitops.git
             - name: REPO_BRANCH
               value: master
-            # Host of the docker/ services (the docker host as seen from the clients).
-            - name: DOCKER_HOST_FQDN
-              value: docker01.vpn.rjst.de
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
