@@ -8,7 +8,7 @@ services:
     ports:
       - "3001:3001"
     labels:
-      # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
+      # Link on the portal page (kubernetes/infra/kubectl/kube-portal.yaml)
       portal.name: "Uptime Kuma"
       portal.port: "3001"
       portal.group: "Monitoring"

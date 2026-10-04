@@ -1021,7 +1021,7 @@ only accepts that app's hostname, so per-app groups stay meaningful.
 
 ===== Portal (list of all apps and services)
 
-`management/kubectl/portal.yaml` serves `https://portal.k8sdev.rjst.de`, a page with a
+`infra/kubectl/kube-portal.yaml` serves `https://portal.k8sdev.rjst.de`, a page with a
 link to every app and service. Nothing is listed by hand; a sidecar rebuilds the list
 every minute:
 
