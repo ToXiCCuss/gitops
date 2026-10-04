@@ -7,3 +7,10 @@ services:
       - /root/docker/uptime-kuma:/app/data
     ports:
       - "3001:3001"
+    labels:
+      # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
+      portal.name: "Uptime Kuma"
+      portal.port: "3001"
+      portal.group: "Monitoring"
+      portal.description: "Erreichbarkeit der Dienste"
+      portal.icon: "🟢"

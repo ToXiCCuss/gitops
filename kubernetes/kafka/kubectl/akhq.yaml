@@ -76,6 +76,10 @@ metadata:
   namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: AKHQ
+    portal.rjst.de/group: Kafka
+    portal.rjst.de/description: Kafka-UI
+    portal.rjst.de/icon: "📨"
 spec:
   hosts:
     - akhq.k8sdev.rjst.de

@@ -49,6 +49,10 @@ metadata:
   namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: ArgoCD
+    portal.rjst.de/group: Plattform
+    portal.rjst.de/description: GitOps-Deployments
+    portal.rjst.de/icon: "🚀"
 spec:
   hosts:
     - argocd.k8sdev.rjst.de

@@ -90,6 +90,10 @@ metadata:
   namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: Apicurio Registry
+    portal.rjst.de/group: Kafka
+    portal.rjst.de/description: Schema-Registry
+    portal.rjst.de/icon: "📜"
 spec:
   hosts:
     - apicurio.k8sdev.rjst.de

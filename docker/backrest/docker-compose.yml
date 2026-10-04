@@ -15,6 +15,13 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "9898:9898"
+    labels:
+      # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
+      portal.name: "Backrest"
+      portal.port: "9898"
+      portal.group: "Backup"
+      portal.description: "Restic-Backups"
+      portal.icon: "💾"
     volumes:
       # Backrest state (config.json, operation log), cache and rclone.conf (pCloud remote)
       - /root/docker/backrest/data:/data
