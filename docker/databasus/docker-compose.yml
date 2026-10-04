@@ -7,6 +7,13 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "4005:4005"
+    labels:
+      # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
+      portal.name: "Databasus"
+      portal.port: "4005"
+      portal.group: "Backup"
+      portal.description: "Datenbank-Backups"
+      portal.icon: "🗄️"
     volumes:
       - /root/docker/databasus:/databasus-data
     restart: unless-stopped

@@ -21,6 +21,13 @@ services:
       APP_ENV: "production"
     ports:
       - "81:80"
+    labels:
+      # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
+      portal.name: "Pelican Panel"
+      portal.port: "81"
+      portal.group: "Docker"
+      portal.description: "Game-Server-Verwaltung"
+      portal.icon: "🎮"
 
 volumes:
   pelican_data:

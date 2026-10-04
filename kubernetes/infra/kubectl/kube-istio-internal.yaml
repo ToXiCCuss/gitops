@@ -78,6 +78,10 @@ metadata:
   namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: Vault
+    portal.rjst.de/group: Plattform
+    portal.rjst.de/description: Secrets
+    portal.rjst.de/icon: "🔐"
 spec:
   hosts:
     - vault.k8sdev.rjst.de

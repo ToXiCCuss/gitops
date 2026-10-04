@@ -76,6 +76,10 @@ metadata:
   namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: Harbor
+    portal.rjst.de/group: Plattform
+    portal.rjst.de/description: Container-Registry
+    portal.rjst.de/icon: "📦"
 spec:
   hosts:
     - harbor.k8sdev.rjst.de

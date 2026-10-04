@@ -76,6 +76,10 @@ metadata:
   namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: Grafana
+    portal.rjst.de/group: Monitoring
+    portal.rjst.de/description: Dashboards und Metriken
+    portal.rjst.de/icon: "📈"
 spec:
   hosts:
     - grafana.k8sdev.rjst.de
