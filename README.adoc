@@ -772,8 +772,8 @@ simply has no `helm/` folder.
 
 . infra (cert-manager, ClusterIssuer, Istio security policies, NetBird operator)
 . monitoring (Prometheus, exporters, Istio dashboards)
-. cicd (Harbor, Artifactory, Jenkins) — before `management`, see below
-. management (Backstage, Keycloak)
+. cicd (Harbor, Artifactory, Jenkins)
+. management (Portal)
 . kafka (Strimzi, Apicurio Registry, AKHQ)
 . spring
 
@@ -787,8 +787,7 @@ resources *within* `helm/` and within `kubectl/` (e.g. ClusterIssuer before
 the NetworkResources), but not across domains — those orderings are
 manual/documented instead:
 `infra` must be healthy before the others (they all rely on its
-ClusterIssuer and cert-manager), and `cicd` before `management` (Backstage
-pulls its own image from Harbor). Istio itself and ArgoCD's own
+ClusterIssuer and cert-manager). Istio itself and ArgoCD's own
 installation are deliberately kept outside of GitOps (`istioctl` /
 `helm install` per above), since both carry too much blast radius for
 automated sync.
@@ -918,19 +917,22 @@ not depend on anything inside the cluster.
 kubectl apply -f kubernetes/kube-app-secrets.yaml     # 0. renders the Secrets from Vault via AVP, must be healthy before infra
 kubectl apply -f kubernetes/kube-app-infra.yaml       # 1. cert-manager, ClusterIssuer, NetBird operator
 kubectl apply -f kubernetes/kube-app-monitoring.yaml  # 2. needed before kafka (PodMonitor CRDs)
-kubectl apply -f kubernetes/kube-app-cicd.yaml        # 3. needed before management (Backstage pulls its image from Harbor)
+kubectl apply -f kubernetes/kube-app-cicd.yaml        # 3.
 kubectl apply -f kubernetes/kube-app-kafka.yaml       # 4. onwards: order doesn't matter, all only need infra
 kubectl apply -f kubernetes/kube-app-management.yaml
 kubectl apply -f kubernetes/kube-app-spring.yaml
 ----
 
-Microcks is parked in `kubernetes/parked/microcks/` and not deployed. It is its own domain (with its own
-MongoDB inside the chart, no Vault secret needed). To deploy or remove it, once `infra` is healthy:
+Microcks, Backstage and Keycloak are parked in `kubernetes/parked/<name>/` and not deployed. Each is its own
+domain (Microcks with its own MongoDB inside the chart, no Vault secret needed; Backstage pulls its image
+from Harbor, so `cicd` has to be healthy first). To deploy or remove one, once `infra` is healthy:
 
 ----
 kubectl apply -f kubernetes/parked/microcks/kube-app-microcks.yaml
 kubectl delete -f kubernetes/parked/microcks/kube-app-microcks.yaml
 ----
+
+The same with `backstage` or `keycloak` instead of `microcks`.
 
 Why the secrets are a separate app that comes first: some Helm apps need
 their Secret at start (the NetBird operator needs `netbird-mgmt-api-key`),
@@ -996,7 +998,7 @@ folder) and create the record `gw-<app>.istio-internal.k8sdev.rjst.de`.
 |Grafana |`grafana.k8sdev.rjst.de` |`grafana.prometheus:80` |8445
 |Harbor |`harbor.k8sdev.rjst.de` |`harbor.harbor:80` |8446
 |Jenkins |`jenkins.k8sdev.rjst.de` |`jenkins.jenkins:8080` |8447
-|Backstage |`backstage.k8sdev.rjst.de` |`backstage.backstage:7007` |8448
+|Backstage (parked) |`backstage.k8sdev.rjst.de` |`backstage.backstage:7007` |8448
 |AKHQ |`akhq.k8sdev.rjst.de` |`akhq.kafka:80` |8449
 |Apicurio Registry |`apicurio.k8sdev.rjst.de` |`example-apicurioregistry-mem-service.kafka:8080` |8450
 |Portal |`portal.k8sdev.rjst.de` |`portal.portal:80` |8451
@@ -1021,7 +1023,7 @@ only accepts that app's hostname, so per-app groups stay meaningful.
 
 ===== Portal (list of all apps and services)
 
-`infra/kubectl/kube-portal.yaml` serves `https://portal.k8sdev.rjst.de`, a page with a
+`management/kubectl/portal.yaml` serves `https://portal.k8sdev.rjst.de`, a page with a
 link to every app and service. Nothing is listed by hand; a sidecar rebuilds the list
 every minute:
 
@@ -1030,11 +1032,10 @@ every minute:
   `VirtualService` set the card: `portal.rjst.de/name`, `/group`, `/description`,
   `/icon` (an emoji) and `/hidden: "true"` to leave it out. Without them the card is
   named after the first part of the host.
-* *Docker*: every service in `docker/*/docker-compose.yml` that has a `portal.name`
-  label. Further labels: `portal.port` (required), `portal.group`, `portal.description`,
-  `portal.icon`, `portal.scheme` (default `http`), `portal.path`. The host is
-  `DOCKER_HOST_FQDN` in the Deployment. The list comes from the Git repository
-  (`master`), so a service appears once it is merged, not once its container runs.
+* *Docker*: every service in `docker/*/docker-compose.yml` that has the labels `portal.name`
+  and `portal.url` (the NetBird reverse proxy address, `https://<app>.proxy.rjst.de`).
+  Optional: `portal.group`, `portal.description`, `portal.icon`. The list comes from the Git
+  repository (`master`), so a service appears once it is merged, not once its container runs.
 
 Needs the usual NetBird steps by hand: a CNAME `portal` in the zone and the policy
 `portal-users` -> `k8s-portal` on TCP 443.

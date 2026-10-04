@@ -10,7 +10,7 @@ services:
     labels:
       # Link on the portal page (kubernetes/infra/kubectl/kube-portal.yaml)
       portal.name: "Databasus"
-      portal.port: "4005"
+      portal.url: "https://databasus.proxy.rjst.de"
       portal.group: "Backup"
       portal.description: "Datenbank-Backups"
       portal.icon: "🗄️"

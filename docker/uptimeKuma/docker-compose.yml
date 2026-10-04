@@ -10,7 +10,7 @@ services:
     labels:
       # Link on the portal page (kubernetes/infra/kubectl/kube-portal.yaml)
       portal.name: "Uptime Kuma"
-      portal.port: "3001"
+      portal.url: "https://status.proxy.rjst.de"
       portal.group: "Monitoring"
       portal.description: "Erreichbarkeit der Dienste"
       portal.icon: "🟢"

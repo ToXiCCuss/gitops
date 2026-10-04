@@ -1,10 +1,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: management-kubectl
+  name: keycloak-kubectl
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   destination:
     namespace: argocd
@@ -13,7 +13,7 @@ spec:
   source:
     repoURL: https://github.com/ToXiCCuss/gitops.git
     targetRevision: master
-    path: kubernetes/management/kubectl
+    path: kubernetes/parked/keycloak/kubectl
     directory:
       recurse: true
   syncPolicy:
