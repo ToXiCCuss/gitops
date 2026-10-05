@@ -16,6 +16,7 @@ services:
       portal.url: "https://cadvisor.proxy.rjst.de"
       portal.group: "Monitoring"
       portal.description: "Container-Metriken"
+      portal.icon: docker
     privileged: true
     devices:
       - /dev/kmsg
