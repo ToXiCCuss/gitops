@@ -401,7 +401,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: generator
-          image: alpine/k8s:1.35.9@sha256:b9cb6db0091a2327c0a56ecda69d37fa830c7a96ea669e7382b3ee778aa07a24
+          image: alpine/k8s:1.37.1@sha256:712dc5385d1c1a3f83b747fa9e40f64d433a97f72ff42f9755ff7dd1f62846e4
           command: ["/bin/sh", "/config/generate.sh"]
           env:
             - name: HOME
