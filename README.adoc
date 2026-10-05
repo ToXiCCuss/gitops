@@ -1032,6 +1032,10 @@ every minute:
   `VirtualService` set the card: `portal.rjst.de/name`, `/group`, `/description`,
   `/icon` (an emoji) and `/hidden: "true"` to leave it out. Without them the card is
   named after the first part of the host.
+  A `VirtualService` in one of the stage namespaces (`STAGE_NAMESPACES` in the Deployment,
+  default `dev,test,stage,prod`) is shown as an app with a stage: one card per app (name from
+  the `app` label), one link per stage with the version (`app.kubernetes.io/version`).
+  `/stage` and `/version` set them explicitly for other namespaces.
 * *Docker*: every service in `docker/*/docker-compose.yml` that has the labels `portal.name`
   and `portal.url` (the NetBird reverse proxy address, `https://<app>.proxy.rjst.de`).
   Optional: `portal.group`, `portal.description`, `portal.icon`. The list comes from the Git

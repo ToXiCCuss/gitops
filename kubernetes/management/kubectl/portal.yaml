@@ -3,7 +3,10 @@
 # The page builds itself, nothing is listed by hand:
 #   Kubernetes  every Istio VirtualService in the cluster (host -> https://<host>). Optional
 #               annotations on the VirtualService: portal.rjst.de/name, /group, /description,
-#               /icon (an emoji), /hidden: "true".
+#               /icon (an emoji), /hidden: "true", /stage, /version.
+#               A VirtualService in one of the STAGE_NAMESPACES (dev, prod, ...) is an app with
+#               a stage: one card per app, one link per stage, name from the app label,
+#               version from app.kubernetes.io/version.
 #   Docker      every service in docker/*/docker-compose.yml that has the labels portal.name
 #               and portal.url (the NetBird reverse proxy address, https://<app>.proxy.rjst.de);
 #               optional portal.group, portal.description, portal.icon. The repository is read
@@ -104,15 +107,23 @@ data:
     while true; do
       # Kubernetes: one card per VirtualService, hosts without a dot and wildcards are mesh-internal
       if kubectl get virtualservices.networking.istio.io -A -o json > "$WORK/vs.raw" 2> "$WORK/err"; then
-        jq '[.items[]
+        jq --arg stages "$STAGE_NAMESPACES" '
+          ($stages | split(",")) as $st
+          | [.items[]
              | select((.metadata.annotations["portal.rjst.de/hidden"] // "") != "true")
              | (.spec.hosts // [])[0] as $h
              | select($h != null and ($h | contains(".")) and (($h | contains("*")) | not))
-             | { name: (.metadata.annotations["portal.rjst.de/name"] // ($h | split(".")[0])),
+             | (.metadata.annotations // {}) as $a
+             | (.metadata.labels // {}) as $l
+             | (.metadata.namespace) as $ns
+             | ($a["portal.rjst.de/stage"] // (if ($st | index($ns)) != null then $ns else "" end)) as $stage
+             | { name: ($a["portal.rjst.de/name"] // $l["app"] // $l["app.kubernetes.io/instance"] // ($h | split(".")[0])),
                  url: ("https://" + $h),
-                 group: (.metadata.annotations["portal.rjst.de/group"] // "Kubernetes"),
-                 description: (.metadata.annotations["portal.rjst.de/description"] // ""),
-                 icon: (.metadata.annotations["portal.rjst.de/icon"] // "") }]' \
+                 group: ($a["portal.rjst.de/group"] // (if $stage != "" then "Anwendungen" else "Kubernetes" end)),
+                 description: ($a["portal.rjst.de/description"] // ""),
+                 icon: ($a["portal.rjst.de/icon"] // ""),
+                 stage: $stage,
+                 version: ($a["portal.rjst.de/version"] // $l["app.kubernetes.io/version"] // "") }]' \
           "$WORK/vs.raw" > "$WORK/k8s.json.new" && mv "$WORK/k8s.json.new" "$WORK/k8s.json"
       else
         echo "kubectl failed: $(cat "$WORK/err")" >&2
@@ -195,7 +206,7 @@ data:
       input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
       h2 { margin: 28px 0 10px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
       .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
-      a.card { display: flex; gap: 12px; align-items: center; padding: 12px 14px; background: var(--card);
+      .card { display: flex; gap: 12px; align-items: center; padding: 12px 14px; background: var(--card);
                border: 1px solid var(--line); border-radius: 10px; color: inherit; text-decoration: none; }
       a.card:hover, a.card:focus-visible { border-color: var(--accent); }
       .icon { flex: none; width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center;
@@ -203,6 +214,13 @@ data:
               font-weight: 600; font-size: 17px; }
       .name { font-weight: 600; }
       .desc, .host { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+      div.card { cursor: default; }
+      .stages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+      a.stage { padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px;
+                color: var(--text); text-decoration: none; }
+      a.stage:hover, a.stage:focus-visible { border-color: var(--accent); }
+      a.stage.prod { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: var(--accent); font-weight: 600; }
+      a.stage small { color: var(--muted); font-weight: 400; margin-left: 4px; }
       .info { color: var(--muted); margin-top: 32px; font-size: 12.5px; }
     </style>
     </head>
@@ -227,6 +245,9 @@ data:
         return e;
       }
 
+      const STAGE_ORDER = ["dev", "test", "stage", "prod"];
+      const stageRank = s => { const i = STAGE_ORDER.indexOf(s); return i < 0 ? STAGE_ORDER.length - 1 + 0.5 : i; };
+
       function render() {
         const term = q.value.trim().toLowerCase();
         const groups = new Map();
@@ -240,15 +261,36 @@ data:
         for (const [group, items] of groups) {
           content.append(el("h2", "", group));
           const grid = el("div", "grid");
+          // entries with a stage are one card per app with one link per stage
+          const cards = new Map();
           for (const s of items) {
-            const a = el("a", "card");
-            a.href = s.url;
-            a.append(el("div", "icon", s.icon || s.name.charAt(0).toUpperCase()));
+            const key = s.stage ? "app:" + s.name : "url:" + s.url;
+            if (!cards.has(key)) cards.set(key, []);
+            cards.get(key).push(s);
+          }
+          for (const entries of cards.values()) {
+            const s = entries[0];
+            const staged = !!s.stage;
+            const card = el(staged ? "div" : "a", "card");
+            if (!staged) card.href = s.url;
+            card.append(el("div", "icon", s.icon || s.name.charAt(0).toUpperCase()));
             const text = el("div");
             text.append(el("div", "name", s.name));
-            text.append(el("div", "desc", s.description || new URL(s.url).host));
-            a.append(text);
-            grid.append(a);
+            if (!staged) text.append(el("div", "desc", s.description || new URL(s.url).host));
+            else {
+              if (s.description) text.append(el("div", "desc", s.description));
+              const row = el("div", "stages");
+              entries.sort((x, y) => stageRank(x.stage) - stageRank(y.stage) || x.stage.localeCompare(y.stage));
+              for (const e of entries) {
+                const chip = el("a", "stage" + (e.stage === "prod" ? " prod" : ""), e.stage);
+                chip.href = e.url;
+                if (e.version) chip.append(el("small", "", e.version));
+                row.append(chip);
+              }
+              text.append(row);
+            }
+            card.append(text);
+            grid.append(card);
           }
           content.append(grid);
         }
@@ -348,6 +390,9 @@ spec:
               value: https://github.com/ToXiCCuss/gitops.git
             - name: REPO_BRANCH
               value: master
+            # VirtualServices in these namespaces are apps with a stage (namespace = stage).
+            - name: STAGE_NAMESPACES
+              value: dev,test,stage,prod
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
