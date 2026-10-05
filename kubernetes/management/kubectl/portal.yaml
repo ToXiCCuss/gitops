@@ -3,13 +3,14 @@
 # The page builds itself, nothing is listed by hand:
 #   Kubernetes  every Istio VirtualService in the cluster (host -> https://<host>). Optional
 #               annotations on the VirtualService: portal.rjst.de/name, /group, /description,
-#               /icon (an emoji), /hidden: "true", /stage, /version.
+#               /icon (a devicon.dev name such as argocd, or name/variant such as jenkins/plain;
+#               anything else is shown as text, e.g. an emoji), /hidden: "true", /stage, /version.
 #               A VirtualService in one of the STAGE_NAMESPACES (dev, prod, ...) is an app with
 #               a stage: one card per app, one link per stage, name from the app label,
 #               version from app.kubernetes.io/version.
 #   Docker      every service in docker/*/docker-compose.yml that has the labels portal.name
 #               and portal.url (the NetBird reverse proxy address, https://<app>.proxy.rjst.de);
-#               optional portal.group, portal.description, portal.icon. The repository is read
+#               optional portal.group, portal.description, portal.icon (devicon.dev name). The repository is read
 #               from Git, so a service shows up once it is merged, not once it runs.
 #
 # The sidecar renders /data/services.json every minute, nginx serves it next to index.html.
@@ -121,7 +122,7 @@ data:
                  url: ("https://" + $h),
                  group: ($a["portal.rjst.de/group"] // (if $stage != "" then "Anwendungen" else "Kubernetes" end)),
                  description: ($a["portal.rjst.de/description"] // ""),
-                 icon: ($a["portal.rjst.de/icon"] // ""),
+                 icon: ($a["portal.rjst.de/icon"] // (if $l["app.kubernetes.io/name"] == "spring-boot" then "spring" else "" end)),
                  stage: $stage,
                  version: ($a["portal.rjst.de/version"] // $l["app.kubernetes.io/version"] // "") }]' \
           "$WORK/vs.raw" > "$WORK/k8s.json.new" && mv "$WORK/k8s.json.new" "$WORK/k8s.json"
@@ -212,6 +213,8 @@ data:
       .icon { flex: none; width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center;
               background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent);
               font-weight: 600; font-size: 17px; }
+      .icon.img { background: #fff; border: 1px solid var(--line); }
+      .icon img { width: 22px; height: 22px; }
       .name { font-weight: 600; }
       .desc, .host { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
       div.card { cursor: default; }
@@ -248,6 +251,21 @@ data:
       const STAGE_ORDER = ["dev", "test", "stage", "prod"];
       const stageRank = s => { const i = STAGE_ORDER.indexOf(s); return i < 0 ? STAGE_ORDER.length - 1 + 0.5 : i; };
 
+      // icon: a devicon.dev name ("argocd" or "jenkins/plain") becomes a logo, other text is shown as is
+      const DEVICON = "https://cdn.jsdelivr.net/gh/devicons/devicon@v2.17.0/icons/";
+      function iconEl(s) {
+        const fallback = s.name.charAt(0).toUpperCase();
+        const m = /^([a-z0-9]+)(?:\/([a-z-]+))?$/.exec(s.icon || "");
+        if (!m) return el("div", "icon", s.icon || fallback);
+        const box = el("div", "icon img");
+        const img = document.createElement("img");
+        img.src = DEVICON + m[1] + "/" + m[1] + "-" + (m[2] || "original") + ".svg";
+        img.alt = "";
+        img.addEventListener("error", () => { box.className = "icon"; box.textContent = fallback; });
+        box.append(img);
+        return box;
+      }
+
       function render() {
         const term = q.value.trim().toLowerCase();
         const groups = new Map();
@@ -273,7 +291,7 @@ data:
             const staged = !!s.stage;
             const card = el(staged ? "div" : "a", "card");
             if (!staged) card.href = s.url;
-            card.append(el("div", "icon", s.icon || s.name.charAt(0).toUpperCase()));
+            card.append(iconEl(s));
             const text = el("div");
             text.append(el("div", "name", s.name));
             if (!staged) text.append(el("div", "desc", s.description || new URL(s.url).host));
@@ -493,7 +511,6 @@ metadata:
     argocd.argoproj.io/sync-wave: "3"
     portal.rjst.de/name: Portal
     portal.rjst.de/description: Alle Apps und Services
-    portal.rjst.de/icon: "🏠"
 spec:
   hosts:
     - portal.k8sdev.rjst.de

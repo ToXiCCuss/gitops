@@ -79,7 +79,7 @@ metadata:
     portal.rjst.de/name: AKHQ
     portal.rjst.de/group: Kafka
     portal.rjst.de/description: Kafka-UI
-    portal.rjst.de/icon: "📨"
+    portal.rjst.de/icon: apachekafka
 spec:
   hosts:
     - akhq.k8sdev.rjst.de

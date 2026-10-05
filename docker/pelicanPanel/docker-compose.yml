@@ -27,7 +27,6 @@ services:
       portal.url: "https://webinterface.proxy.rjst.de"
       portal.group: "Docker"
       portal.description: "Game-Server-Verwaltung"
-      portal.icon: "🎮"
 
 volumes:
   pelican_data:

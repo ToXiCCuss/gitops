@@ -79,7 +79,7 @@ metadata:
     portal.rjst.de/name: Grafana
     portal.rjst.de/group: Monitoring
     portal.rjst.de/description: Dashboards und Metriken
-    portal.rjst.de/icon: "📈"
+    portal.rjst.de/icon: grafana
 spec:
   hosts:
     - grafana.k8sdev.rjst.de

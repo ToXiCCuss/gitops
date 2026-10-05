@@ -79,7 +79,7 @@ metadata:
     portal.rjst.de/name: Jenkins
     portal.rjst.de/group: Plattform
     portal.rjst.de/description: CI/CD-Pipelines
-    portal.rjst.de/icon: "🔧"
+    portal.rjst.de/icon: jenkins
 spec:
   hosts:
     - jenkins.k8sdev.rjst.de
