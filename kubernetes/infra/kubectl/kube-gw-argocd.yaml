@@ -52,7 +52,7 @@ metadata:
     portal.rjst.de/name: ArgoCD
     portal.rjst.de/group: Plattform
     portal.rjst.de/description: GitOps-Deployments
-    portal.rjst.de/icon: "🚀"
+    portal.rjst.de/icon: argocd
 spec:
   hosts:
     - argocd.k8sdev.rjst.de

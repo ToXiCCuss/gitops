@@ -21,7 +21,6 @@ services:
       portal.url: "https://backrest.proxy.rjst.de"
       portal.group: "Backup"
       portal.description: "Restic-Backups"
-      portal.icon: "💾"
     volumes:
       # Backrest state (config.json, operation log), cache and rclone.conf (pCloud remote)
       - /root/docker/backrest/data:/data

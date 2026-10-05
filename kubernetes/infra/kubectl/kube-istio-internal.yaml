@@ -81,7 +81,7 @@ metadata:
     portal.rjst.de/name: Vault
     portal.rjst.de/group: Plattform
     portal.rjst.de/description: Secrets
-    portal.rjst.de/icon: "🔐"
+    portal.rjst.de/icon: vault
 spec:
   hosts:
     - vault.k8sdev.rjst.de

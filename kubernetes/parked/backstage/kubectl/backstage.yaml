@@ -79,7 +79,6 @@ metadata:
     portal.rjst.de/name: Backstage
     portal.rjst.de/group: Plattform
     portal.rjst.de/description: Entwicklerportal
-    portal.rjst.de/icon: "🎭"
 spec:
   hosts:
     - backstage.k8sdev.rjst.de

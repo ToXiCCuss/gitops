@@ -1030,7 +1030,8 @@ every minute:
 * *Kubernetes*: every Istio `VirtualService` (`https://<first host>`). A new app shows up
   as soon as its `VirtualService` is synced. Optional annotations on the
   `VirtualService` set the card: `portal.rjst.de/name`, `/group`, `/description`,
-  `/icon` (an emoji) and `/hidden: "true"` to leave it out. Without them the card is
+  `/icon` (a https://devicon.dev[Devicon] name like `argocd` or `jenkins/plain`; other text,
+  e.g. an emoji, is shown as is) and `/hidden: "true"` to leave it out. Without them the card is
   named after the first part of the host.
   A `VirtualService` in one of the stage namespaces (`STAGE_NAMESPACES` in the Deployment,
   default `dev,test,stage,prod`) is shown as an app with a stage: one card per app (name from
@@ -1038,7 +1039,7 @@ every minute:
   `/stage` and `/version` set them explicitly for other namespaces.
 * *Docker*: every service in `docker/*/docker-compose.yml` that has the labels `portal.name`
   and `portal.url` (the NetBird reverse proxy address, `https://<app>.proxy.rjst.de`).
-  Optional: `portal.group`, `portal.description`, `portal.icon`. The list comes from the Git
+  Optional: `portal.group`, `portal.description`, `portal.icon` (Devicon name). The list comes from the Git
   repository (`master`), so a service appears once it is merged, not once its container runs.
 
 Needs the usual NetBird steps by hand: a CNAME `portal` in the zone and the policy

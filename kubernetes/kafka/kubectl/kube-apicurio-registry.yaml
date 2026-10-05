@@ -93,7 +93,7 @@ metadata:
     portal.rjst.de/name: Apicurio Registry
     portal.rjst.de/group: Kafka
     portal.rjst.de/description: Schema-Registry
-    portal.rjst.de/icon: "📜"
+    portal.rjst.de/icon: apachekafka
 spec:
   hosts:
     - apicurio.k8sdev.rjst.de

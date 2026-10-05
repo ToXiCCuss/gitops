@@ -79,7 +79,7 @@ metadata:
     portal.rjst.de/name: Harbor
     portal.rjst.de/group: Plattform
     portal.rjst.de/description: Container-Registry
-    portal.rjst.de/icon: "📦"
+    portal.rjst.de/icon: harbor
 spec:
   hosts:
     - harbor.k8sdev.rjst.de
