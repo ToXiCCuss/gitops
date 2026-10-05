@@ -290,7 +290,7 @@ data:
             const s = entries[0];
             const staged = !!s.stage;
             const card = el(staged ? "div" : "a", "card");
-            if (!staged) card.href = s.url;
+            if (!staged) { card.href = s.url; card.target = "_blank"; card.rel = "noopener"; }
             card.append(iconEl(s));
             const text = el("div");
             text.append(el("div", "name", s.name));
@@ -302,6 +302,8 @@ data:
               for (const e of entries) {
                 const chip = el("a", "stage" + (e.stage === "prod" ? " prod" : ""), e.stage);
                 chip.href = e.url;
+                chip.target = "_blank";
+                chip.rel = "noopener";
                 if (e.version) chip.append(el("small", "", e.version));
                 row.append(chip);
               }
@@ -509,8 +511,7 @@ metadata:
   namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
-    portal.rjst.de/name: Portal
-    portal.rjst.de/description: Alle Apps und Services
+    portal.rjst.de/hidden: "true"
 spec:
   hosts:
     - portal.k8sdev.rjst.de
