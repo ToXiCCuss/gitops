@@ -13,3 +13,4 @@ services:
       portal.url: "https://status.proxy.rjst.de"
       portal.group: "Monitoring"
       portal.description: "Erreichbarkeit der Dienste"
+      portal.icon: docker
