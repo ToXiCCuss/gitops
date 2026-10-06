@@ -12,6 +12,8 @@
 #               and portal.url (the NetBird reverse proxy address, https://<app>.proxy.rjst.de);
 #               optional portal.group, portal.description, portal.icon (devicon.dev name). The repository is read
 #               from Git, so a service shows up once it is merged, not once it runs.
+#   Static      the env var STATIC_SERVICES of the generator container: a JSON list of
+#               {name, url, group, description, icon} for what is neither of the above (NetBird).
 #
 # The sidecar renders /data/services.json every minute, nginx serves it next to index.html.
 # Own Gateway/Service/listener/NetBird resource - see kube-istio-internal.yaml.
@@ -153,8 +155,12 @@ data:
           > "$WORK/docker.json.new" && mv "$WORK/docker.json.new" "$WORK/docker.json"
       fi
 
+      # Static: services outside of Kubernetes and docker/ (STATIC_SERVICES, a JSON list)
+      printf '%s' "${STATIC_SERVICES:-[]}" | jq '.' > "$WORK/static.json.new" \
+        && mv "$WORK/static.json.new" "$WORK/static.json" || echo "STATIC_SERVICES is not valid JSON" >&2
+
       FILES=""
-      for f in k8s.json docker.json; do
+      for f in k8s.json docker.json static.json; do
         [ -f "$WORK/$f" ] && FILES="$FILES $WORK/$f"
       done
       if [ -n "$FILES" ]; then
@@ -413,6 +419,11 @@ spec:
             # VirtualServices in these namespaces are apps with a stage (namespace = stage).
             - name: STAGE_NAMESPACES
               value: dev,test,stage,prod
+            # Services that are neither a VirtualService nor in docker/ (NetBird runs on its own host).
+            - name: STATIC_SERVICES
+              value: |
+                [{"name": "NetBird", "url": "https://proxy.rjst.de", "group": "Plattform",
+                  "description": "VPN und Zugriffsverwaltung", "icon": "NB"}]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

@@ -1044,6 +1044,9 @@ every minute:
   and `portal.url` (the NetBird reverse proxy address, `https://<app>.proxy.rjst.de`).
   Optional: `portal.group`, `portal.description`, `portal.icon` (Devicon name). The list comes from the Git
   repository (`master`), so a service appears once it is merged, not once its container runs.
+* *Static*: services that are neither a `VirtualService` nor in `docker/` (NetBird on its own
+  host) are listed in the `STATIC_SERVICES` env var of the generator container, a JSON list of
+  `{name, url, group, description, icon}`.
 
 Needs the usual NetBird steps by hand: a CNAME `portal` in the zone and the policy
 `portal-users` -> `k8s-portal` on TCP 443.
