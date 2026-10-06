@@ -1,4 +1,5 @@
-# NetBird groups exist only while this app is deployed (destination k8s-grafana, users grafana-users).
+# NetBird groups exist only while this app is deployed (destination k8s-grafana, users grafana-users;
+# destination k8s-prometheus, users prometheus-users).
 apiVersion: netbird.io/v1alpha1
 kind: Group
 metadata:
@@ -109,4 +110,117 @@ spec:
     name: gw-grafana
   groups:
     - name: k8s-grafana
+    - name: kubernetes-services
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: k8s-prometheus
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: k8s-prometheus
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: prometheus-users
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: prometheus-users
+
+---
+
+# prometheus: https://prometheus.k8sdev.rjst.de -> prometheus-prometheus.prometheus:9090
+# Prometheus has no login of its own: only members of prometheus-users reach it (NetBird policy
+# prometheus-users -> k8s-prometheus on TCP 443). The admin API is disabled (enableAdminAPI: false).
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: prometheus
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: internal-gateway
+  servers:
+    - port:
+        number: 8452
+        name: https-prometheus
+        protocol: HTTPS
+      hosts:
+        - prometheus.k8sdev.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: k8sdev-wildcard-tls
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gw-prometheus
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  type: ClusterIP
+  selector:
+    app: internal-gateway
+    istio: internal-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8452
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: prometheus
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: Prometheus
+    portal.rjst.de/group: Monitoring
+    portal.rjst.de/description: Targets, Alerts und Abfragen
+    portal.rjst.de/icon: prometheus
+spec:
+  hosts:
+    - prometheus.k8sdev.rjst.de
+  gateways:
+    - prometheus
+  http:
+    - route:
+        - destination:
+            host: prometheus-prometheus.prometheus.svc.cluster.local
+            port:
+              number: 9090
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: gw-prometheus
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: gw-prometheus
+  groups:
+    - name: k8s-prometheus
     - name: kubernetes-services

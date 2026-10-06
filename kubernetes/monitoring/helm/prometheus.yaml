@@ -238,7 +238,7 @@ spec:
                         requests:
                           storage: 100Gi
                 retentionSize: "50GB"
-                enableAdminAPI: true
+                enableAdminAPI: false
                 walCompression: true
                 scrapeInterval: 30s
                 evaluationInterval: 30s

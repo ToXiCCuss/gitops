@@ -1005,6 +1005,7 @@ folder) and create the record `gw-<app>.istio-internal.k8sdev.rjst.de`.
 |AKHQ |`akhq.k8sdev.rjst.de` |`akhq.kafka:80` |8449
 |Apicurio Registry |`apicurio.k8sdev.rjst.de` |`example-apicurioregistry-mem-service.kafka:8080` |8450
 |Portal |`portal.k8sdev.rjst.de` |`portal.portal:80` |8451
+|Prometheus |`prometheus.k8sdev.rjst.de` |`prometheus-prometheus.prometheus:9090` |8452
 |===
 
 Each app needs the CNAME, the `<app>-users` distribution group and the policy
