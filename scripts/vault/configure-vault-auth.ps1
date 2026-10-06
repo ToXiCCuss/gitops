@@ -28,6 +28,14 @@
     Kubernetes namespace Vault (and the vault-auth ServiceAccount) runs in.
     Default: vault.
 
+.PARAMETER KubernetesHost
+    API server address Vault uses for TokenReview calls. Vault runs inside the
+    cluster, so the default is the in-cluster service name, which does not
+    change when the server gets a new IP. (The address in the local kubeconfig
+    is not used: it is usually the external IP, which can change.) Only
+    override this if Vault runs outside the cluster.
+    Default: https://kubernetes.default.svc:443.
+
 .EXAMPLE
     .\configure-vault-auth.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken s.xxxxx
 #>
@@ -35,7 +43,8 @@
 param(
     [Parameter(Mandatory)][string]$VaultAddr,
     [Parameter(Mandatory)][string]$VaultToken,
-    [string]$Namespace = "vault"
+    [string]$Namespace = "vault",
+    [string]$KubernetesHost = "https://kubernetes.default.svc:443"
 )
 
 $ErrorActionPreference = "Stop"
@@ -86,8 +95,8 @@ if (-not $reviewerJwt) {
 }
 Write-Ok "Got a long-lived (10y) reviewer token."
 
-Write-Step "Reading cluster API host and CA from kubeconfig"
-$kubernetesHost = (kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}').Trim()
+Write-Step "Reading cluster CA from kubeconfig"
+$kubernetesHost = $KubernetesHost
 $caDataB64 = (kubectl config view --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}').Trim()
 if ($caDataB64) {
     $kubernetesCaCert = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($caDataB64))

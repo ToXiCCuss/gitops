@@ -905,6 +905,9 @@ later step, app by app.
 .\scripts\vault\configure-vault-auth.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <token>
 ----
 
+Vault reaches the API server through `https://kubernetes.default.svc:443` (parameter `-KubernetesHost`), not through the
+address in your kubeconfig, so a new server IP does not break the login. The script is safe to re-run.
+
 ===== Vault backups
 
 Vault is backed up from the Docker host, not from Kubernetes: see *Docker > Setup Vault backup*. It uses a
