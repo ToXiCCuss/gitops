@@ -144,7 +144,7 @@ spec:
             kubeControllerManager:
               enabled: true
               endpoints:
-                - 87.106.142.165
+                - 89.144.46.204
             coreDns:
               enabled: true
             kubeDns:
@@ -152,15 +152,15 @@ spec:
             kubeEtcd:
               enabled: true
               endpoints:
-                - 87.106.142.165
+                - 89.144.46.204
             kubeScheduler:
               enabled: true
               endpoints:
-                - 87.106.142.165
+                - 89.144.46.204
             kubeProxy:
               enabled: true
               endpoints:
-                - 87.106.142.165
+                - 89.144.46.204
             kubeStateMetrics:
               enabled: true
             kube-state-metrics:
@@ -252,7 +252,7 @@ spec:
                     metrics_path: /metrics
                     static_configs:
                       - targets:
-                          - docker01.vpn.rjst.de:8080
+                          - docker01.server.lan:8080
                     relabel_configs:
                       - target_label: job
                         replacement: cadvisor-docker
@@ -284,7 +284,7 @@ spec:
                     metrics_path: /metrics
                     static_configs:
                       - targets:
-                          - docker01.vpn.rjst.de:9100
+                          - docker01.server.lan:9100
                     relabel_configs:
                       - target_label: job
                         replacement: node-exporter
