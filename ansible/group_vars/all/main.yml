@@ -9,7 +9,8 @@ postgresql_hosts:
 
 mongodb_hosts: []
 
-node_exporter_hosts: []
+node_exporter_hosts:
+   - docker01
 
 # Add hostnames here once netbird_setup_key is set in the vault
 # (scripts/ansible/setup-secrets.sh --scope <hostname>)
