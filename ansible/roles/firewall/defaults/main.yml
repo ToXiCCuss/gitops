@@ -1,0 +1,6 @@
+---
+# Ports to allow in UFW, one entry per rule:
+#   port (required), proto (required), comment (required), from_ip (optional, default: any)
+# Set per host in host_config (group_vars/all/main.yml). Incoming traffic that
+# matches none of them is denied.
+firewall_rules: []
