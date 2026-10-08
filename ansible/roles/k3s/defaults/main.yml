@@ -1,0 +1,11 @@
+---
+# Pinned k3s release (https://github.com/k3s-io/k3s/releases). Changing it upgrades the node
+# on the next run and restarts k3s.
+k3s_version: "v1.36.4+k3s1"
+
+# Address the node advertises (node-ip). Defaults to the primary IPv4 address of the host.
+k3s_node_ip: "{{ ansible_default_ipv4.address }}"
+
+# Content of /etc/rancher/k3s/config.yaml: every k3s server flag as a key, merged over node-ip.
+# Set per host in host_config (group_vars/all/main.yml).
+k3s_config: {}
