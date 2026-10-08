@@ -11,6 +11,7 @@
   roles:
     - role: firewall
       when: ansible_hostname in firewall_hosts
+      tags: firewall
 
 - name: Install Node Exporter (only on hosts listed in node_exporter_hosts)
   hosts: all

@@ -83,8 +83,9 @@ host_config:
 * There is no UFW rule for SSH: `docker01` is reached through NetBird and port 22 is closed to the Internet.
 * The role never removes rules. A rule that is no longer wanted is removed by hand once (`ufw delete ...`) after it is
   deleted from `firewall_rules`.
-* Do a dry run (`ansible-playbook -i inventory.ini site.yml --check --diff`) before the first real run and compare it with
-  `ufw status verbose` on the host.
+* Run only this role with `--tags firewall`. Do a dry run (`ansible-playbook -i inventory.ini site.yml --tags firewall --check --diff`)
+  before the first real run and compare it with `ufw status verbose` on the host. Adding a comment to an existing rule counts as a
+  change once.
 
 === Secrets (ansible-vault)
 
