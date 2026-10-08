@@ -26,9 +26,9 @@ netbird_hosts:
 ssh_authorized_keys:
    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ557k6uQaq3TV0Li8Y3+S3tOgQUPU6y0IM8E/TWSJGA robert@pc"
 
-# k3s nodes that should pull images through the Harbor mirror.
-# Needs k3s_registries_harbor_password in the vault on the first run
-# (scripts/ansible/setup-secrets.sh).
+# k3s nodes: installed by the k3s role (flags in host_config) and pulling images
+# through the Harbor mirror. The mirror needs k3s_registries_harbor_password in the
+# vault on the first run (scripts/ansible/setup-secrets.sh).
 k3s_hosts:
    - k8sdev01
 
@@ -48,6 +48,19 @@ host_config:
       - { port: 2458,  proto: udp, comment: "Game server (Pelican)" }
       - { port: 5432,  proto: tcp, from_ip: 172.16.0.0/12, comment: "PostgreSQL from the Docker networks" }
       - { port: 8333,  proto: tcp, from_ip: 172.16.0.0/12, comment: "SeaweedFS S3 from the Docker networks" }
+  k8sdev01:
+    k3s_config:
+      cluster-init: true
+      flannel-backend: wireguard-native
+      disable:
+        - traefik
+      kube-controller-manager-arg:
+        - bind-address=0.0.0.0
+      kube-proxy-arg:
+        - metrics-bind-address=0.0.0.0
+      kube-scheduler-arg:
+        - bind-address=0.0.0.0
+      etcd-expose-metrics: true
 
 # ── Resolution helpers ───────────────────────────────────────────────────────
 # Merge the "all" layer with the current host's layer once; host entries win.
@@ -64,6 +77,7 @@ _secrets: "{{ (vault_secrets | default({})).get('all', {}) | combine((vault_secr
 
 # ── Per-host settings resolved from host_config ──────────────────────────────
 firewall_rules: "{{ _config['firewall_rules'] | default([]) }}"
+k3s_config: "{{ _config['k3s_config'] | default({}) }}"
 
 # ── Secrets ──────────────────────────────────────────────────────────────────
 # The values live ansible-vault encrypted in secrets.yml, in the nested dict

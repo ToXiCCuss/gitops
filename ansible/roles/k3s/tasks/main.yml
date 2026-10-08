@@ -1,0 +1,58 @@
+---
+# Both checks only read, so they also run in check mode and the dry run is accurate.
+- name: Read the installed k3s version
+  ansible.builtin.command: /usr/local/bin/k3s --version
+  register: k3s_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# A node installed with flags still carries them in the systemd unit. The install script
+# rewrites the unit without flags, they live in config.yaml.
+- name: Check whether the systemd unit still carries server flags
+  ansible.builtin.command:
+    argv: [grep, -q, "^[[:space:]]*'--", /etc/systemd/system/k3s.service]
+  register: k3s_unit_flags
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# SKIP_START: a running k3s keeps its old flags until the handler restarts it once,
+# after config.yaml is in place.
+- name: Install or upgrade k3s
+  when: k3s_installed.rc != 0 or k3s_version not in k3s_installed.stdout or k3s_unit_flags.rc == 0
+  block:
+    - name: Download the k3s install script
+      ansible.builtin.get_url:
+        url: https://get.k3s.io
+        dest: /usr/local/bin/k3s-install.sh
+        mode: "0755"
+
+    - name: Run the k3s install script
+      ansible.builtin.command: /usr/local/bin/k3s-install.sh
+      environment:
+        INSTALL_K3S_VERSION: "{{ k3s_version }}"
+        INSTALL_K3S_EXEC: server
+        INSTALL_K3S_SKIP_START: "true"
+      notify: restart k3s
+
+- name: Make sure /etc/rancher/k3s exists
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"
+
+- name: Write config.yaml
+  ansible.builtin.copy:
+    content: "{{ {'node-ip': k3s_node_ip} | combine(k3s_config) | to_nice_yaml }}"
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: restart k3s
+
+- name: Ensure the k3s service is enabled and running
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+    enabled: true

@@ -9,7 +9,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 |Folder |Content
 
 |`ansible/`
-|Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s registry mirror, database servers, node exporter. Secrets in an ansible-vault file.
+|Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter. Secrets in an ansible-vault file.
 
 |`docker/`
 |One Docker Compose project per service on the Docker host (Backrest, Databasus, SeaweedFS, offsite sync, Uptime Kuma, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate.
@@ -86,6 +86,21 @@ host_config:
 * Run only this role with `--tags firewall`. Do a dry run (`ansible-playbook -i inventory.ini site.yml --tags firewall --check --diff`)
   before the first real run and compare it with `ufw status verbose` on the host. Adding a comment to an existing rule counts as a
   change once.
+
+=== k3s
+
+The role `k3s` runs on the hosts in `k3s_hosts` (`group_vars/all/main.yml`). It installs the pinned `k3s_version` with the
+official install script, writes `/etc/rancher/k3s/config.yaml` and keeps the service running. The server flags are the keys of
+`host_config.<host>.k3s_config` (`node-ip` defaults to the primary IPv4 address), the registry mirror stays in the role `k3s_registries`.
+
+* Change a flag: edit `k3s_config`, run `ansible-playbook -i inventory.ini site.yml --tags k3s`. k3s is restarted once (the API
+  server is gone for a moment, the pods keep running).
+* Upgrade: change `k3s_version` (a release from https://github.com/k3s-io/k3s/releases) and run the same command. Do a dry run
+  (`--tags k3s --check --diff`) first.
+* A node that was installed with the flags in the systemd unit is migrated by the first run: the install script rewrites the
+  unit without flags, they move to `config.yaml`, and k3s restarts once.
+* The cluster uses embedded etcd (`cluster-init`). Its snapshots are only local (`/var/lib/rancher/k3s/server/db/snapshots`),
+  they are not part of the backups yet.
 
 === Secrets (ansible-vault)
 
