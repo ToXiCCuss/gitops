@@ -1,0 +1,23 @@
+---
+# UFW only filters traffic to host processes (sshd, PostgreSQL, node_exporter, the
+# NetBird client). Ports published by Docker go through the FORWARD chain and are
+# not affected by these rules.
+- name: Allow the configured ports
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port | string }}"
+    proto: "{{ item.proto }}"
+    from_ip: "{{ item.from_ip | default('any') }}"
+    comment: "{{ item.comment }}"
+  loop: "{{ firewall_rules }}"
+  loop_control:
+    label: "{{ item.port }}/{{ item.proto }} from {{ item.from_ip | default('any') }}"
+
+- name: Deny all other incoming traffic
+  community.general.ufw:
+    default: deny
+    direction: incoming
+
+- name: Enable the firewall
+  community.general.ufw:
+    state: enabled

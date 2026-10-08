@@ -9,7 +9,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 |Folder |Content
 
 |`ansible/`
-|Host setup with Ansible: base system, Docker, NetBird, k3s registry mirror, database servers, node exporter. Secrets in an ansible-vault file.
+|Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s registry mirror, database servers, node exporter. Secrets in an ansible-vault file.
 
 |`docker/`
 |One Docker Compose project per service on the Docker host (Backrest, Databasus, SeaweedFS, offsite sync, Uptime Kuma, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate.
@@ -63,6 +63,28 @@ If the dry run completes without unexpected errors, run the playbook:
 ----
 ansible-playbook -i inventory.ini site.yml
 ----
+
+=== Firewall
+
+The role `firewall` runs on the hosts in `firewall_hosts` (`group_vars/all/main.yml`). It allows the ports listed in
+`host_config.<host>.firewall_rules`, denies all other incoming traffic and enables UFW. Each rule needs `port`, `proto` and
+`comment`, `from_ip` is optional (default: any):
+
+[source,yaml]
+----
+host_config:
+  docker01:
+    firewall_rules:
+      - { port: 8333, proto: tcp, from_ip: 172.16.0.0/12, comment: "SeaweedFS S3 from the Docker networks" }
+----
+
+* UFW only filters traffic to host processes (sshd, PostgreSQL, node_exporter, the NetBird client). Ports published by Docker
+  bypass it (FORWARD chain), a rule here neither opens nor closes them.
+* There is no UFW rule for SSH: `docker01` is reached through NetBird and port 22 is closed to the Internet.
+* The role never removes rules. A rule that is no longer wanted is removed by hand once (`ufw delete ...`) after it is
+  deleted from `firewall_rules`.
+* Do a dry run (`ansible-playbook -i inventory.ini site.yml --check --diff`) before the first real run and compare it with
+  `ufw status verbose` on the host.
 
 === Secrets (ansible-vault)
 
@@ -580,14 +602,8 @@ sudo scripts/postgresql/backup_user_create.sh
   `db_create.sh` grants it on every new database. Run the script above again for databases created in another way
   (the error otherwise is `permission denied for database`).
 . The containers of the Docker network must reach PostgreSQL (5432) and the S3 (8333) of the host. The firewall blocks
-  that by default (the test below times out):
-+
-----
-sudo ufw allow from 172.16.0.0/12 to any port 5432 proto tcp
-sudo ufw allow from 172.16.0.0/12 to any port 8333 proto tcp
-----
-+
-Test it from a container, `open` is the right answer:
+  that by default (the test below times out). The Ansible role `firewall` allows both from `172.16.0.0/12`, see
+  <<Firewall>>. Test it from a container, `open` is the right answer:
 +
 ----
 docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 5432
@@ -681,8 +697,8 @@ path-style on, any region (e.g. `us-east-1`)
 * Why the IP: the endpoint must be reachable from the Panel and the Wings (containers in Docker networks), and for downloads from the browser (the
 Panel hands out presigned URLs). Containers do not know `host.docker.internal` there and cannot resolve `docker01.vpn.rjst.de` (the host DNS is the
 NetBird resolver), an IP works for both. The browser must be in the NetBird network.
-* The firewall must let the Docker networks reach port 8333 (`ufw allow from 172.16.0.0/12 to any port 8333 proto tcp`, it covers the
-destination `100.67.0.1`). Test it from the networks of the Wings and the Panel, `open` is the right answer:
+* The firewall must let the Docker networks reach port 8333 (the rule of the Ansible role `firewall` for `172.16.0.0/12` covers the
+destination `100.67.0.1`, see <<Firewall>>). Test it from the networks of the Wings and the Panel, `open` is the right answer:
 +
 ----
 docker run --rm --network wings0 alpine nc -zv -w 5 100.67.0.1 8333
