@@ -12,9 +12,11 @@ mongodb_hosts: []
 node_exporter_hosts:
    - docker01
 
-# Hosts with a UFW policy (default deny incoming, rules from host_config)
+# Hosts with a UFW policy (default deny incoming, rules from host_config).
+# k8sdev01 has no rules on purpose: it is only reached through NetBird, everything else is denied.
 firewall_hosts:
    - docker01
+   - k8sdev01
 
 # Add hostnames here once netbird_setup_key is set in the vault
 # (scripts/ansible/setup-secrets.sh --scope <hostname>)
