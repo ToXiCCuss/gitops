@@ -251,6 +251,14 @@ sudo scripts/docker/deploy.sh --pull seaweedfs      # git pull --ff-only first
 sudo scripts/docker/deploy.sh --list
 ----
 
+`deploy.sh` never removes anything. To take a project down (also one that was already deleted from `docker/`) use `undeploy.sh`. It needs
+at least one project name, asks before it acts and removes only the containers and networks, the data and the named volumes stay:
+
+----
+sudo scripts/docker/undeploy.sh uptimeKuma
+sudo scripts/docker/undeploy.sh --yes backrest databasus   # without the question
+----
+
 The secrets of a project are in `docker/<project>/override.env`. The file is *not* in Git (`.gitignore`), the variables a project needs are
 named in `docker/<project>/override.env.example` (`NAME=` is required, `#NAME=` is optional). `default.env` lists all variables of
 a project and the compose file reads `default.env` first and `override.env` second. `deploy.sh` checks the required variables before it
@@ -376,7 +384,7 @@ docker exec offsite-sync sh -c 'wget -q -O /dev/null --header "Content-Type: app
 ----
 
 An old `PUSH_URL` in an `override.env` or in `/etc/netbird-backup.cred` is ignored now, delete the line. Uptime Kuma is no longer part
-of the repository: stop it once with `docker rm -f uptime-kuma`, its data stays in `/root/docker/uptime-kuma` until you delete it.
+of the repository: stop it once with `sudo scripts/docker/undeploy.sh uptimeKuma` (if that finds nothing, the container was created by the old management UI: `docker rm -f uptime-kuma`), its data stays in `/root/docker/uptime-kuma` until you delete it.
 
 ==== Setting it up, in this order
 
