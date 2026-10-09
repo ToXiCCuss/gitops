@@ -17,9 +17,6 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 |`kubernetes/`
 |ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, backup, spring).
 
-|`terraform/`
-|NetBird account configuration (the `k8sdev.rjst.de` DNS zone).
-
 |`scripts/`
 |Helper scripts: Ansible secrets, backup host setup, Vault (PowerShell), database administration, Linux benchmarks.
 |===
@@ -1182,37 +1179,3 @@ kubectl get networkresources -A
 All `Application` rows should show `Synced`/`Healthy`, and each
 `NetworkResource` should have a matching entry in the NetBird dashboard
 under the `k8sdev.rjst.de` zone.
-
-== Terraform (NetBird)
-
-Manages the `k8sdev.rjst.de` DNS zone in the self-hosted NetBird account, which the
-Kubernetes operator can't create (`terraform/dns/`). This is the officially maintained provider
-(`registry.terraform.io/netbirdio/netbird`), separate from GitOps/ArgoCD -
-nothing here is applied automatically, you run it yourself. Apply it *before*
-`infra` syncs the `NetworkRouter`, otherwise the router fails. Creating the zone in
-the dashboard instead (`DNS > Zones > Add Zone`) works just as well. The access
-policies are created by hand in the dashboard, see
-<<5. NetBird configuration>>.
-
-=== Token and URL
-
-Never put the PAT in a `.tf` file or pass it with `-var` (ends up in shell
-history). The provider reads both values natively from env vars. The URL is
-your self-hosted NetBird management URL (the provider's default points at
-NetBird Cloud, not at your server):
-
-----
-$env:NB_PAT = "<your netbird PAT>"
-$env:NB_MANAGEMENT_URL = "https://<your netbird domain>"
-----
-
-=== Run
-
-----
-terraform -chdir=terraform/dns init
-terraform -chdir=terraform/dns plan
-terraform -chdir=terraform/dns apply
-----
-
-State stays local (`terraform.tfstate` is git-ignored) - keep it, or a second
-`apply` will try to create things again.
