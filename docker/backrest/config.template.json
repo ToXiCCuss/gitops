@@ -1,0 +1,86 @@
+{
+  "version": 6,
+  "instance": "docker01",
+  "repos": [
+    {
+      "id": "docker",
+      "uri": "s3:http://host.docker.internal:8333/backups/docker",
+      "password": "${RESTIC_PASSWORD_DOCKER}",
+      "env": [
+        "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}"
+      ],
+      "prunePolicy": {
+        "schedule": { "cron": "30 3 * * 0", "clock": "CLOCK_UTC" },
+        "maxUnusedPercent": 10
+      },
+      "checkPolicy": {
+        "schedule": { "cron": "0 4 * * 0", "clock": "CLOCK_UTC" },
+        "readDataSubsetPercent": 10
+      },
+      "commandPrefix": {},
+      "forgetPolicy": {
+        "schedule": { "disabled": true, "clock": "CLOCK_LAST_RUN_TIME" },
+        "retention": { "policyTimeBucketed": { "daily": 30, "monthly": 12 } }
+      },
+      "hooks": [
+        {
+          "conditions": ["CONDITION_ANY_ERROR"],
+          "actionDiscord": { "webhookUrl": "${DISCORD_WEBHOOK_URL}" }
+        }
+      ]
+    },
+    {
+      "id": "vault",
+      "uri": "s3:http://host.docker.internal:8333/vault/raft",
+      "password": "${RESTIC_PASSWORD_VAULT}",
+      "env": [
+        "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}"
+      ],
+      "prunePolicy": {
+        "schedule": { "disabled": true, "clock": "CLOCK_LAST_RUN_TIME" },
+        "maxUnusedPercent": 10
+      },
+      "checkPolicy": {
+        "schedule": { "cron": "0 4 * * 0", "clock": "CLOCK_UTC" },
+        "readDataSubsetPercent": 10
+      },
+      "autoUnlock": true,
+      "commandPrefix": {},
+      "forgetPolicy": {
+        "schedule": { "disabled": true, "clock": "CLOCK_LAST_RUN_TIME" },
+        "retention": { "policyTimeBucketed": { "daily": 30, "monthly": 12 } }
+      },
+      "hooks": [
+        {
+          "conditions": ["CONDITION_ANY_ERROR"],
+          "actionDiscord": { "webhookUrl": "${DISCORD_WEBHOOK_URL}" }
+        }
+      ]
+    }
+  ],
+  "plans": [
+    {
+      "id": "gitops",
+      "repo": "docker",
+      "paths": [
+        "/userdata/docker/backrest/config",
+        "/userdata/docker/backrest/rclone/rclone.conf",
+        "/userdata/docker/databasus/secret.key",
+        "/userdata/docker/offsite-sync/rclone/rclone.conf",
+        "/userdata/docker/seaweedfs-s3.json",
+        "/userdata/gitops"
+      ],
+      "excludes": ["/userdata/gitops/.git"],
+      "schedule": { "cron": "0 3 * * *", "clock": "CLOCK_UTC" },
+      "retention": { "policyTimeBucketed": { "daily": 7, "weekly": 4, "monthly": 6 } },
+      "hooks": [
+        {
+          "conditions": ["CONDITION_ANY_ERROR"],
+          "actionDiscord": { "webhookUrl": "${DISCORD_WEBHOOK_URL}" }
+        }
+      ]
+    }
+  ]
+}

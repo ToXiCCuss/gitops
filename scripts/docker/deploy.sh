@@ -19,6 +19,9 @@
 # variables a project needs are named in docker/<project>/override.env.example:
 # NAME= is required, #NAME= is optional. A missing or empty required variable
 # stops the deploy of that project before anything is changed.
+#
+# A project can have a pre-deploy.sh: it is run with bash after the variables were
+# checked and before the container is started. If it fails, that project is not deployed.
 # =============================================================================
 
 set -euo pipefail
@@ -48,7 +51,7 @@ while [[ $# -gt 0 ]]; do
         --pull)  PULL=1; shift ;;
         --adopt) ADOPT=1; shift ;;
         --list)  LIST=1; shift ;;
-        -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) error "Unknown argument: $1"; exit 1 ;;
         *)  PROJECTS+=("$1"); shift ;;
     esac
@@ -120,6 +123,9 @@ for project in "${PROJECTS[@]}"; do
         continue
     fi
     check_env "$project" || { FAILED+=("$project"); continue; }
+    if [[ -f "$dir/pre-deploy.sh" ]]; then
+        bash "$dir/pre-deploy.sh" || { error "$project: pre-deploy.sh failed"; FAILED+=("$project"); continue; }
+    fi
 
     proj="${project,,}"
     [[ -z "$ADOPT" ]] || adopt "$project" "$proj"
