@@ -5,14 +5,6 @@
   roles:
     - base
 
-- name: Configure the firewall (only on hosts listed in firewall_hosts)
-  hosts: all
-  become: true
-  roles:
-    - role: firewall
-      when: ansible_hostname in firewall_hosts
-      tags: firewall
-
 - name: Install Node Exporter (only on hosts listed in node_exporter_hosts)
   hosts: all
   become: true
@@ -26,6 +18,15 @@
   roles:
     - role: docker
       when: ansible_hostname in docker_hosts
+
+# After Docker: the role closes Docker ports in DOCKER-USER, which Docker creates.
+- name: Configure the firewall (only on hosts listed in firewall_hosts)
+  hosts: all
+  become: true
+  roles:
+    - role: firewall
+      when: ansible_hostname in firewall_hosts
+      tags: firewall
 
 - name: Install MariaDB (only on hosts listed in mariadb_hosts)
   hosts: all

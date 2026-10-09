@@ -1,0 +1,6 @@
+---
+- name: apply docker port policy
+  ansible.builtin.systemd:
+    name: docker-public-ports
+    daemon_reload: true
+    state: restarted
