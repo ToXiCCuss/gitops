@@ -321,8 +321,8 @@ flowchart LR
 |===
 
 Everything writes to the S3 only, pCloud is written by the offsite sync alone. Not covered:
-the PVCs of the Kubernetes apps and MariaDB. MongoDB is not operated (`mongodb_hosts` is empty); its
-scripts in `scripts/mongodb/backup/` are kept, but they still write directly to pCloud.
+the PVCs of the Kubernetes apps and MariaDB. MongoDB is not operated (`mongodb_hosts` is empty), if it is, Databasus
+backs it up like the PostgreSQL databases.
 
 ==== Retention, checks and schedule
 
