@@ -4,13 +4,3 @@
 # Set per host in host_config (group_vars/all/main.yml). Incoming traffic that
 # matches none of them is denied.
 firewall_rules: []
-
-# Ports that Docker publishes and that must stay reachable from the Internet:
-#   port (required), proto (required), comment (required)
-# UFW does not see Docker-published ports, so every other published port is closed
-# for connections that arrive on firewall_public_interface (traffic from NetBird and
-# from the Docker networks is not affected). Empty = no Docker handling (hosts without Docker).
-firewall_docker_public_ports: []
-
-# Interface that faces the Internet.
-firewall_public_interface: "{{ ansible_default_ipv4.interface }}"

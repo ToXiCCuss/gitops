@@ -1,7 +1,7 @@
 ---
 # UFW only filters traffic to host processes (sshd, PostgreSQL, node_exporter, the
-# NetBird client). Ports published by Docker go through the FORWARD chain, they are
-# closed by the second part of this role.
+# NetBird client). Ports published by Docker go through the FORWARD chain and are
+# not affected by these rules.
 - name: Allow the configured ports
   community.general.ufw:
     rule: allow
@@ -21,48 +21,3 @@
 - name: Enable the firewall
   community.general.ufw:
     state: enabled
-
-# The rules live in the chain DOCKER-USER, which Docker creates and never flushes, but
-# which is empty after a reboot. The unit applies them again after every Docker start.
-- name: Close the Docker ports that are not public
-  when: firewall_docker_public_ports | length > 0
-  block:
-    - name: Install the script that drops Internet traffic to other Docker ports
-      ansible.builtin.template:
-        src: docker-public-ports.sh.j2
-        dest: /usr/local/sbin/docker-public-ports.sh
-        owner: root
-        group: root
-        mode: "0750"
-      notify: apply docker port policy
-
-    - name: Install the systemd unit that applies the script after Docker starts
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/docker-public-ports.service
-        content: |
-          [Unit]
-          Description=Close the Docker ports that are not public
-          After=docker.service
-          Requires=docker.service
-          PartOf=docker.service
-
-          [Service]
-          Type=oneshot
-          RemainAfterExit=yes
-          ExecStart=/usr/local/sbin/docker-public-ports.sh
-
-          [Install]
-          WantedBy=multi-user.target
-        owner: root
-        group: root
-        mode: "0644"
-      notify: apply docker port policy
-
-    # In check mode the unit file does not exist yet, so systemd cannot find the service.
-    - name: Ensure the unit is enabled and running
-      ansible.builtin.systemd:
-        name: docker-public-ports
-        daemon_reload: true
-        enabled: true
-        state: started
-      ignore_errors: "{{ ansible_check_mode }}"
