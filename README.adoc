@@ -259,6 +259,16 @@ sudo scripts/docker/undeploy.sh uptimeKuma
 sudo scripts/docker/undeploy.sh --yes backrest databasus   # without the question
 ----
 
+`cleanup.sh` shows what Docker keeps without using it (dry run) and with `--apply` removes only the safe part: images without a name,
+which pile up when Renovate moves an image digest, and the build cache. Named images without a container, volumes, stopped containers
+and networks are only listed. Volumes hold data, `netbird-rollback/*` are the rollback points of `netbird_upgrade.sh` and Pelican creates its
+own networks and containers.
+
+----
+sudo scripts/docker/cleanup.sh            # dry run
+sudo scripts/docker/cleanup.sh --apply
+----
+
 The secrets of a project are in `docker/<project>/override.env`. The file is *not* in Git (`.gitignore`), the variables a project needs are
 named in `docker/<project>/override.env.example` (`NAME=` is required, `#NAME=` is optional). `default.env` lists all variables of
 a project and the compose file reads `default.env` first and `override.env` second. `deploy.sh` checks the required variables before it
