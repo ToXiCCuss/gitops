@@ -7,10 +7,11 @@
     state: present
     update_cache: yes
 
+# Debian 13 writes pgdg.sources (older releases pgdg.list); a wrong name here makes the script run every time
 - name: Add official PGDG repository
   command: /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
   args:
-    creates: /etc/apt/sources.list.d/pgdg.list
+    creates: /etc/apt/sources.list.d/pgdg.sources
 
 - name: Install PostgreSQL and extensions
   apt:

@@ -14,17 +14,27 @@
     state: directory
     mode: "0755"
 
+- name: Check for the Docker GPG key
+  stat:
+    path: /etc/apt/keyrings/docker.asc
+  register: docker_gpg_key
+
+# get_url reports a change in check mode even when the file exists, so it only runs when the key is missing
 - name: Download Docker GPG key
   get_url:
     url: "https://download.docker.com/linux/debian/gpg"
     dest: /etc/apt/keyrings/docker.asc
     mode: "0644"
     force: false
+  when: not docker_gpg_key.stat.exists
 
+# Read-only, so it also runs in check mode. Skipped there, the architecture would be empty and the
+# repository line below would differ from the file on every dry run.
 - name: Determine dpkg architecture
   command: dpkg --print-architecture
   register: dpkg_architecture
   changed_when: false
+  check_mode: false
 
 - name: Add Docker apt repository
   apt_repository:
