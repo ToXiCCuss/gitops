@@ -48,6 +48,19 @@ host_config:
       - { port: 2458,  proto: udp, comment: "Game server (Pelican)" }
       - { port: 5432,  proto: tcp, from_ip: 172.16.0.0/12, comment: "PostgreSQL from the Docker networks" }
       - { port: 8333,  proto: tcp, from_ip: 172.16.0.0/12, comment: "SeaweedFS S3 from the Docker networks" }
+    # Docker-published ports that stay open to the Internet. All other published ports
+    # (Backrest, Databasus, Uptime Kuma, Pelican Panel, cAdvisor, S3) are only reachable
+    # through NetBird and from the Docker networks.
+    firewall_docker_public_ports:
+      - { port: 80,    proto: tcp, comment: "NetBird server (HTTP)" }
+      - { port: 443,   proto: tcp, comment: "NetBird server (HTTPS)" }
+      - { port: 3478,  proto: udp, comment: "NetBird server (STUN/TURN)" }
+      - { port: 51820, proto: udp, comment: "WireGuard" }
+      - { port: 2456,  proto: udp, comment: "Valheim" }
+      - { port: 2457,  proto: udp, comment: "Valheim" }
+      - { port: 2458,  proto: udp, comment: "Valheim" }
+      - { port: 8080,  proto: tcp, comment: "Pelican Wings (API)" }
+      - { port: 2022,  proto: tcp, comment: "Pelican Wings (SFTP)" }
   k8sdev01:
     k3s_config:
       cluster-init: true
@@ -77,6 +90,7 @@ _secrets: "{{ (vault_secrets | default({})).get('all', {}) | combine((vault_secr
 
 # ── Per-host settings resolved from host_config ──────────────────────────────
 firewall_rules: "{{ _config['firewall_rules'] | default([]) }}"
+firewall_docker_public_ports: "{{ _config['firewall_docker_public_ports'] | default([]) }}"
 k3s_config: "{{ _config['k3s_config'] | default({}) }}"
 
 # ── Secrets ──────────────────────────────────────────────────────────────────

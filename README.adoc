@@ -79,7 +79,12 @@ host_config:
 ----
 
 * UFW only filters traffic to host processes (sshd, PostgreSQL, node_exporter, the NetBird client). Ports published by Docker
-  bypass it (FORWARD chain), a rule here neither opens nor closes them.
+  bypass it (FORWARD chain), a rule in `firewall_rules` neither opens nor closes them.
+* Docker ports are closed by the second part of the role: the script `/usr/local/sbin/docker-public-ports.sh` (unit
+  `docker-public-ports`, started after Docker) drops every connection that arrives on the Internet interface at a published port
+  that is not in `host_config.<host>.firewall_docker_public_ports`. Traffic from NetBird (`wt0`) and from the Docker networks is
+  not affected. A new service with a published port is therefore only reachable through NetBird until its port is added there.
+  Look at the rules with `iptables -S DOCKER-PUBLIC`.
 * There is no UFW rule for SSH: `docker01` is reached through NetBird and port 22 is closed to the Internet.
 * The role never removes rules. A rule that is no longer wanted is removed by hand once (`ufw delete ...`) after it is
   deleted from `firewall_rules`.
@@ -448,7 +453,7 @@ group `vault-users` (the policy `vault-users` -> `k8s-vault` exists, see NetBird
   password manager. Without them the pCloud backups cannot be read after a total loss.
 
 Backrest (`9898`), Databasus (`4005`) and the S3 port (`8333`) are published on all interfaces
-of the host. Restrict them to NetBird with a host firewall and allow them for your peers with
+of the host. The Ansible role `firewall` closes them for the Internet (see <<Firewall>>), allow them for your peers with
 NetBird policies. The backups should run before the sync, so schedule them between 01:00 and 03:00.
 
 ==== Test the restore
