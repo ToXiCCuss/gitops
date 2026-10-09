@@ -15,7 +15,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 |One Docker Compose project per service on the Docker host (Backrest, Databasus, SeaweedFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate.
 
 |`kubernetes/`
-|ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, backup, spring).
+|ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, spring).
 
 |`scripts/`
 |Helper scripts: Ansible secrets, backup host setup, Vault (PowerShell), database administration, Linux benchmarks.

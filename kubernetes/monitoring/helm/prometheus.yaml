@@ -91,24 +91,25 @@ spec:
                     gnetId: 21361
                     revision: 1
                     datasource: prometheus
+                # Pinned to the commit of release v3.0.8, change the commit in all six URLs to update
                 grafana-dashboards-kubernetes:
                   k8s-system-api-server:
-                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-system-api-server.json
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/e4faf59e017a18e1b06fa64f11623bef15ce7507/dashboards/k8s-system-api-server.json
                     token: ''
                   k8s-system-coredns:
-                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-system-coredns.json
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/e4faf59e017a18e1b06fa64f11623bef15ce7507/dashboards/k8s-system-coredns.json
                     token: ''
                   k8s-views-global:
-                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-views-global.json
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/e4faf59e017a18e1b06fa64f11623bef15ce7507/dashboards/k8s-views-global.json
                     token: ''
                   k8s-views-namespaces:
-                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-views-namespaces.json
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/e4faf59e017a18e1b06fa64f11623bef15ce7507/dashboards/k8s-views-namespaces.json
                     token: ''
                   k8s-views-nodes:
-                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-views-nodes.json
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/e4faf59e017a18e1b06fa64f11623bef15ce7507/dashboards/k8s-views-nodes.json
                     token: ''
                   k8s-views-pods:
-                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-views-pods.json
+                    url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/e4faf59e017a18e1b06fa64f11623bef15ce7507/dashboards/k8s-views-pods.json
                     token: ''
                 dbs:
                   postgresql:
