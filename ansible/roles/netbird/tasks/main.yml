@@ -14,11 +14,19 @@
     state: directory
     mode: "0755"
 
+- name: Check for the NetBird keyring
+  stat:
+    path: /usr/share/keyrings/netbird-archive-keyring.gpg
+  register: netbird_keyring
+
+# The key is only needed to build the keyring, and get_url reports a change in check mode even when
+# the file exists, so it only runs while the keyring is missing
 - name: Download NetBird GPG key
   get_url:
     url: "https://pkgs.netbird.io/debian/public.key"
     dest: /tmp/netbird-public.key
     mode: "0644"
+  when: not netbird_keyring.stat.exists
 
 - name: Dearmor NetBird GPG key
   command: gpg --dearmor --yes --output /usr/share/keyrings/netbird-archive-keyring.gpg /tmp/netbird-public.key
