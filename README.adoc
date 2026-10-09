@@ -259,9 +259,9 @@ sudo scripts/docker/undeploy.sh uptimeKuma
 sudo scripts/docker/undeploy.sh --yes backrest databasus   # without the question
 ----
 
-`cleanup.sh` shows what Docker keeps without using it (dry run) and with `--apply` removes only the safe part: images without a name,
-which pile up when Renovate moves an image digest, and the build cache. Named images without a container, volumes, stopped containers
-and networks are only listed. Volumes hold data, `netbird-rollback/*` are the rollback points of `netbird_upgrade.sh` and Pelican creates its
+`cleanup.sh` shows what Docker keeps without using it (dry run) and with `--apply` removes only the safe part: unused images without a tag
+and the build cache. The images of `docker/` are pinned by digest and have no tag, so the old versions that Renovate leaves behind
+appear as `repository:<none>`. Images with a tag and no container, volumes, stopped containers and networks are only listed. Volumes hold data, `netbird-rollback/*` are the rollback points of `netbird_upgrade.sh` and Pelican creates its
 own networks and containers.
 
 ----
