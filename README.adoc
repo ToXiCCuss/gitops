@@ -12,7 +12,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 |Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter. Secrets in an ansible-vault file.
 
 |`docker/`
-|One Docker Compose project per service on the Docker host (Backrest, Databasus, SeaweedFS, offsite sync, Uptime Kuma, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate.
+|One Docker Compose project per service on the Docker host (Backrest, Databasus, SeaweedFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate.
 
 |`kubernetes/`
 |ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, backup, spring).
@@ -332,8 +332,8 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 |Offsite copy complete and intact
 |`rclone check --one-way --size-only` S3 -> pCloud after every sync (S3 and pCloud have no common hash, so it compares sizes). A mismatch fails the sync
 
-|Failed or missing jobs
-|Offsite sync, `vault-backup` and `netbird_backup.sh` (`PUSH_URL`) report to an Uptime Kuma push monitor (alarm when the heartbeat stays out). Databasus has its own notifications, add one to Backrest plans as a hook
+|Failed jobs
+|Offsite sync, `vault-backup` and `netbird_backup.sh` (`DISCORD_WEBHOOK_URL`) post to a Discord webhook when a run fails. Databasus and Backrest have their own Discord notification, see <<Discord alerts>>. A job that does not run at all sends nothing
 
 |Backups can be restored
 |By hand once per quarter: restore the latest PostgreSQL dump into a scratch database and a Vault snapshot, both from *pCloud*
@@ -351,12 +351,39 @@ scripts in `scripts/mongodb/backup/` are kept, but they still write directly to 
 |05:00 |Offsite sync with check, runs when nothing writes to the S3 any more
 |===
 
+==== Discord alerts
+
+Failed backups are reported to a Discord channel through a webhook. Only failures are posted, a run that succeeds is silent. A job that
+does not run at all (container stopped, host down) sends nothing, so look at `docker ps` now and then.
+
+. Create a channel only for alerts (not the chat of a game server): *Edit Channel > Integrations > Webhooks > New Webhook*, copy the URL.
+. The URL is a secret, whoever knows it can post to the channel. Keep it out of Git.
+. Enter it where the job runs:
++
+[cols="1,3"]
+|===
+|Job |Where
+|`offsite-sync`, `vault-backup` |`DISCORD_WEBHOOK_URL` in `docker/<project>/override.env`, then `sudo scripts/docker/deploy.sh <project>`
+|`netbird_backup.sh` |`sudo ./netbird_backup_setup.sh --discord-webhook <url>` (writes it to `/etc/netbird-backup.cred`)
+|Databasus |In the UI add a Discord notifier with the URL and select it for every database (failed backups)
+|Backrest |In the UI add a Discord hook to the repositories and the plan, condition `CONDITION_ANY_ERROR`
+|===
+. Test the webhook, a message must appear in the channel:
++
+----
+curl -H 'Content-Type: application/json' -d '{"content":"test"}' '<webhook url>'
+docker exec offsite-sync sh -c 'wget -q -O /dev/null --header "Content-Type: application/json" --post-data "{\"content\":\"offsite-sync test\"}" "$DISCORD_WEBHOOK_URL"'
+----
+
+An old `PUSH_URL` in an `override.env` or in `/etc/netbird-backup.cred` is ignored now, delete the line. Uptime Kuma is no longer part
+of the repository: stop it once with `docker rm -f uptime-kuma`, its data stays in `/root/docker/uptime-kuma` until you delete it.
+
 ==== Setting it up, in this order
 
 . If there is no pCloud remote yet, get a token: on a machine with a browser and rclone run
   `rclone authorize "pcloud"` and keep the printed token JSON. The setup script asks for it and
   creates the remote `pCloud` in `/root/.config/rclone/rclone.conf`. An existing remote is reused.
-. Create an Uptime Kuma push monitor (heartbeat 26 hours) and note its push URL.
+. Create a Discord webhook for the alerts, see <<Discord alerts>>.
 . Prepare the host. It creates the data directories, installs `rclone.conf`, checks pCloud and
   generates the S3 identities and keys (`/root/backup-credentials.env`). The bucket step reports
   that S3 is not reachable yet, that is expected:
@@ -378,10 +405,10 @@ sudo scripts/docker/setup-backup-host.sh
 |nothing required, `RESTIC_PASSWORD` is optional
 
 |`offsite-sync`
-|nothing required, `PUSH_URL` (Uptime Kuma push monitor) is optional
+|nothing required, `DISCORD_WEBHOOK_URL` is optional
 
 |`vault-backup`
-|`VAULT_TOKEN` (see below), `RESTIC_PASSWORD` (the password of the Vault repository), optional `PUSH_URL`
+|`VAULT_TOKEN` (see below), `RESTIC_PASSWORD` (the password of the Vault repository), optional `DISCORD_WEBHOOK_URL`
 |===
 
 `VAULT_TOKEN` is a periodic token that may only read the Raft snapshot. Create it once with the root token,
@@ -575,7 +602,7 @@ may read these buckets (`access denied` for `netbird` means that SeaweedFS was n
 ==== Plan for the key files
 
 The plan only takes files that never change while running, and the repository checkout with the secrets. The data directories of running
-services (Uptime Kuma, the internal database of Databasus) are not copied, a copy of a live database is not consistent. PostgreSQL is
+services (the internal database of Databasus) are not copied, a copy of a live database is not consistent. PostgreSQL is
 backed up by Databasus.
 
 [cols="1,3"]
@@ -669,7 +696,7 @@ Nightly `rclone sync` of the SeaweedFS S3 to pCloud (05:00 UTC, `SYNC_HOUR`), fo
 pCloud credentials.
 
 * The `rclone.conf` with the pCloud remote is installed to `/root/docker/offsite-sync/rclone/rclone.conf` by `setup-backup-host.sh`
-* Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (keys of the read-only `offsite-sync` identity) and `PUSH_URL` (Uptime Kuma push monitor, heartbeat 26h) in `docker/offsite-sync/override.env` (the keys are written by `setup-backup-host.sh`)
+* Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (keys of the read-only `offsite-sync` identity) and optionally `DISCORD_WEBHOOK_URL` in `docker/offsite-sync/override.env` (the keys are written by `setup-backup-host.sh`)
 * `docker compose up -d` in the offsite-sync folder
 
 === Setup SeaweedFS
@@ -743,8 +770,8 @@ The self-hosted NetBird server runs as a Docker Compose project on `docker01` (d
 
 * `netbird_backup.sh`: stops NetBird for a moment, copies the config files, `/var/lib/netbird` (SQLite store and keys),
 CrowdSec data and certificates, starts NetBird again (also on errors), writes everything with restic to the
-repository `netbird/restic` on the local SeaweedFS S3 and applies the retention (8 weekly, 6 monthly). It runs monthly (1st, 00:00) and before every upgrade (`netbird_upgrade.sh`, tag `pre-upgrade`), so up to a month of changes is lost on a restore. It reports
-to Uptime Kuma (`PUSH_URL`). A PostgreSQL or MySQL store would have to be backed up separately
+repository `netbird/restic` on the local SeaweedFS S3 and applies the retention (8 weekly, 6 monthly). It runs monthly (1st, 00:00) and before every upgrade (`netbird_upgrade.sh`, tag `pre-upgrade`), so up to a month of changes is lost on a restore. A failed
+run is reported to Discord (`DISCORD_WEBHOOK_URL`). A PostgreSQL or MySQL store would have to be backed up separately
 * `netbird_restore.sh`, `netbird_upgrade.sh` (creates a pre-upgrade backup and a local rollback point), `netbird_rollback.sh`
 * `netbird_backup_setup.sh` installs them to `/usr/local/bin`, writes `/etc/netbird-backup.cred` and a cron job
 
@@ -752,12 +779,12 @@ Set it up on `docker01`, the S3 is reached on `127.0.0.1:8333`, no NetBird is in
 
 . Add the identity and bucket `netbird`: run `scripts/docker/setup-backup-host.sh` (it restarts SeaweedFS itself and creates the bucket). The keys
   `NETBIRD_ACCESS_KEY_ID` and `NETBIRD_SECRET_ACCESS_KEY` are in `/root/backup-credentials.env`
-. Create an Uptime Kuma push monitor (heartbeat 35 days, the backup runs monthly)
+. Create a Discord webhook for the alerts, see <<Discord alerts>>
 . Run the setup (installs restic if missing, asks for the S3 keys and the restic password, initialises the repository):
 +
 ----
 cd scripts/netbird
-sudo ./netbird_backup_setup.sh --push-url <push url> --run
+sudo ./netbird_backup_setup.sh --discord-webhook <webhook url> --run
 ----
 . The restic password is in `/root/restic`, store it in your password manager (without it the backups are unreadable)
 . Test later with `sudo netbird_backup.sh`. Snapshots from before the move are in `rclone:pCloud:/Backups/netbird`
@@ -767,12 +794,12 @@ sudo ./netbird_backup_setup.sh --push-url <push url> --run
 
 Daily at 02:30 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`) the container fetches the Raft snapshot of Vault
 (`sys/storage/raft/snapshot`), writes it with restic to the repository `vault/raft` on the SeaweedFS S3,
-applies the retention (`KEEP_*`, default 14 daily, 8 weekly, 12 monthly) and reports to Uptime Kuma. It runs in the
+applies the retention (`KEEP_*`, default 14 daily, 8 weekly, 12 monthly) and reports a failed run to Discord. It runs in the
 host network, so that it uses the NetBird DNS of the host to reach Vault and the S3 on `127.0.0.1`.
 
 * Create the token with `scripts/vault/create-snapshot-token.ps1` (see above). The token is periodic and renewed
 by every run, so it stays valid as long as the backup runs at least once per period (32 days)
-* Set `VAULT_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (identity `vault`), `RESTIC_PASSWORD` and `PUSH_URL` in `docker/vault-backup/override.env`
+* Set `VAULT_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (identity `vault`), `RESTIC_PASSWORD` and optionally `DISCORD_WEBHOOK_URL` in `docker/vault-backup/override.env`
 * `docker compose up -d` in the vault-backup folder
 * Restore with `scripts/vault/vault_restore.sh`. Snapshots from before the move are in `rclone:pCloud:/Backups/vault_pb`
 (set `RESTIC_REPOSITORY`)

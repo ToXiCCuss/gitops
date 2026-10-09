@@ -9,9 +9,10 @@ apk add --no-cache curl jq restic >/dev/null || { echo "apk add failed" >&2; exi
 export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY RESTIC_PASSWORD
 export RESTIC_REPOSITORY="s3:${S3_ENDPOINT}/vault/raft"
 
-push() {
-    # Uptime Kuma shows the URL with ?status=up&msg=OK&ping=, cut the query off, it is added here
-    [ -n "${PUSH_URL:-}" ] && curl -fsS -m 10 "${PUSH_URL%%\?*}?status=$1&msg=$2" >/dev/null || true
+# Reports a failed run to the Discord webhook (optional). Successes are not reported.
+notify_failure() {
+    [ -n "${DISCORD_WEBHOOK_URL:-}" ] && curl -fsS -m 10 -H 'Content-Type: application/json' \
+        -d "{\"content\":\"vault-backup failed: $1\"}" "$DISCORD_WEBHOOK_URL" >/dev/null || true
 }
 
 run_backup() {
@@ -33,11 +34,10 @@ run_backup() {
 if [ "${1:-}" = "now" ]; then
     if run_backup; then
         echo "Backup finished"
-        push up OK
         exit 0
     fi
     echo "Backup FAILED" >&2
-    push down backup-failed
+    notify_failure backup-failed
     exit 1
 fi
 
@@ -51,10 +51,9 @@ while true; do
 
     if run_backup; then
         echo "Backup finished"
-        push up OK
     else
         echo "Backup FAILED" >&2
-        push down backup-failed
+        notify_failure backup-failed
     fi
     sleep 60
 done
