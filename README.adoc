@@ -570,6 +570,9 @@ SeaweedFS S3, checks the repositories and is used to browse and restore snapshot
   (run by `deploy.sh`) renders `/root/docker/backrest/config/config.json` from it, fills the `${NAME}` placeholders from the env files, keeps the users and
   restarts Backrest. *Change repositories, plans and hooks in the template, not in the UI:* the next deploy overwrites UI changes. Check a change first
   with `bash docker/backrest/pre-deploy.sh /tmp/config.test.json` (writes only that file, restarts nothing)
+* If Backrest does not answer on port 9898 after the restart (for example because it refuses the new file), `pre-deploy.sh` puts the previous file back
+  (saved as `config.json.before-deploy`), restarts Backrest again and fails, so `deploy.sh` shows `backrest: pre-deploy.sh failed`. Read the reason with
+  `docker logs backrest`; the log of the failed start is also printed
 * Deploy the project with `sudo scripts/docker/deploy.sh backrest`, open `http://<docker-host>:9898` and create the admin user *at once*
   (Backrest has no login until then, and Hooks run shell commands). The users stay across deploys
 * The pCloud remote (`rclone.conf`) for restoring from pCloud is created and installed to `/root/docker/backrest/rclone/rclone.conf` by `setup-backup-host.sh`
