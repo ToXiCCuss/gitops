@@ -18,7 +18,7 @@
 # Optional overrides in /etc/netbird-backup.cred:
 #   NETBIRD_DIR, RESTIC_REPOSITORY,
 #   RESTIC_PASSWORD_FILE, BACKUP_DIR, RESTIC_KEEP_DAILY/WEEKLY/MONTHLY,
-#   PUSH_URL (Uptime Kuma push monitor, the only notification), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#   DISCORD_WEBHOOK_URL (the only notification, failures only), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 #   (keys of the S3 identity "netbird")
 #
 # Environment (used by netbird_upgrade.sh):
@@ -63,14 +63,15 @@ STAGING_DIR="$BACKUP_DIR/latest"
 CONFIG_FILES=(docker-compose.yml config.yaml dashboard.env proxy.env traefik-dynamic.yaml
               management.json turnserver.conf relay.env zitadel.env .env)
 
-# Report to the Uptime Kuma push monitor (optional). The URL may contain the query Kuma shows, it is cut off
-push_status() {
-    [ -n "${PUSH_URL:-}" ] && curl -fsS -m 10 "${PUSH_URL%%\?*}?status=$1&msg=$2" >/dev/null || true
+# Reports a failed run to the Discord webhook (optional). Successes are not reported.
+notify_failure() {
+    [ -n "${DISCORD_WEBHOOK_URL:-}" ] && curl -fsS -m 10 -H 'Content-Type: application/json' \
+        -d "{\"content\":\"netbird-backup failed: $1\"}" "$DISCORD_WEBHOOK_URL" >/dev/null || true
 }
 
 fail() {
     echo "[ERROR] $1"
-    push_status down backup-failed
+    notify_failure backup-failed
     exit 1
 }
 
@@ -187,4 +188,3 @@ DURATION_SECONDS=$((END_TIME - START_TIME))
 DURATION=$(format_duration $DURATION_SECONDS)
 
 echo "[INFO] NetBird backup completed successfully in $DURATION."
-push_status up OK

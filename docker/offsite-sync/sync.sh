@@ -9,9 +9,10 @@ export RCLONE_CONFIG_SEAWEED_ENDPOINT="$S3_ENDPOINT"
 export RCLONE_CONFIG_SEAWEED_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
 export RCLONE_CONFIG_SEAWEED_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 
-push() {
-    # Uptime Kuma shows the URL with ?status=up&msg=OK&ping=, cut the query off, it is added here
-    [ -n "${PUSH_URL:-}" ] && wget -q -O /dev/null "${PUSH_URL%%\?*}?status=$1&msg=$2" || true
+# Reports a failed run to the Discord webhook (optional). Successes are not reported.
+notify_failure() {
+    [ -n "${DISCORD_WEBHOOK_URL:-}" ] && wget -q -O /dev/null --header 'Content-Type: application/json' \
+        --post-data "{\"content\":\"offsite-sync failed: $1\"}" "$DISCORD_WEBHOOK_URL" || true
 }
 
 run_sync() {
@@ -32,11 +33,10 @@ run_sync() {
 if [ "${1:-}" = "now" ]; then
     if run_sync; then
         echo "Sync finished"
-        push up OK
         exit 0
     fi
     echo "Sync FAILED" >&2
-    push down sync-failed
+    notify_failure sync-failed
     exit 1
 fi
 
@@ -50,10 +50,9 @@ while true; do
 
     if run_sync; then
         echo "Sync finished"
-        push up OK
     else
         echo "Sync FAILED" >&2
-        push down sync-failed
+        notify_failure sync-failed
     fi
     sleep 60
 done

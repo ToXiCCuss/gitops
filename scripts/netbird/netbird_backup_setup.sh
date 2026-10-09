@@ -4,13 +4,13 @@
 # Sets up netbird_backup.sh / netbird_restore.sh on the NetBird server:
 #   - installs restic (if missing) and checks the S3 of the Docker host
 #   - creates the restic password file and initializes the repository
-#   - writes /etc/netbird-backup.cred (S3 keys, optional Uptime Kuma push URL)
+#   - writes /etc/netbird-backup.cred (S3 keys, optional Discord webhook URL)
 #   - installs the backup/restore/upgrade/rollback scripts to /usr/local/bin
 #     and a cron job
 #
 # Usage (run from the scripts/netbird directory):
 #   sudo ./netbird_backup_setup.sh [--dir /opt/netbird] [--schedule "0 0 1 * *"]
-#                                  [--s3-endpoint http://127.0.0.1:8333] [--push-url URL]
+#                                  [--s3-endpoint http://127.0.0.1:8333] [--discord-webhook URL]
 #                                  [--run]
 # The S3 keys (identity "netbird" of setup-backup-host.sh) are read from AWS_ACCESS_KEY_ID and
 # AWS_SECRET_ACCESS_KEY or asked for. The schedule is in the local time of the host.
@@ -51,7 +51,7 @@ INSTALL_DIR="/usr/local/bin"
 
 S3_ENDPOINT="http://127.0.0.1:8333"
 RESTIC_PASSWORD_FILE="/root/restic"
-PUSH_URL=""
+DISCORD_WEBHOOK_URL=""
 
 NETBIRD_DIR=""
 SCHEDULE="0 0 1 * *"
@@ -67,7 +67,7 @@ while [[ $# -gt 0 ]]; do
         --dir)      NETBIRD_DIR="$2"; shift 2 ;;
         --schedule) SCHEDULE="$2"; shift 2 ;;
         --s3-endpoint) S3_ENDPOINT="$2"; shift 2 ;;
-        --push-url) PUSH_URL="$2"; shift 2 ;;
+        --discord-webhook) DISCORD_WEBHOOK_URL="$2"; shift 2 ;;
         --run)      RUN_NOW=true; shift ;;
         -h|--help)  usage 0 ;;
         *)          error "Unknown argument: $1"; usage 1 ;;
@@ -198,8 +198,8 @@ write_config() {
         set_cred "RESTIC_REPOSITORY=" "RESTIC_REPOSITORY=\"$RESTIC_REPOSITORY\""
         set_cred "export AWS_ACCESS_KEY_ID=" "export AWS_ACCESS_KEY_ID=\"$AWS_ACCESS_KEY_ID\""
         set_cred "export AWS_SECRET_ACCESS_KEY=" "export AWS_SECRET_ACCESS_KEY=\"$AWS_SECRET_ACCESS_KEY\""
-        if [[ -n "$PUSH_URL" ]]; then
-            set_cred "PUSH_URL=" "PUSH_URL=\"$PUSH_URL\""
+        if [[ -n "$DISCORD_WEBHOOK_URL" ]]; then
+            set_cred "DISCORD_WEBHOOK_URL=" "DISCORD_WEBHOOK_URL=\"$DISCORD_WEBHOOK_URL\""
         fi
         info "Updated existing config."
     else
@@ -209,7 +209,7 @@ NETBIRD_DIR="$NETBIRD_DIR"
 RESTIC_REPOSITORY="$RESTIC_REPOSITORY"
 export AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
-PUSH_URL="$PUSH_URL"
+DISCORD_WEBHOOK_URL="$DISCORD_WEBHOOK_URL"
 #RESTIC_PASSWORD_FILE="$RESTIC_PASSWORD_FILE"
 #BACKUP_DIR="/var/backups/netbird"
 #RESTIC_KEEP_DAILY=0
