@@ -66,7 +66,7 @@ spec:
                             retriever:
                               modernSCM:
                                 scm:
-                                  git:
+                                  gitSource:
                                     remote: "https://github.com/RJST-DEVELOP/cicd-library.git"
                                     credentialsId: "github-app"
   syncPolicy:
