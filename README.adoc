@@ -417,7 +417,7 @@ sudo scripts/docker/setup-backup-host.sh
 |Project |Still to enter in `override.env`
 
 |`backrest`
-|the restic passwords of the repositories (see Setup Backrest)
+|the restic passwords of the repositories, `scripts/docker/setup-backrest.sh` fills them in
 
 |`offsite-sync`
 |nothing required, `DISCORD_WEBHOOK_URL` is optional
@@ -563,7 +563,9 @@ SeaweedFS S3, checks the repositories and is used to browse and restore snapshot
 
 * Secrets are in `docker/backrest/override.env` (`setup-backup-host.sh` writes the S3 keys of the identity `backrest`), `default.env` lists all variables.
   Besides the S3 keys it holds the restic passwords of the repositories (`RESTIC_PASSWORD_DOCKER`, `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD`) and
-  optionally `DISCORD_WEBHOOK_URL`
+  optionally `DISCORD_WEBHOOK_URL`. `sudo scripts/docker/setup-backrest.sh` fills them in: the vault password from `docker/vault-backup/override.env`, the
+  NetBird password from `/root/restic`, the webhook from `docker/offsite-sync/override.env`. It asks for the `docker` password (an empty answer generates a new
+  one, shown once, for a fresh setup) and never changes a value that is set. Order on a new host: `setup-backup-host.sh`, `setup-backrest.sh`, `deploy.sh backrest`
 * The configuration (repositories, schedules, plan, hooks) is in Git: `docker/backrest/config.template.json`. `docker/backrest/pre-deploy.sh`
   (run by `deploy.sh`) renders `/root/docker/backrest/config/config.json` from it, fills the `${NAME}` placeholders from the env files, keeps the users and
   restarts Backrest. *Change repositories, plans and hooks in the template, not in the UI:* the next deploy overwrites UI changes. Check a change first
