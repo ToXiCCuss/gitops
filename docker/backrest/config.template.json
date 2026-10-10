@@ -60,6 +60,54 @@
           "actionDiscord": { "webhookUrl": "${DISCORD_WEBHOOK_URL}" }
         }
       ]
+    },
+    {
+      "id": "netbird",
+      "uri": "s3:http://host.docker.internal:8333/netbird/restic",
+      "guid": "0b99c9cfbc91e906e4c40c6f0aabf0bcc5b5dabaf9ad4ebebd9ba055a7f9208e",
+      "password": "${RESTIC_PASSWORD_NETBIRD}",
+      "env": [
+        "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}",
+        "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}"
+      ],
+      "prunePolicy": {
+        "schedule": { "disabled": true, "clock": "CLOCK_LAST_RUN_TIME" },
+        "maxUnusedPercent": 10
+      },
+      "checkPolicy": {
+        "schedule": { "cron": "0 4 * * 0", "clock": "CLOCK_UTC" },
+        "readDataSubsetPercent": 10
+      },
+      "commandPrefix": {},
+      "forgetPolicy": {
+        "schedule": { "disabled": true, "clock": "CLOCK_LAST_RUN_TIME" },
+        "retention": { "policyTimeBucketed": { "daily": 30, "monthly": 12 } }
+      },
+      "hooks": [
+        {
+          "conditions": ["CONDITION_ANY_ERROR"],
+          "actionDiscord": { "webhookUrl": "${DISCORD_WEBHOOK_URL}" }
+        }
+      ]
+    },
+    {
+      "id": "pcloud",
+      "uri": "rclone:pCloud:/Backups/s3/backups/docker",
+      "guid": "b911c162a5add3a3bdc079dcf86902044be4ddf7b4023eaf007cef26fda98e03",
+      "password": "${RESTIC_PASSWORD_DOCKER}",
+      "prunePolicy": {
+        "schedule": { "disabled": true, "clock": "CLOCK_LAST_RUN_TIME" },
+        "maxUnusedPercent": 10
+      },
+      "checkPolicy": {
+        "schedule": { "disabled": true, "clock": "CLOCK_LAST_RUN_TIME" },
+        "readDataSubsetPercent": 10
+      },
+      "commandPrefix": {},
+      "forgetPolicy": {
+        "schedule": { "disabled": true, "clock": "CLOCK_LAST_RUN_TIME" },
+        "retention": { "policyTimeBucketed": { "daily": 30, "monthly": 12 } }
+      }
     }
   ],
   "plans": [

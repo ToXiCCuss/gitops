@@ -417,7 +417,7 @@ sudo scripts/docker/setup-backup-host.sh
 |Project |Still to enter in `override.env`
 
 |`backrest`
-|nothing required, `RESTIC_PASSWORD` is optional
+|the restic passwords of the repositories (see Setup Backrest)
 
 |`offsite-sync`
 |nothing required, `DISCORD_WEBHOOK_URL` is optional
@@ -562,7 +562,8 @@ SeaweedFS S3, checks the repositories and is used to browse and restore snapshot
 (see Setup Databasus).
 
 * Secrets are in `docker/backrest/override.env` (`setup-backup-host.sh` writes the S3 keys of the identity `backrest`), `default.env` lists all variables.
-  Besides the S3 keys it holds the restic passwords of the repositories (`RESTIC_PASSWORD_DOCKER`, `RESTIC_PASSWORD_VAULT`) and optionally `DISCORD_WEBHOOK_URL`
+  Besides the S3 keys it holds the restic passwords of the repositories (`RESTIC_PASSWORD_DOCKER`, `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD`) and
+  optionally `DISCORD_WEBHOOK_URL`
 * The configuration (repositories, schedules, plan, hooks) is in Git: `docker/backrest/config.template.json`. `docker/backrest/pre-deploy.sh`
   (run by `deploy.sh`) renders `/root/docker/backrest/config/config.json` from it, fills the `${NAME}` placeholders from the env files, keeps the users and
   restarts Backrest. *Change repositories, plans and hooks in the template, not in the UI:* the next deploy overwrites UI changes. Check a change first
@@ -578,8 +579,9 @@ SeaweedFS S3, checks the repositories and is used to browse and restore snapshot
 
 ==== Repositories
 
-The template defines the repositories `docker` and `vault` and the plan below. `netbird` and `pcloud` (restore only) are not in it yet: add them to
-`config.template.json` (with their password as a new `${...}` variable) when you need them. The tables describe the settings.
+The template defines the four repositories `docker`, `vault`, `netbird` and `pcloud` and the plan below. `pcloud` is the copy of `docker` in pCloud
+(same restic repository and password, so the same `guid`), for restores that do not need the local S3; its prune and check are off. The `guid` of each
+repository is its restic repository id (`restic cat config`), Backrest refuses a repository without it. The tables describe the settings.
 
 The repository `docker` is new, you choose its password. `vault` and `netbird` already exist (created by `vault-backup`
 and `netbird_backup.sh`): enter their existing passwords and leave auto initialize off. The S3 keys in the environment
