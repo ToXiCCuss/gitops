@@ -69,7 +69,8 @@ function Find-OpenSsl {
 # -- 1. read and convert the key -------------------------------------------------------
 Write-Step "Reading $PemPath"
 if (-not (Test-Path $PemPath)) { throw "File not found: $PemPath" }
-$pem = (Get-Content -Raw -Path $PemPath).Trim()
+# Windows editors and the clipboard add CRLF, the PEM in Vault must have plain LF line endings
+$pem = ((Get-Content -Raw -Path $PemPath) -replace "`r`n", "`n" -replace "`r", "`n").Trim()
 
 if ($pem -match "ENCRYPTED") {
     throw "The key is encrypted. GitHub keys are not, check that this is the file GitHub gave you."
