@@ -29,6 +29,46 @@ spec:
                 limits:
                   cpu: "1"
                   memory: "2Gi"
+              # Added to the plugins of the chart (kubernetes, workflow-aggregator, git, configuration-as-code)
+              additionalPlugins:
+                - badge
+                - github-branch-source
+                - pipeline-utility-steps
+                - pipeline-stage-view
+                - dark-theme
+              # Private key of the GitHub App, from Vault via kubernetes/secrets/jenkins-github-app.yaml.
+              # JCasC reads it as ${<secret>-<key>}
+              additionalExistingSecrets:
+                - name: jenkins-github-app
+                  keyName: privateKey
+              JCasC:
+                configScripts:
+                  github-app: |
+                    credentials:
+                      system:
+                        domainCredentials:
+                          - credentials:
+                              - gitHubApp:
+                                  scope: GLOBAL
+                                  id: "github-app"
+                                  appID: "1161269"
+                                  description: "GitHub App of RJST-DEVELOP"
+                                  privateKey: "${jenkins-github-app-privateKey}"
+                  shared-library: |
+                    unclassified:
+                      globalLibraries:
+                        libraries:
+                          - name: "cicd-library"
+                            defaultVersion: "master"
+                            implicit: false
+                            allowVersionOverride: true
+                            includeInChangesets: true
+                            retriever:
+                              modernSCM:
+                                scm:
+                                  git:
+                                    remote: "https://github.com/RJST-DEVELOP/cicd-library.git"
+                                    credentialsId: "github-app"
   syncPolicy:
     automated:
       prune: true
