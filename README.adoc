@@ -951,7 +951,7 @@ from step 2 (port-forward it first: `kubectl port-forward -n vault svc/vault 820
 |`admin.password`, `database.username`, `database.password`
 
 |`argocd/data/jenkins`
-|`password` (Jenkins admin password)
+|`password` (Jenkins admin password), `github_app_private_key` (PKCS#8 PEM of the GitHub App, see Jenkins)
 
 |`argocd/data/keycloak`
 |`postgresql.username`, `postgresql.password`
@@ -1166,6 +1166,29 @@ kubectl --context k8sdev get pods -A
 
 The proxy service account may impersonate any user and group, so the proxy pod is as sensitive as
 `cluster-admin`.
+
+==== Jenkins (plugins, shared library, GitHub App)
+
+`cicd/helm/jenkins.yaml` configures Jenkins as code, so a new Jenkins pod or a fresh volume needs no setup in the UI except one job:
+
+* *Plugins:* `controller.additionalPlugins` (added to the plugins the chart installs anyway).
+* *Credential `github-app`* (GitHub App, App ID `1161269`): Jenkins Configuration as Code. The private key is not in Git. It lives in
+  Vault `argocd/data/jenkins#github_app_private_key`, `kubernetes/secrets/jenkins-github-app.yaml` renders it into the Secret
+  `jenkins-github-app`, the chart mounts it and JCasC reads it as `${jenkins-github-app-privateKey}`.
+* *Global shared library `cicd-library`* (`https://github.com/RJST-DEVELOP/cicd-library.git`, version `master`, not loaded implicitly,
+  fetched with the credential `github-app`).
+* *By hand, once:* the job `RJST-DEVELOP`: New Item, GitHub Organization, owner `RJST-DEVELOP`, credentials `github-app`.
+
+A new private key (for example when the old file is lost): generate one in the settings of the GitHub App (*Generate a private key*, several can
+exist at the same time, GitHub offers no API for this) and let the script do the rest. It converts the key to the unencrypted PKCS#8 PEM
+that Jenkins needs, writes it into Vault (the other keys of the secret stay), deletes the downloaded file and restarts Jenkins, which does not
+notice a changed Secret while it runs:
+
+----
+.\scripts\vault\set-jenkins-github-app-key.ps1 -VaultAddr https://vault.k8sdev.rjst.de -VaultToken <token> -PemPath <downloaded>.pem -DeletePem -RestartJenkins
+----
+
+Build history lives only in the Jenkins volume, it is not backed up.
 
 ==== 6. Verify
 
