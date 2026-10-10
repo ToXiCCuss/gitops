@@ -29,6 +29,14 @@ spec:
                 limits:
                   cpu: "1"
                   memory: "2Gi"
+              # Install the plugins only on the first start of a volume, so that a restart neither downloads nor
+              # updates them. A new plugin in this list is then not added to an existing volume, install it in the UI.
+              initializeOnce: true
+              # Download the plugins from one fixed mirror instead of the random one the update center redirects to.
+              # The path must be part of the value, a stalled download on another mirror then cannot hold up the start.
+              initContainerEnv:
+                - name: JENKINS_UC_DOWNLOAD_URL
+                  value: https://ftp.halifax.rwth-aachen.de/jenkins/plugins
               # Added to the plugins of the chart (kubernetes, workflow-aggregator, git, configuration-as-code)
               additionalPlugins:
                 - badge
