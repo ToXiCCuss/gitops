@@ -1172,9 +1172,12 @@ The proxy service account may impersonate any user and group, so the proxy pod i
 `cicd/helm/jenkins.yaml` configures Jenkins as code, so a new Jenkins pod or a fresh volume needs no setup in the UI except one job:
 
 * *Plugins:* `controller.additionalPlugins` (added to the plugins the chart installs anyway).
-* *Credential `github-app`* (GitHub App, App ID `1161269`): Jenkins Configuration as Code. The private key is not in Git. It lives in
-  Vault `argocd/data/jenkins#github_app_private_key`, `kubernetes/secrets/jenkins-github-app.yaml` renders it into the Secret
-  `jenkins-github-app`, the chart mounts it and JCasC reads it as `${jenkins-github-app-privateKey}`.
+* *Credential `github-app`* (GitHub App, App ID `1161269`): Jenkins Configuration as Code in its own ConfigMap,
+  `kubernetes/cicd/kubectl/jenkins-casc.yaml` (the chart sidecar loads every ConfigMap with the label `jenkins-jenkins-config`).
+  The private key is not in Git. It lives in Vault `argocd/data/jenkins#github_app_private_key`, `kubernetes/secrets/jenkins-github-app.yaml`
+  renders it into the Secret `jenkins-github-app`, the chart mounts it as a file and JCasC reads it with `readFile`.
+  *Do not put a `$` into the Helm values of Jenkins* (`HELM_VALUES` in `cicd/helm/jenkins.yaml`): ArgoCD replaces `$NAME` and `${NAME}` in
+  the plugin env values and an unknown name becomes an empty string, a JCasC placeholder there arrives as `""`.
 * *Global shared library `cicd-library`* (`https://github.com/RJST-DEVELOP/cicd-library.git`, version `master`, not loaded implicitly,
   fetched with the credential `github-app`).
 * *By hand, once:* the job `RJST-DEVELOP`: New Item, GitHub Organization, owner `RJST-DEVELOP`, credentials `github-app`.

@@ -1,0 +1,30 @@
+# Jenkins Configuration as Code for the credential of the GitHub App (App ID 1161269).
+#
+# It is a ConfigMap of its own and not part of the Helm values in kubernetes/cicd/helm/jenkins.yaml on
+# purpose: ArgoCD replaces $NAME and ${NAME} in the plugin env value HELM_VALUES, and an unknown name
+# becomes an empty string. The key placeholder below would reach Jenkins as privateKey: "". This
+# directory is applied as plain manifests, so the placeholder stays as it is.
+#
+# The sidecar of the Jenkins chart picks up every ConfigMap of this namespace with the label below and
+# loads it like a configScript. The private key is the file mounted from the Secret jenkins-github-app
+# (Vault argocd/data/jenkins#github_app_private_key, kubernetes/secrets/jenkins-github-app.yaml),
+# readFile returns it as it is.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jenkins-casc-github-app
+  namespace: jenkins
+  labels:
+    jenkins-jenkins-config: "true"
+data:
+  github-app.yaml: |-
+    credentials:
+      system:
+        domainCredentials:
+          - credentials:
+              - gitHubApp:
+                  scope: GLOBAL
+                  id: "github-app"
+                  appID: "1161269"
+                  description: "GitHub App of RJST-DEVELOP"
+                  privateKey: "${readFile:/run/secrets/additional/jenkins-github-app-privateKey}"

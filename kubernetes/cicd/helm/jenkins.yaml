@@ -44,25 +44,14 @@ spec:
                 - pipeline-utility-steps
                 - pipeline-stage-view
                 - dark-theme
-              # Private key of the GitHub App, from Vault via kubernetes/secrets/jenkins-github-app.yaml.
-              # It is a multi-line value: the plain ${<secret>-<key>} lookup of JCasC resolved it to an empty
-              # string, so the credential below reads the mounted file with readFile.
+              # Private key of the GitHub App, from Vault via kubernetes/secrets/jenkins-github-app.yaml. It is mounted
+              # as a file; the credential that reads it is the ConfigMap kubernetes/cicd/kubectl/jenkins-casc.yaml (a
+              # dollar sign in these Helm values would be replaced by ArgoCD, so it cannot be defined here).
               additionalExistingSecrets:
                 - name: jenkins-github-app
                   keyName: privateKey
               JCasC:
                 configScripts:
-                  github-app: |
-                    credentials:
-                      system:
-                        domainCredentials:
-                          - credentials:
-                              - gitHubApp:
-                                  scope: GLOBAL
-                                  id: "github-app"
-                                  appID: "1161269"
-                                  description: "GitHub App of RJST-DEVELOP"
-                                  privateKey: "${readFile:/run/secrets/additional/jenkins-github-app-privateKey}"
                   shared-library: |
                     unclassified:
                       globalLibraries:
