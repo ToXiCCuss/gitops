@@ -17,5 +17,5 @@ services:
       portal.url: "https://auth.proxy.rjst.de"
       portal.group: "Plattform"
       portal.description: "Login und Identitäten"
-      portal.icon: keycloak
+      portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/keycloak.svg"
     restart: unless-stopped

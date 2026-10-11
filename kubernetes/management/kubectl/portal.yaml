@@ -4,13 +4,14 @@
 #   Kubernetes  every Istio VirtualService in the cluster (host -> https://<host>). Optional
 #               annotations on the VirtualService: portal.rjst.de/name, /group, /description,
 #               /icon (a devicon.dev name such as argocd, or name/variant such as jenkins/plain;
+#               an https:// URL to an image for what devicon does not have, e.g. Keycloak and NetBird;
 #               anything else is shown as text, e.g. an emoji), /hidden: "true", /stage, /version.
 #               A VirtualService in one of the STAGE_NAMESPACES (dev, prod, ...) is an app with
 #               a stage: one card per app, one link per stage, name from the app label,
 #               version from app.kubernetes.io/version.
 #   Docker      every service in docker/*/docker-compose.yml that has the labels portal.name
 #               and portal.url (the NetBird reverse proxy address, https://<app>.proxy.rjst.de);
-#               optional portal.group, portal.description, portal.icon (devicon.dev name). The repository is read
+#               optional portal.group, portal.description, portal.icon (devicon.dev name or https:// URL). The repository is read
 #               from Git, so a service shows up once it is merged, not once it runs.
 #   Static      the env var STATIC_SERVICES of the generator container: a JSON list of
 #               {name, url, group, description, icon} for what is neither of the above (NetBird).
@@ -257,15 +258,21 @@ data:
       const STAGE_ORDER = ["dev", "test", "stage", "prod"];
       const stageRank = s => { const i = STAGE_ORDER.indexOf(s); return i < 0 ? STAGE_ORDER.length - 1 + 0.5 : i; };
 
-      // icon: a devicon.dev name ("argocd" or "jenkins/plain") becomes a logo, other text is shown as is
+      // icon: a devicon.dev name ("argocd" or "jenkins/plain") or an https:// image URL becomes a logo,
+      // other text is shown as is
       const DEVICON = "https://cdn.jsdelivr.net/gh/devicons/devicon@v2.17.0/icons/";
+      function iconUrl(icon) {
+        const m = /^([a-z0-9]+)(?:\/([a-z-]+))?$/.exec(icon);
+        if (/^https:\/\//.test(icon)) return icon;
+        return m ? DEVICON + m[1] + "/" + m[1] + "-" + (m[2] || "original") + ".svg" : "";
+      }
       function iconEl(s) {
         const fallback = s.name.charAt(0).toUpperCase();
-        const m = /^([a-z0-9]+)(?:\/([a-z-]+))?$/.exec(s.icon || "");
-        if (!m) return el("div", "icon", s.icon || fallback);
+        const src = iconUrl(s.icon || "");
+        if (!src) return el("div", "icon", s.icon || fallback);
         const box = el("div", "icon img");
         const img = document.createElement("img");
-        img.src = DEVICON + m[1] + "/" + m[1] + "-" + (m[2] || "original") + ".svg";
+        img.src = src;
         img.alt = "";
         img.addEventListener("error", () => { box.className = "icon"; box.textContent = fallback; });
         box.append(img);
@@ -423,7 +430,8 @@ spec:
             - name: STATIC_SERVICES
               value: |
                 [{"name": "NetBird", "url": "https://proxy.rjst.de", "group": "Plattform",
-                  "description": "VPN und Zugriffsverwaltung", "icon": "NB"}]
+                  "description": "VPN und Zugriffsverwaltung",
+                  "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/netbird.svg"}]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
