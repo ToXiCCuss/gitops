@@ -17,7 +17,5 @@ spec:
       to:
         - operation:
             hosts:
-              - "microcks.rjst.de"
               - "rjst.de"
               - "www.rjst.de"
-              - "trek.rjst.de"
