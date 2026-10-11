@@ -4,12 +4,12 @@
     writes them into Vault (KV v2), so ArgoCD's AVP plugin can render them.
 
 .DESCRIPTION
-    - Freely generatable secrets (Harbor/Jenkins/Keycloak/Grafana admin passwords)
+    - Freely generatable secrets (Harbor/Jenkins/Grafana admin passwords)
       are generated locally and written to Vault, but never replace a value
       that already exists.
     - External values are prompted for interactively and written to Vault:
       the Hetzner and NetBird API tokens, the docker01 DB credentials for
-      Harbor/Keycloak. Leave blank to skip a value - existing Vault
+      Harbor. Leave blank to skip a value - existing Vault
       data for that key is left untouched.
     - Safe to re-run: it asks before overwriting a value you provide if it
       already has one.
@@ -118,7 +118,6 @@ function Read-OptionalSecret {
 Write-Step "Generating app-internal admin passwords"
 Set-VaultKV -Path "harbor" -Data @{ "admin.password" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "jenkins" -Data @{ "password" = (New-RandomSecret) } -SkipExisting
-Set-VaultKV -Path "keycloak" -Data @{ "admin.password" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "prometheus" -Data @{ "password" = (New-RandomSecret) } -SkipExisting
 
 # ── 2. External values that must match reality - prompt, never generate ───
@@ -130,18 +129,12 @@ if ($hetznerToken) { Set-VaultKV -Path "hetzner" -Data @{ "token" = $hetznerToke
 $netbirdKey = Read-OptionalSecret "NetBird Management API personal access token (blank to skip)"
 if ($netbirdKey) { Set-VaultKV -Path "netbird" -Data @{ "api_key" = $netbirdKey } }
 
-Write-Warn2 "For the next three, run scripts/postgresql/db_create.sh <dbname> (and user_create.sh) on docker01 first - it prints a generated password."
+Write-Warn2 "For Harbor, run scripts/postgresql/db_create.sh harbor (and user_create.sh) on docker01 first - it prints a generated password."
 
 $harborDbUser = Read-Host "Harbor external DB username (blank to skip)"
 if ($harborDbUser) {
     $harborDbPass = Read-OptionalSecret "Harbor external DB password"
     Set-VaultKV -Path "harbor" -Data @{ "database.username" = $harborDbUser; "database.password" = $harborDbPass }
-}
-
-$kcDbUser = Read-Host "Keycloak external DB username (blank to skip)"
-if ($kcDbUser) {
-    $kcDbPass = Read-OptionalSecret "Keycloak external DB password"
-    Set-VaultKV -Path "keycloak" -Data @{ "postgresql.username" = $kcDbUser; "postgresql.password" = $kcDbPass }
 }
 
 Write-Step "Done"

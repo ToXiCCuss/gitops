@@ -1,0 +1,21 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.3@sha256:5fdbf2dbb5897cc34e82de49d13e23db011f9925089dbc555fc095f2c8bc1dac
+    container_name: keycloak
+    command: ["start"]
+    env_file:
+      - "default.env"
+      - "override.env"
+    # host.docker.internal points to the Docker host, where PostgreSQL runs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8180:8080"
+    labels:
+      # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
+      portal.name: "Keycloak"
+      portal.url: "https://auth.proxy.rjst.de"
+      portal.group: "Plattform"
+      portal.description: "Login und Identitäten"
+      portal.icon: keycloak
+    restart: unless-stopped
