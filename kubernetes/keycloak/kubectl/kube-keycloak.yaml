@@ -1,76 +1,119 @@
+# Keycloak: https://auth.k8sdev.rjst.de -> keycloak.keycloak:8080
+# The host is named after the role, not the product: the URL is the issuer in every token,
+# so it must survive a change of the software behind it.
+# Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
+
+# NetBird groups exist only while this app is deployed (destination k8s-auth, users auth-users).
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: k8s-auth
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: k8s-auth
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: auth-users
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: auth-users
+
+---
+
 apiVersion: networking.istio.io/v1
 kind: Gateway
 metadata:
-  name: keycloak
-  namespace: keycloak
+  name: auth
+  namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
   selector:
-    istio: ingressgateway
+    istio: internal-gateway
   servers:
     - port:
-        number: 80
-        name: http
-        protocol: HTTP
-      hosts:
-        - "keycloak.rjst.de"
-      tls:
-        httpsRedirect: true
-    - port:
-        number: 443
-        name: https
+        number: 8453
+        name: https-auth
         protocol: HTTPS
-      tls:
-        credentialName: keycloak-cert
-        mode: SIMPLE
       hosts:
-        - "keycloak.rjst.de"
+        - auth.k8sdev.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: k8sdev-wildcard-tls
 
 ---
 
-apiVersion: cert-manager.io/v1
-kind: Certificate
+apiVersion: v1
+kind: Service
 metadata:
-  name: keycloak-cert
-  namespace: istio-system
+  name: gw-auth
+  namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  secretName: keycloak-cert
-  issuerRef:
-    name: letsencrypt
-    kind: ClusterIssuer
-  commonName: "keycloak.rjst.de"
-  dnsNames:
-    - "keycloak.rjst.de"
+  type: ClusterIP
+  selector:
+    app: internal-gateway
+    istio: internal-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8453
 
 ---
 
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
-  name: keycloak
-  namespace: keycloak
+  name: auth
+  namespace: istio-internal
   annotations:
     argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: Keycloak
+    portal.rjst.de/group: Plattform
+    portal.rjst.de/description: Login und Identitäten
+    portal.rjst.de/icon: keycloak
 spec:
   hosts:
-    - "keycloak.rjst.de"
+    - auth.k8sdev.rjst.de
   gateways:
-    - keycloak
+    - auth
   http:
-    - match:
-        - uri:
-            prefix: /
-      route:
+    - route:
         - destination:
-            host: keycloak
+            host: keycloak.keycloak.svc.cluster.local
             port:
               number: 8080
 
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: gw-auth
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: gw-auth
+  groups:
+    - name: k8s-auth
+    - name: kubernetes-services
 
 ---
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -89,7 +132,9 @@ spec:
   selector:
     app: keycloak
   type: ClusterIP
+
 ---
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -104,7 +149,9 @@ spec:
     app: keycloak
   clusterIP: None
   type: ClusterIP
+
 ---
+
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -130,10 +177,15 @@ spec:
           image: quay.io/keycloak/keycloak:26.6.3@sha256:5fdbf2dbb5897cc34e82de49d13e23db011f9925089dbc555fc095f2c8bc1dac
           args: ["start"]
           env:
+            # Only used on the first start, while the realm master has no user. Create a
+            # personal admin in the UI afterwards and delete this one.
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
               value: "admin"
             - name: KC_BOOTSTRAP_ADMIN_PASSWORD
-              value: "admin"
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: password
             - name: KC_PROXY_HEADERS
               value: "xforwarded"
             - name: KC_HTTP_ENABLED
@@ -141,7 +193,7 @@ spec:
             - name: KC_HOSTNAME_STRICT
               value: "true"
             - name: KC_HOSTNAME
-              value: "keycloak.rjst.de"
+              value: "https://auth.k8sdev.rjst.de"
             - name: KC_HEALTH_ENABLED
               value: "true"
             - name: 'KC_CACHE'
@@ -155,7 +207,7 @@ spec:
             - name: 'KC_DB_URL_DATABASE'
               value: 'keycloak'
             - name: 'KC_DB_URL_HOST'
-              value: 'docker01.vpn.rjst.de'
+              value: 'docker01.server.lan'
             - name: 'KC_DB'
               value: 'postgres'
             - name: 'KC_DB_PASSWORD'

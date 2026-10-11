@@ -13,7 +13,7 @@ spec:
   source:
     repoURL: https://github.com/ToXiCCuss/gitops.git
     targetRevision: master
-    path: kubernetes/parked/keycloak/kubectl
+    path: kubernetes/keycloak/kubectl
     directory:
       recurse: true
   syncPolicy:
