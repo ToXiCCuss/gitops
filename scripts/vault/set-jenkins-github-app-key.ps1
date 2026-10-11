@@ -19,7 +19,7 @@
     argocd/data/jenkins. -RestartJenkins also needs kubectl pointing at the cluster.
 
 .PARAMETER VaultAddr
-    Vault API address reachable from this machine.
+    Vault API address reachable from this machine. Default: https://vault.k8sdev.rjst.de.
 
 .PARAMETER VaultToken
     A Vault token with write access to argocd/data/jenkins.
@@ -38,7 +38,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$VaultAddr,
+    [string]$VaultAddr = "https://vault.k8sdev.rjst.de",
     [Parameter(Mandatory)][string]$VaultToken,
     [Parameter(Mandatory)][string]$PemPath,
     [string]$Engine = "argocd",
