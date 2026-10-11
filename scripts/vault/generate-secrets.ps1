@@ -17,7 +17,7 @@
       these Vault values live in kubernetes/secrets/.
 
 .PARAMETER VaultAddr
-    Vault API address reachable from this machine.
+    Vault API address reachable from this machine. Default: https://vault.k8sdev.rjst.de.
 
 .PARAMETER VaultToken
     A Vault token with write access to argocd/data/*. Use the root token
@@ -28,7 +28,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$VaultAddr,
+    [string]$VaultAddr = "https://vault.k8sdev.rjst.de",
     [Parameter(Mandatory)][string]$VaultToken
 )
 
@@ -83,6 +83,7 @@ function Set-VaultKV {
     Confirm-KVEngine -Engine $Engine
     $existing = Get-VaultKV -Path $Path -Engine $Engine
     $merged = @{}
+    $changedKeys = @()
     foreach ($k in $existing.Keys) { $merged[$k] = $existing[$k] }
     foreach ($k in $Data.Keys) {
         if ([string]::IsNullOrEmpty($Data[$k])) { continue }  # never write blanks over existing data
@@ -93,10 +94,15 @@ function Set-VaultKV {
             if ($confirm -notmatch '^[yY]') { continue }
         }
         $merged[$k] = $Data[$k]
+        $changedKeys += $k
     }
-    $body = @{ data = $merged } | ConvertTo-Json
-    Invoke-RestMethod -Uri "$VaultAddr/v1/$Engine/data/$Path" -Method Post -Headers $Headers -Body $body -ContentType "application/json" | Out-Null
-    Write-Ok "$Engine/data/$Path updated ($($Data.Keys -join ', '))"
+    if ($changedKeys.Count -gt 0) {
+        $body = @{ data = $merged } | ConvertTo-Json
+        Invoke-RestMethod -Uri "$VaultAddr/v1/$Engine/data/$Path" -Method Post -Headers $Headers -Body $body -ContentType "application/json" | Out-Null
+        Write-Ok "$Engine/data/$Path updated ($($changedKeys -join ', '))"
+    } else {
+        Write-Ok "$Engine/data/$Path unchanged"
+    }
 }
 
 function Read-OptionalSecret {

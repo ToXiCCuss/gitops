@@ -17,7 +17,7 @@
     (system:auth-delegator) in the Vault namespace if it doesn't exist yet.
 
 .PARAMETER VaultAddr
-    Vault API address reachable from this machine.
+    Vault API address reachable from this machine. Default: https://vault.k8sdev.rjst.de.
 
 .PARAMETER VaultToken
     A Vault token with sufficient rights (sys/auth, sys/mounts, sys/policy,
@@ -41,7 +41,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$VaultAddr,
+    [string]$VaultAddr = "https://vault.k8sdev.rjst.de",
     [Parameter(Mandatory)][string]$VaultToken,
     [string]$Namespace = "vault",
     [string]$KubernetesHost = "https://kubernetes.default.svc:443"

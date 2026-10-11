@@ -12,7 +12,7 @@
     docker/vault-backup/override.env as VAULT_TOKEN.
 
 .PARAMETER VaultAddr
-    Vault API address reachable from this machine.
+    Vault API address reachable from this machine. Default: https://vault.k8sdev.rjst.de.
 
 .PARAMETER VaultToken
     A Vault token that may write policies and create tokens (e.g. the root token
@@ -25,7 +25,7 @@
     .\scripts\vault\create-snapshot-token.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <token>
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$VaultAddr,
+    [string]$VaultAddr = "https://vault.k8sdev.rjst.de",
     [Parameter(Mandatory = $true)][string]$VaultToken,
     [string]$Period = "768h"
 )

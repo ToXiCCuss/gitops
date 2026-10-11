@@ -18,7 +18,7 @@
     (ArgoCD app cicd-kubectl has synced) and kubectl points at the cluster.
 
 .PARAMETER VaultAddr
-    Vault API address reachable from this machine.
+    Vault API address reachable from this machine. Default: https://vault.k8sdev.rjst.de.
 
 .PARAMETER VaultToken
     A Vault token with write access to jenkins/data/jenkins.
@@ -34,7 +34,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$VaultAddr,
+    [string]$VaultAddr = "https://vault.k8sdev.rjst.de",
     [Parameter(Mandatory)][string]$VaultToken,
     [string]$Namespace = "jenkins",
     [string]$ServiceAccount = "helm-deployer",

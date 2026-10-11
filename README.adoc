@@ -430,7 +430,7 @@ sudo scripts/docker/setup-backup-host.sh
 the script prints it once:
 
 ----
-.\scripts\vault\create-snapshot-token.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <root-token>
+.\scripts\vault\create-snapshot-token.ps1 -VaultToken <root-token>
 ----
 
 The Docker host must reach `https://vault.k8sdev.rjst.de`: `docker01` is a NetBird peer, put it into the
@@ -927,6 +927,8 @@ Vault KV v2, under `argocd/data/...`).
 Three PowerShell scripts in `scripts/vault/` automate this against the Vault
 from step 2 (port-forward it first: `kubectl port-forward -n vault svc/vault 8200:8200`):
 
+The scripts default to `-VaultAddr https://vault.k8sdev.rjst.de` (reachable over NetBird once `infra` is deployed). On the very first
+setup nothing is deployed yet, so the commands below pass the port-forward address explicitly (`init-vault.ps1` defaults to it).
 ----
 # One-time only, right after step 2 deploys a fresh, uninitialized Vault:
 .\scripts\vault\init-vault.ps1 -VaultAddr http://127.0.0.1:8200
@@ -1194,7 +1196,7 @@ that Jenkins needs, writes it into Vault (the other keys of the secret stay), de
 notice a changed Secret while it runs:
 
 ----
-.\scripts\vault\set-jenkins-github-app-key.ps1 -VaultAddr https://vault.k8sdev.rjst.de -VaultToken <token> -PemPath <downloaded>.pem -DeletePem -RestartJenkins
+.\scripts\vault\set-jenkins-github-app-key.ps1 -VaultToken <token> -PemPath <downloaded>.pem -DeletePem -RestartJenkins
 ----
 
 Build history lives only in the Jenkins volume, it is not backed up.
