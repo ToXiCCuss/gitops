@@ -18,7 +18,6 @@ spec:
         - operation:
             hosts:
               - "microcks.rjst.de"
-              - "keycloak.rjst.de"
               - "rjst.de"
               - "www.rjst.de"
               - "trek.rjst.de"

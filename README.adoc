@@ -864,6 +864,7 @@ simply has no `helm/` folder.
 . monitoring (Prometheus, exporters, Istio dashboards)
 . cicd (Harbor, Artifactory, Jenkins)
 . management (Portal)
+. keycloak (Keycloak, needs its database on docker01, see Keycloak below)
 . kafka (Strimzi, Apicurio Registry, AKHQ)
 . spring
 
@@ -888,8 +889,7 @@ automated sync.
 
 . Kubernetes cluster reachable, `kubectl`/`helm` configured against it.
 . Istio installed via `istioctl` (base + istiod + ingressgateway) — still
-  needed for the remaining public apps (`keycloak.rjst.de`, `microcks.rjst.de`,
-  `rjst.de`).
+  needed for the remaining public apps (`microcks.rjst.de`, `rjst.de`).
 . NetBird self-hosted server running (per the
   https://docs.netbird.io/selfhosted/selfhosted-quickstart[quickstart script]),
   reachable at `proxy.rjst.de`, with its own Traefik reverse proxy.
@@ -958,7 +958,7 @@ from step 2 (port-forward it first: `kubectl port-forward -n vault svc/vault 820
 |`password` (Jenkins admin password), `github_app_private_key` (PKCS#8 PEM of the GitHub App, see Jenkins)
 
 |`argocd/data/keycloak`
-|`postgresql.username`, `postgresql.password`
+|`postgresql.username`, `postgresql.password`, `admin.password` (first Keycloak admin, generated)
 
 |===
 
@@ -1013,10 +1013,11 @@ kubectl apply -f kubernetes/kube-app-monitoring.yaml  # 2. needed before kafka (
 kubectl apply -f kubernetes/kube-app-cicd.yaml        # 3.
 kubectl apply -f kubernetes/kube-app-kafka.yaml       # 4. onwards: order doesn't matter, all only need infra
 kubectl apply -f kubernetes/kube-app-management.yaml
+kubectl apply -f kubernetes/kube-app-keycloak.yaml    # needs the database and the Vault values first, see Keycloak below
 kubectl apply -f kubernetes/kube-app-spring.yaml
 ----
 
-Microcks, Backstage and Keycloak are parked in `kubernetes/parked/<name>/` and not deployed. Each is its own
+Microcks and Backstage are parked in `kubernetes/parked/<name>/` and not deployed. Each is its own
 domain (Microcks with its own MongoDB inside the chart, no Vault secret needed; Backstage pulls its image
 from Harbor, so `cicd` has to be healthy first). To deploy or remove one, once `infra` is healthy:
 
@@ -1025,7 +1026,7 @@ kubectl apply -f kubernetes/parked/microcks/kube-app-microcks.yaml
 kubectl delete -f kubernetes/parked/microcks/kube-app-microcks.yaml
 ----
 
-The same with `backstage` or `keycloak` instead of `microcks`.
+The same with `backstage` instead of `microcks`.
 
 Why the secrets are a separate app that comes first: some Helm apps need
 their Secret at start (the NetBird operator needs `netbird-mgmt-api-key`),
@@ -1096,6 +1097,7 @@ folder) and create the record `gw-<app>.istio-internal.k8sdev.rjst.de`.
 |Apicurio Registry |`apicurio.k8sdev.rjst.de` |`example-apicurioregistry-mem-service.kafka:8080` |8450
 |Portal |`portal.k8sdev.rjst.de` |`portal.portal:80` |8451
 |Prometheus |`prometheus.k8sdev.rjst.de` |`prometheus-prometheus.prometheus:9090` |8452
+|Keycloak |`auth.k8sdev.rjst.de` |`keycloak.keycloak:8080` |8453
 |===
 
 Each app needs the CNAME, the `<app>-users` distribution group and the policy
@@ -1196,6 +1198,24 @@ notice a changed Secret while it runs:
 ----
 
 Build history lives only in the Jenkins volume, it is not backed up.
+
+==== Keycloak (`https://auth.k8sdev.rjst.de`)
+
+`keycloak/kubectl/kube-keycloak.yaml`, internal only (NetBird). The host is named after the role, not the product: the URL
+is the issuer in every token and in the config of every client, so it should not change when the software does. One URL only:
+`KC_HOSTNAME` is a single frontend URL, a second name would not work for logins.
+
+Before `kubectl apply -f kubernetes/kube-app-keycloak.yaml`:
+
+. On docker01: `scripts/postgresql/db_create.sh keycloak` (prints the password of `keycloak_owner`), then add the database
+  `keycloak` in the Databasus UI: the realms, clients and users live only there.
+. `generate-secrets.ps1` writes `argocd/data/keycloak` (`postgresql.username` and `postgresql.password` are prompted,
+  `admin.password` is generated). Keycloak reaches the database as `docker01.server.lan`, like Harbor.
+. NetBird dashboard (see 5.): CNAME `auth.k8sdev.rjst.de` -> `gw-auth.istio-internal.k8sdev.rjst.de`, `auth-users` as
+  distribution group of the zone, policy `auth-users` -> `k8s-auth` on TCP 443.
+
+The first login is `admin` with `admin.password` from Vault. Create a personal admin in the master realm and delete `admin`:
+the bootstrap variables are only read while the master realm has no user.
 
 ==== 6. Verify
 

@@ -4,7 +4,7 @@
     writes them into Vault (KV v2), so ArgoCD's AVP plugin can render them.
 
 .DESCRIPTION
-    - Freely generatable secrets (Harbor/Jenkins/Grafana admin passwords)
+    - Freely generatable secrets (Harbor/Jenkins/Keycloak/Grafana admin passwords)
       are generated locally and written to Vault, but never replace a value
       that already exists.
     - External values are prompted for interactively and written to Vault:
@@ -112,6 +112,7 @@ function Read-OptionalSecret {
 Write-Step "Generating app-internal admin passwords"
 Set-VaultKV -Path "harbor" -Data @{ "admin.password" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "jenkins" -Data @{ "password" = (New-RandomSecret) } -SkipExisting
+Set-VaultKV -Path "keycloak" -Data @{ "admin.password" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "prometheus" -Data @{ "password" = (New-RandomSecret) } -SkipExisting
 
 # ── 2. External values that must match reality - prompt, never generate ───
