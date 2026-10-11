@@ -444,7 +444,7 @@ group `vault-users` (the policy `vault-users` -> `k8s-vault` exists, see NetBird
 . Delete `/root/backup-credentials.env` and store the restic password and `rclone.conf` in your
   password manager. Without them the pCloud backups cannot be read after a total loss.
 
-Backrest (`9898`), Databasus (`4005`) and the S3 port (`8333`) are published on all interfaces
+Backrest (`9898`), Databasus (`4005`), Keycloak (`8180`) and the S3 port (`8333`) are published on all interfaces
 of the host. Restrict them to NetBird with a host firewall and allow them for your peers with
 NetBird policies. The backups should run before the sync, so schedule them between 01:00 and 03:00.
 
@@ -835,6 +835,27 @@ by every run, so it stays valid as long as the backup runs at least once per per
 * Restore with `scripts/vault/vault_restore.sh`. Snapshots from before the move are in `rclone:pCloud:/Backups/vault_pb`
 (set `RESTIC_REPOSITORY`)
 
+=== Setup Keycloak
+
+Keycloak (`docker/keycloak`) runs on the Docker host and not in the cluster, on purpose: it is the login of everything else, so it must not
+depend on the cluster, ArgoCD or Vault, and a rebuilt cluster does not touch it. The database is the local PostgreSQL (`host.docker.internal`),
+which Databasus backs up. The public URL is `https://auth.proxy.rjst.de` (the NetBird reverse proxy, TLS ends there). It is the issuer in every
+token and in the config of every client, so choose it once. Keycloak serves one URL only, a second hostname does not work for logins.
+
+. On the Docker host: `scripts/postgresql/db_create.sh keycloak` (prints the password of `keycloak_owner`), then add the database
+  `keycloak` in the Databasus UI: realms, clients and users live only there.
+. `cp docker/keycloak/override.env.example docker/keycloak/override.env`, `chmod 600`, enter the database user and password and the
+  password of the first admin (`openssl rand -base64 24`). Keep them in the password manager.
+. `sudo scripts/docker/deploy.sh keycloak`
+. NetBird dashboard: a reverse proxy service `auth.proxy.rjst.de` to port `8180` of the Docker host, restricted to your peers (this is what keeps
+  Keycloak internal). The published port `8180` itself is open like the other Docker ports (see the note after the setup steps under Backups).
+. Log in as `admin` at `https://auth.proxy.rjst.de/admin/`, create a personal admin in the realm `master` (role `admin`) and delete `admin`:
+  the bootstrap variables are only read while the master realm has no user. Create a separate realm for the apps, the issuer is then
+  `https://auth.proxy.rjst.de/realms/<name>`.
+
+Connecting apps: every app keeps its local emergency login (ArgoCD `admin`, Jenkins admin, Harbor `admin`, Vault root token, Grafana admin),
+so a Keycloak outage never locks you out.
+
 == Kubernetes
 
 === Setup
@@ -864,7 +885,6 @@ simply has no `helm/` folder.
 . monitoring (Prometheus, exporters, Istio dashboards)
 . cicd (Harbor, Artifactory, Jenkins)
 . management (Portal)
-. keycloak (Keycloak, needs its database on docker01, see Keycloak below)
 . kafka (Strimzi, Apicurio Registry, AKHQ)
 . spring
 
@@ -959,9 +979,6 @@ setup nothing is deployed yet, so the commands below pass the port-forward addre
 |`argocd/data/jenkins`
 |`password` (Jenkins admin password), `github_app_private_key` (PKCS#8 PEM of the GitHub App, see Jenkins)
 
-|`argocd/data/keycloak`
-|`postgresql.username`, `postgresql.password`, `admin.password` (first Keycloak admin, generated)
-
 |===
 
 NOTE: Everything is in Vault except Vault's own unseal keys. Those aren't in
@@ -1015,7 +1032,6 @@ kubectl apply -f kubernetes/kube-app-monitoring.yaml  # 2. needed before kafka (
 kubectl apply -f kubernetes/kube-app-cicd.yaml        # 3.
 kubectl apply -f kubernetes/kube-app-kafka.yaml       # 4. onwards: order doesn't matter, all only need infra
 kubectl apply -f kubernetes/kube-app-management.yaml
-kubectl apply -f kubernetes/kube-app-keycloak.yaml    # needs the database and the Vault values first, see Keycloak below
 kubectl apply -f kubernetes/kube-app-spring.yaml
 ----
 
@@ -1099,7 +1115,6 @@ folder) and create the record `gw-<app>.istio-internal.k8sdev.rjst.de`.
 |Apicurio Registry |`apicurio.k8sdev.rjst.de` |`example-apicurioregistry-mem-service.kafka:8080` |8450
 |Portal |`portal.k8sdev.rjst.de` |`portal.portal:80` |8451
 |Prometheus |`prometheus.k8sdev.rjst.de` |`prometheus-prometheus.prometheus:9090` |8452
-|Keycloak |`auth.k8sdev.rjst.de` |`keycloak.keycloak:8080` |8453
 |===
 
 Each app needs the CNAME, the `<app>-users` distribution group and the policy
@@ -1200,24 +1215,6 @@ notice a changed Secret while it runs:
 ----
 
 Build history lives only in the Jenkins volume, it is not backed up.
-
-==== Keycloak (`https://auth.k8sdev.rjst.de`)
-
-`keycloak/kubectl/kube-keycloak.yaml`, internal only (NetBird). The host is named after the role, not the product: the URL
-is the issuer in every token and in the config of every client, so it should not change when the software does. One URL only:
-`KC_HOSTNAME` is a single frontend URL, a second name would not work for logins.
-
-Before `kubectl apply -f kubernetes/kube-app-keycloak.yaml`:
-
-. On docker01: `scripts/postgresql/db_create.sh keycloak` (prints the password of `keycloak_owner`), then add the database
-  `keycloak` in the Databasus UI: the realms, clients and users live only there.
-. `generate-secrets.ps1` writes `argocd/data/keycloak` (`postgresql.username` and `postgresql.password` are prompted,
-  `admin.password` is generated). Keycloak reaches the database as `docker01.server.lan`, like Harbor.
-. NetBird dashboard (see 5.): CNAME `auth.k8sdev.rjst.de` -> `gw-auth.istio-internal.k8sdev.rjst.de`, `auth-users` as
-  distribution group of the zone, policy `auth-users` -> `k8s-auth` on TCP 443.
-
-The first login is `admin` with `admin.password` from Vault. Create a personal admin in the master realm and delete `admin`:
-the bootstrap variables are only read while the master realm has no user.
 
 ==== 6. Verify
 
