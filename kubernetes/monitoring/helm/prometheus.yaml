@@ -113,8 +113,8 @@ spec:
                     token: ''
                 dbs:
                   postgresql:
-                    gnetId: 24298
-                    revision: 5
+                    gnetId: 9628
+                    revision: 8
                   mysql-quickstart:
                     gnetId: 14057
                     revision: 1
