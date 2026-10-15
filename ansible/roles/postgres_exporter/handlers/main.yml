@@ -3,3 +3,5 @@
   ansible.builtin.systemd:
     name: "{{ postgres_exporter_service_name }}"
     state: restarted
+  # Same as the service task: no unit yet when check mode "installs" the package
+  when: not (ansible_check_mode and postgres_exporter_package is changed)
