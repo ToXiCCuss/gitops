@@ -36,6 +36,22 @@
   become_user: postgres
   when: postgres_exporter_role_state.stdout != 't'
 
+# scripts/postgresql/db_create.sh revokes CONNECT on the postgres database from PUBLIC,
+# so the exporter needs its own grant. Empty output = role missing (created above).
+- name: Check CONNECT on the postgres database
+  command: >-
+    psql -tAc "SELECT has_database_privilege(rolname, 'postgres', 'CONNECT')
+    FROM pg_roles WHERE rolname = '{{ postgres_exporter_database_user }}'"
+  become_user: postgres
+  register: postgres_exporter_connect_state
+  changed_when: false
+  check_mode: false
+
+- name: Grant CONNECT on the postgres database to the monitoring role
+  command: psql -c "GRANT CONNECT ON DATABASE postgres TO {{ postgres_exporter_database_user }}"
+  become_user: postgres
+  when: postgres_exporter_connect_state.stdout != 't'
+
 # The stat_statements collector reads the view from the database it connects to (postgres);
 # the library itself is preloaded by the postgresql role
 - name: Check the pg_stat_statements extension
