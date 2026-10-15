@@ -1,0 +1,22 @@
+---
+# Name of the package and service (Debian "prometheus-postgres-exporter", listens on :9187)
+postgres_exporter_package_name: prometheus-postgres-exporter
+postgres_exporter_service_name: prometheus-postgres-exporter
+postgres_exporter_environment_file: /etc/default/prometheus-postgres-exporter
+
+# The package runs the exporter as the system user "prometheus". A database role of
+# the same name logs in through the Unix socket with peer authentication, so no
+# password is needed.
+postgres_exporter_database_user: prometheus
+
+# Collectors that are off by default (the default ones stay on)
+postgres_exporter_collectors:
+  - stat_wal_receiver
+  - stat_statements
+  - stat_activity_autovacuum
+  - long_running_transactions
+  - process_idle
+  - statio_user_indexes
+  - stat_checkpointer
+  - postmaster
+  - database_wraparound

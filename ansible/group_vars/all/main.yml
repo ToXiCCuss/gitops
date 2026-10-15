@@ -7,6 +7,10 @@ mariadb_hosts: []
 postgresql_hosts:
    - docker01
 
+# Needs PostgreSQL on the same host (local socket), so only hosts from postgresql_hosts
+postgres_exporter_hosts:
+   - docker01
+
 mongodb_hosts: []
 
 node_exporter_hosts:

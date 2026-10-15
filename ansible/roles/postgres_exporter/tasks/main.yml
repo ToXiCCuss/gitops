@@ -1,0 +1,56 @@
+---
+- name: Install postgres_exporter via apt
+  apt:
+    name: "{{ postgres_exporter_package_name }}"
+    state: present
+    update_cache: yes
+
+# Owner and mode as set by the package's postinst (the file may hold a connection string)
+- name: Configure connection and collectors
+  template:
+    src: prometheus-postgres-exporter.j2
+    dest: "{{ postgres_exporter_environment_file }}"
+    owner: prometheus
+    group: prometheus
+    mode: "0640"
+  notify: restart postgres_exporter
+
+# Empty output = role missing, "f" = role exists without pg_monitor, "t" = all set
+- name: Check the monitoring role
+  command: >-
+    psql -tAc "SELECT pg_has_role('{{ postgres_exporter_database_user }}', 'pg_monitor', 'MEMBER')
+    FROM pg_roles WHERE rolname = '{{ postgres_exporter_database_user }}'"
+  become_user: postgres
+  register: postgres_exporter_role_state
+  changed_when: false
+  check_mode: false
+
+- name: Create the monitoring role (no password, login only through the local socket)
+  command: psql -c "CREATE ROLE {{ postgres_exporter_database_user }} LOGIN"
+  become_user: postgres
+  when: postgres_exporter_role_state.stdout == ''
+
+- name: Grant pg_monitor to the monitoring role
+  command: psql -c "GRANT pg_monitor TO {{ postgres_exporter_database_user }}"
+  become_user: postgres
+  when: postgres_exporter_role_state.stdout != 't'
+
+# The stat_statements collector reads the view from the database it connects to (postgres);
+# the library itself is preloaded by the postgresql role
+- name: Check the pg_stat_statements extension
+  command: psql -d postgres -tAc "SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'"
+  become_user: postgres
+  register: postgres_exporter_extension_state
+  changed_when: false
+  check_mode: false
+
+- name: Create the pg_stat_statements extension
+  command: psql -d postgres -c "CREATE EXTENSION pg_stat_statements"
+  become_user: postgres
+  when: postgres_exporter_extension_state.stdout == ''
+
+- name: Ensure postgres_exporter service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ postgres_exporter_service_name }}"
+    state: started
+    enabled: true

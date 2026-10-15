@@ -26,7 +26,7 @@
   lineinfile:
     path: "{{ postgresql_conf }}"
     regexp: '^#?shared_preload_libraries\s*='
-    line: "shared_preload_libraries = 'pg_partman_bgw'"
+    line: "shared_preload_libraries = 'pg_partman_bgw,pg_stat_statements'"
   notify: restart postgresql
 
 - name: Configure listen_addresses

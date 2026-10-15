@@ -1,0 +1,5 @@
+# Managed by Ansible (roles/postgres_exporter) - local changes are overwritten.
+
+DATA_SOURCE_NAME='user={{ postgres_exporter_database_user }} host=/run/postgresql dbname=postgres'
+
+ARGS="{% for collector in postgres_exporter_collectors %}--collector.{{ collector }}{{ ' ' if not loop.last }}{% endfor %}"
