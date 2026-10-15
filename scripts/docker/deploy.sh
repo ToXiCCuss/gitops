@@ -39,7 +39,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DOCKER_DIR="$REPO_DIR/docker"
 
 # Order: the S3 first, the services that write to it afterwards
-ALL_PROJECTS=(seaweedfs backrest databasus keycloak offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
+ALL_PROJECTS=(seaweedfs backrest databasus keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
 
 PULL=""
 ADOPT=""
