@@ -41,6 +41,13 @@
     - role: postgresql
       when: ansible_hostname in postgresql_hosts
 
+- name: Install postgres_exporter (only on hosts listed in postgres_exporter_hosts)
+  hosts: all
+  become: true
+  roles:
+    - role: postgres_exporter
+      when: ansible_hostname in postgres_exporter_hosts
+
 - name: Install MongoDB (only on hosts listed in mongodb_hosts)
   hosts: all
   become: true

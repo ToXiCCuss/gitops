@@ -9,7 +9,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 |Folder |Content
 
 |`ansible/`
-|Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter. Secrets in an ansible-vault file.
+|Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter. Secrets in an ansible-vault file.
 
 |`docker/`
 |One Docker Compose project per service on the Docker host (Backrest, Databasus, SeaweedFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate.
