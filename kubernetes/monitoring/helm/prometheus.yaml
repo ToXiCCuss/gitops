@@ -38,6 +38,10 @@ spec:
               serviceMonitor:
                 enabled: true
               adminPassword: <path:argocd/data/prometheus#password>
+              # The chart refuses a secret in grafana.ini. Grafana reads this variable as auth.generic_oauth.client_secret,
+              # envRenderSecret puts it into a Secret of the chart.
+              envRenderSecret:
+                GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: <path:argocd/data/prometheus#oidc.client_secret>
               # Single sign-on with Keycloak (realm rjst, client grafana). The local admin login stays on
               # as the emergency access. The roles are the client roles of grafana in Keycloak
               # (docker/keycloak-config/realms/rjst.yaml); a user without one of them is refused (role_attribute_strict).
@@ -50,7 +54,6 @@ spec:
                   allow_sign_up: true
                   use_pkce: true
                   client_id: grafana
-                  client_secret: <path:argocd/data/prometheus#oidc.client_secret>
                   scopes: openid profile email
                   auth_url: https://auth.proxy.rjst.de/realms/rjst/protocol/openid-connect/auth
                   token_url: https://auth.proxy.rjst.de/realms/rjst/protocol/openid-connect/token
