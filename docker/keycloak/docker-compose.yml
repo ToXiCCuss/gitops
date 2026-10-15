@@ -19,3 +19,8 @@ services:
       portal.description: "Login und Identitäten"
       portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/keycloak.svg"
     restart: unless-stopped
+
+# A fixed network name, so that the job of docker/keycloak-config reaches Keycloak as http://keycloak:8080
+networks:
+  default:
+    name: keycloak

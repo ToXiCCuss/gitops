@@ -1,0 +1,52 @@
+# The realm of the apps. Users and their passwords are not in here: they are created in the Keycloak UI
+# and live in the database (Databasus). Everything else about the login of the apps is defined here.
+realm: rjst
+enabled: true
+displayName: RJST
+registrationAllowed: false
+loginWithEmailAllowed: true
+bruteForceProtected: true
+sslRequired: external
+
+# The permissions are set per app: every app has its own client roles, a user gets the roles of the apps he may use
+# (UI: Users > Role mapping > Client roles, or a group that carries the roles). A user without a role of an app
+# is refused by that app. The roles of a client end up in its token as the claim "roles" (mapper of the client).
+roles:
+  client:
+    grafana:
+      - name: admin
+        description: Grafana Admin
+      - name: editor
+        description: Grafana Editor
+      - name: viewer
+        description: Grafana Viewer
+
+clients:
+  - clientId: grafana
+    name: Grafana
+    protocol: openid-connect
+    enabled: true
+    publicClient: false
+    secret: $(env:GRAFANA_CLIENT_SECRET)
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    rootUrl: https://grafana.k8sdev.rjst.de
+    redirectUris:
+      - https://grafana.k8sdev.rjst.de/login/generic_oauth
+    webOrigins:
+      - https://grafana.k8sdev.rjst.de
+    attributes:
+      pkce.code.challenge.method: S256
+    protocolMappers:
+      - name: grafana-roles
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-client-role-mapper
+        config:
+          usermodel.clientRoleMapping.clientId: grafana
+          claim.name: roles
+          jsonType.label: String
+          multivalued: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
