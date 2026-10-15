@@ -46,6 +46,9 @@ spec:
               # as the emergency access. The roles are the client roles of grafana in Keycloak
               # (docker/keycloak-config/realms/rjst.yaml); a user without one of them is refused (role_attribute_strict).
               grafana.ini:
+                # Temporary: details of the login while "User sync failed" is investigated
+                log:
+                  filters: oauth:debug authn.service:debug user.sync:debug
                 server:
                   root_url: https://grafana.k8sdev.rjst.de
                 auth.generic_oauth:
