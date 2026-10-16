@@ -266,6 +266,14 @@ sudo scripts/docker/cleanup.sh            # dry run
 sudo scripts/docker/cleanup.sh --apply
 ----
 
+After `apt upgrade` (or when NetBird changed the DNS of the host) run `restart-host-network.sh`. A container in the host network copies the `resolv.conf` of the host
+when it starts and keeps the old copy, so it can no longer resolve the NetBird names while the host still can (`vault-backup` fails with
+"Could not resolve host: vault.k8sdev.rjst.de"). The script restarts exactly these containers, the others have their own network and DNS:
+
+----
+sudo scripts/docker/restart-host-network.sh
+----
+
 The secrets of a project are in `docker/<project>/override.env`. The file is *not* in Git (`.gitignore`), the variables a project needs are
 named in `docker/<project>/override.env.example` (`NAME=` is required, `#NAME=` is optional). `default.env` lists all variables of
 a project and the compose file reads `default.env` first and `override.env` second. `deploy.sh` checks the required variables before it
