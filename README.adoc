@@ -885,6 +885,12 @@ What is *not* in the file: users, their passwords and their group membership. Th
   `docker/keycloak-config/override.env` (`GRAFANA_CLIENT_SECRET`), the file refers to it as `$(env:GRAFANA_CLIENT_SECRET)`.
 * `docker/keycloak-config/override.env` also needs a user of the realm `master` with the role `admin` (`KEYCLOAK_USER`, `KEYCLOAK_PASSWORD`).
 
+* Spring Boot Admin: one client per stage, `sba-service-dev` and `sba-service-prod`, redirect URI
+  `https://sba-service-<stage>.k8sdev.rjst.de/login/oauth2/code/keycloak` (Spring registration id `keycloak`). Roles `viewer` (look) and `admin` (actions such as
+  loggers or shutdown). The secret of a Spring app is not in this repository: it lives in the Vault area of the app per stage (engines `dev` and `prod`) and the app
+  resolves it itself. The same value goes into `docker/keycloak-config/override.env` (`SBA_DEV_CLIENT_SECRET`, `SBA_PROD_CLIENT_SECRET`). The login itself
+  (Spring Security) is part of the repository of the app.
+
 A new app: one more client block with its roles and the mapper in the file, its secret in Vault and in `override.env` (with a new variable in `default.env` and `override.env.example`),
 then `sudo scripts/docker/deploy.sh keycloak-config`. Check the result with `docker logs keycloak-config`.
 
