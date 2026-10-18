@@ -73,6 +73,53 @@ spec:
                                   gitSource:
                                     remote: "https://github.com/RJST-DEVELOP/cicd-library.git"
                                     credentialsId: "github-app"
+                  security: |
+                    jenkins:
+                      securityRealm:
+                        oic:
+                          # Fixed endpoints instead of the well-known address: the discovery is read when Jenkins starts, with
+                          # fixed endpoints Jenkins starts without Keycloak as well. Only the login needs Keycloak then.
+                          serverConfiguration:
+                            manual:
+                              authorizationServerUrl: "https://auth.proxy.rjst.de/realms/rjst/protocol/openid-connect/auth"
+                              tokenServerUrl: "https://auth.proxy.rjst.de/realms/rjst/protocol/openid-connect/token"
+                              userInfoServerUrl: "https://auth.proxy.rjst.de/realms/rjst/protocol/openid-connect/userinfo"
+                              jwksServerUrl: "https://auth.proxy.rjst.de/realms/rjst/protocol/openid-connect/certs"
+                              issuer: "https://auth.proxy.rjst.de/realms/rjst"
+                              endSessionUrl: "https://auth.proxy.rjst.de/realms/rjst/protocol/openid-connect/logout"
+                              scopes: "openid profile email"
+                          clientId: "jenkins"
+                          # The secret is the file of the Secret jenkins-oidc. A dollar sign is written twice here, ArgoCD turns
+                          # $$ into $ and an unknown $NAME into an empty string (see kubernetes/cicd/kubectl/jenkins-casc.yaml).
+                          clientSecret: "$${readFile:/run/secrets/additional/jenkins-oidc-clientSecret}"
+                          userNameField: "preferred_username"
+                          fullNameFieldName: "name"
+                          emailFieldName: "email"
+                          groupsFieldName: "roles"
+                          logoutFromOpenidProvider: true
+                          postLogoutRedirectUrl: "https://jenkins.k8sdev.rjst.de/"
+                          # The emergency access: the admin of the chart still gets in when Keycloak is not available
+                          properties:
+                            - escapeHatch:
+                                username: "$${chart-admin-username}"
+                                secret: "$${chart-admin-password}"
+                                group: "admin"
+                      # The groups are the client roles of the Keycloak client jenkins. Nobody else gets anything.
+                      authorizationStrategy:
+                        globalMatrix:
+                          entries:
+                            - group:
+                                name: "admin"
+                                permissions:
+                                  - "Overall/Administer"
+                            - group:
+                                name: "user"
+                                permissions:
+                                  - "Overall/Read"
+                                  - "View/Read"
+                                  - "Job/Read"
+                                  - "Job/Build"
+                                  - "Job/Cancel"
   syncPolicy:
     automated:
       prune: true
