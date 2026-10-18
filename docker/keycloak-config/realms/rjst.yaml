@@ -26,6 +26,12 @@ roles:
         description: Harbor system admin
       - name: developer
         description: Harbor group developer
+    # admin may administer Jenkins, user may look at jobs and build them (the matrix in kubernetes/cicd/helm/jenkins.yaml)
+    jenkins:
+      - name: admin
+        description: Jenkins administrator
+      - name: user
+        description: Jenkins user, looks at jobs and builds them
     # viewer may look at the applications, admin may also run actions (loggers, shutdown) in Spring Boot Admin
     sba-service-dev:
       - name: viewer
@@ -148,6 +154,36 @@ clients:
         protocolMapper: oidc-usermodel-client-role-mapper
         config:
           usermodel.clientRoleMapping.clientId: sba-service-prod
+          claim.name: roles
+          jsonType.label: String
+          multivalued: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+
+  - clientId: jenkins
+    name: Jenkins
+    protocol: openid-connect
+    enabled: true
+    publicClient: false
+    secret: $(env:JENKINS_CLIENT_SECRET)
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    rootUrl: https://jenkins.k8sdev.rjst.de
+    redirectUris:
+      - https://jenkins.k8sdev.rjst.de/securityRealm/finishLogin
+    webOrigins:
+      - https://jenkins.k8sdev.rjst.de
+    attributes:
+      # Where Keycloak may send the user after the logout of Jenkins
+      post.logout.redirect.uris: https://jenkins.k8sdev.rjst.de/*
+    protocolMappers:
+      - name: jenkins-roles
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-client-role-mapper
+        config:
+          usermodel.clientRoleMapping.clientId: jenkins
           claim.name: roles
           jsonType.label: String
           multivalued: "true"

@@ -44,12 +44,18 @@ spec:
                 - pipeline-utility-steps
                 - pipeline-stage-view
                 - dark-theme
+                # Login with Keycloak and the matrix of permissions per group. Not added to an existing volume (initializeOnce):
+                # install both once in the UI (Manage Jenkins, Plugins) before the login configuration is deployed.
+                - oic-auth
+                - matrix-auth
               # Private key of the GitHub App, from Vault via kubernetes/secrets/jenkins-github-app.yaml. It is mounted
               # as a file; the credential that reads it is the ConfigMap kubernetes/cicd/kubectl/jenkins-casc.yaml (a
               # dollar sign in these Helm values would be replaced by ArgoCD, so it cannot be defined here).
               additionalExistingSecrets:
                 - name: jenkins-github-app
                   keyName: privateKey
+                - name: jenkins-oidc
+                  keyName: clientSecret
               JCasC:
                 configScripts:
                   shared-library: |
