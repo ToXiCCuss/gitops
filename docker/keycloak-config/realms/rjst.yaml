@@ -20,14 +20,12 @@ roles:
         description: Grafana Editor
       - name: viewer
         description: Grafana Viewer
-    # admin makes a Harbor admin. developer and viewer arrive as groups, their role per project is set in Harbor.
+    # admin makes a Harbor admin. developer arrives as a group, its role per project is set in Harbor.
     harbor:
       - name: admin
         description: Harbor system admin
       - name: developer
         description: Harbor group developer
-      - name: viewer
-        description: Harbor group viewer
     # viewer may look at the applications, admin may also run actions (loggers, shutdown) in Spring Boot Admin
     sba-service-dev:
       - name: viewer
