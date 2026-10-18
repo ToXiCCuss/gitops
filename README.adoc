@@ -1067,7 +1067,7 @@ are external groups in Vault with one policy each: `admin` (policy `keycloak_adm
 * `generate-secrets.ps1` writes the client secret to `argocd/data/vault#oidc.client_secret`. The same value goes into `docker/keycloak-config/override.env` as
   `VAULT_CLIENT_SECRET`, then `sudo scripts/docker/deploy.sh keycloak-config`.
 * `.\scripts\vault\configure-vault-oidc.ps1 -VaultToken <root token>` sets up the auth method, the policies and the groups. It can be run again.
-* Log in in the UI with the method *OIDC* (leave the role empty) or with `vault login -method=oidc`. Give the users the role `vault` in Keycloak (*Role mapping, client roles*).
+* Log in in the UI with the method *OIDC* and type `default` into the field *Role* (the UI does not fill it in by itself, empty gives "Invalid role"), or with `vault login -method=oidc`. Give the users the role `vault` in Keycloak (*Role mapping, client roles*).
 * Vault reads the discovery of Keycloak when the configuration is written and the Pod needs `auth.proxy.rjst.de` at the login. If it fails, look at the DNS of the cluster first.
 
 ===== Vault backups

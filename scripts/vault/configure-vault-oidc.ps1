@@ -64,7 +64,12 @@ function Invoke-Vault {
         $arguments.Body = ($Body | ConvertTo-Json -Depth 5)
         $arguments.ContentType = "application/json"
     }
-    Invoke-RestMethod @arguments
+    try {
+        Invoke-RestMethod @arguments
+    } catch {
+        # PowerShell only says "400 Bad Request", the reason is in the answer of Vault
+        throw "Vault refused $Method $Path : $($_.ErrorDetails.Message) $($_.Exception.Message)"
+    }
 }
 
 # ── 1. The client secret from Vault ─────────────────────────────────────────
@@ -166,4 +171,4 @@ Set-ExternalGroup -Name "admin" -Policy "keycloak_admin"
 Set-ExternalGroup -Name "developer" -Policy "keycloak_developer"
 
 Write-Step "Done"
-Write-Ok "Log in in the UI with the method OIDC (role field empty), or: vault login -method=oidc"
+Write-Ok "Log in in the UI with the method OIDC and the role default (type it into the field Role), or: vault login -method=oidc"
