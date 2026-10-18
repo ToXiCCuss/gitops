@@ -111,6 +111,9 @@ clients:
       - https://sba-service-dev.k8sdev.rjst.de/login/oauth2/code/keycloak
     webOrigins:
       - https://sba-service-dev.k8sdev.rjst.de
+    attributes:
+      # Where Keycloak may send the user after the logout of the application (the start page of the stage)
+      post.logout.redirect.uris: https://sba-service-dev.k8sdev.rjst.de/*
     protocolMappers:
       - name: sba-service-dev-roles
         protocol: openid-connect
@@ -138,6 +141,9 @@ clients:
       - https://sba-service-prod.k8sdev.rjst.de/login/oauth2/code/keycloak
     webOrigins:
       - https://sba-service-prod.k8sdev.rjst.de
+    attributes:
+      # Where Keycloak may send the user after the logout of the application (the start page of the stage)
+      post.logout.redirect.uris: https://sba-service-prod.k8sdev.rjst.de/*
     protocolMappers:
       - name: sba-service-prod-roles
         protocol: openid-connect
