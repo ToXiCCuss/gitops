@@ -26,6 +26,13 @@ roles:
         description: Harbor system admin
       - name: developer
         description: Harbor group developer
+    # Vault: admin may do everything, developer may read and write the secrets in dev/ and prod/. The roles are external groups
+    # with a policy each in Vault (scripts/vault/configure-vault-oidc.ps1).
+    vault:
+      - name: admin
+        description: Vault administrator
+      - name: developer
+        description: Vault developer, reads and writes dev/ and prod/
     # admin may administer Jenkins, user may look at jobs and build them (the matrix in kubernetes/cicd/helm/jenkins.yaml)
     jenkins:
       - name: admin
@@ -184,6 +191,35 @@ clients:
         protocolMapper: oidc-usermodel-client-role-mapper
         config:
           usermodel.clientRoleMapping.clientId: jenkins
+          claim.name: roles
+          jsonType.label: String
+          multivalued: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+
+  - clientId: vault
+    name: Vault
+    protocol: openid-connect
+    enabled: true
+    publicClient: false
+    secret: $(env:VAULT_CLIENT_SECRET)
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    rootUrl: https://vault.k8sdev.rjst.de
+    redirectUris:
+      # The UI and the command line (vault login -method=oidc)
+      - https://vault.k8sdev.rjst.de/ui/vault/auth/oidc/oidc/callback
+      - http://localhost:8250/oidc/callback
+    webOrigins:
+      - https://vault.k8sdev.rjst.de
+    protocolMappers:
+      - name: vault-roles
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-client-role-mapper
+        config:
+          usermodel.clientRoleMapping.clientId: vault
           claim.name: roles
           jsonType.label: String
           multivalued: "true"
