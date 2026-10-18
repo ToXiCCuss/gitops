@@ -4,7 +4,7 @@
     writes them into Vault (KV v2), so ArgoCD's AVP plugin can render them.
 
 .DESCRIPTION
-    - Freely generatable secrets (Harbor/Jenkins/Grafana admin passwords, the OIDC client secrets of Grafana, Harbor and Jenkins)
+    - Freely generatable secrets (Harbor/Jenkins/Grafana admin passwords, the OIDC client secrets of Grafana, Harbor, Jenkins and Vault)
       are generated locally and written to Vault, but never replace a value
       that already exists.
     - External values are prompted for interactively and written to Vault:
@@ -122,6 +122,7 @@ Set-VaultKV -Path "prometheus" -Data @{ "password" = (New-RandomSecret) } -SkipE
 Set-VaultKV -Path "prometheus" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "harbor" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "jenkins" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
+Set-VaultKV -Path "vault" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 
 # ── 2. External values that must match reality - prompt, never generate ───
 Write-Step "External values (leave blank to skip / keep existing)"

@@ -1058,6 +1058,18 @@ later step, app by app.
 Vault reaches the API server through `https://kubernetes.default.svc:443` (parameter `-KubernetesHost`), not through the
 address in your kubeconfig, so a new server IP does not break the login. The script is safe to re-run.
 
+===== Login with Keycloak (OIDC)
+
+Besides the root token and the Kubernetes login, Vault can be used with a Keycloak login. The roles of the client `vault` (`docker/keycloak-config/realms/rjst.yaml`)
+are external groups in Vault with one policy each: `admin` (policy `keycloak_admin`, everything) and `developer` (policy `keycloak_developer`, read and write the secrets in
+`dev/` and `prod/`, no delete). A user without one of the roles is refused at the login. The configuration lives in Vault itself (it is part of the Raft snapshot), not in Git:
+
+* `generate-secrets.ps1` writes the client secret to `argocd/data/vault#oidc.client_secret`. The same value goes into `docker/keycloak-config/override.env` as
+  `VAULT_CLIENT_SECRET`, then `sudo scripts/docker/deploy.sh keycloak-config`.
+* `.\scripts\vault\configure-vault-oidc.ps1 -VaultToken <root token>` sets up the auth method, the policies and the groups. It can be run again.
+* Log in in the UI with the method *OIDC* (leave the role empty) or with `vault login -method=oidc`. Give the users the role `vault` in Keycloak (*Role mapping, client roles*).
+* Vault reads the discovery of Keycloak when the configuration is written and the Pod needs `auth.proxy.rjst.de` at the login. If it fails, look at the DNS of the cluster first.
+
 ===== Vault backups
 
 Vault is backed up from the Docker host, not from Kubernetes: see *Docker > Setup Vault backup*. It uses a
