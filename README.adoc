@@ -119,7 +119,47 @@ The roles `postgresql`, `mariadb` and `mongodb` include the role `database_tunin
   overwrite each other.
 
 `/etc/security/limits.conf` is not used: systemd services ignore it. The service restarts once when the drop-in changes.
-Values are in the role's `defaults/main.yml`; MariaDB and MongoDB are not assigned to a host yet.
+Values are in the role's `defaults/main.yml`; MariaDB runs on `docker01`, MongoDB is not assigned to a host yet.
+
+=== MariaDB (audit log and backup user)
+
+The role `mariadb` sets `event_scheduler = ON` (`/etc/mysql/mariadb.conf.d/60-event-scheduler.cnf`). The scripts in `scripts/mariadb/`
+(run them on the host with `sudo`) add an audit log and the backup user. MariaDB runs on `docker01` (`mariadb_hosts`), port 3306 is open for the Docker networks `172.16.0.0/12` only (`firewall_rules`, like PostgreSQL).
+
+[cols="2,3"]
+|===
+|Script |Purpose
+
+|`audit_setup.sh <db> [months]`
+|Creates `audit_log` (partitioned by month) and the helper procedures in the database, and a daily event that adds the next
+months and drops the partitions older than the retention (default 6 months). Run it again to change the retention
+(`audit_setup.sh shop 12`); without months the current value stays. The data of `audit_log` is kept.
+
+|`audit_enable.sh <db> <table> ...`
+|Triggers write the old and new values of every INSERT, UPDATE and DELETE of the tables to `audit_log`. Run it again after a column
+changed. The record id is the primary key (several columns joined by `-`), `NULL` without one. An UPDATE that changes nothing is not
+logged.
+
+|`audit_disable.sh <db> <table> ...`
+|Removes the triggers. Rows already logged stay until the retention drops them.
+
+|`audit_list.sh <db>`
+|Audited tables, retention, partitions with their row counts.
+
+|`backup_user_create.sh [user] [reset]`
+|Read-only login for Databasus (default `databasus`, host `%`, so keep port 3306 closed except for the Docker networks):
+`SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, `LOCK TABLES` on all databases. The password is printed once, `reset` sets a new one.
+|===
+
+* The audit log lives in the database, so `db_delete.sh` takes it along. It holds personal data in clear text. The roles of
+  `db_create.sh` can change it, their grants cover the whole database.
+* An audited write costs one more INSERT with all columns as JSON, so switch it on only for the tables where you need the history.
+  A database without `audit_setup.sh` has no triggers and no cost.
+* The partition `p_future` (`VALUES LESS THAN MAXVALUE`) catches every row without a monthly partition. A stopped event scheduler
+  only leaves the partitions unmaintained, audited writes never fail.
+* Backups: Databasus (logical, MariaDB 11 is supported) once the database exists, see <<Backups>>. The grants of the backup user are
+  what `mariadb-dump` needs; the Databasus documentation does not name them, adjust them if "Test connection" or a run complains.
+  `mariabackup` (physical) is for later, when the dump gets too slow or too large.
 
 === Secrets (ansible-vault)
 
@@ -344,15 +384,15 @@ flowchart LR
 
 |SeaweedFS |Local S3 staging |One identity per service, the offsite sync can only read
 |Backrest |Backs up a few static key files, checks the repositories and browses and restores snapshots |restic, repository `backups/docker`. Also used to check and restore the Vault and NetBird repositories
-|Databasus |Logical PostgreSQL backups (`pg_dump`) |bucket `databases`
+|Databasus |Logical PostgreSQL backups (`pg_dump`), MariaDB the same way once it is installed (login from `scripts/mariadb/backup_user_create.sh`) |bucket `databases`
 |vault-backup |Daily Raft snapshot of Vault |Periodic token that may only read the snapshot, bucket `vault`, repository `vault/raft`, keeps its own retention
 |NetBird backup |Config and database of the self-hosted NetBird server (`scripts/netbird/`) |bucket `netbird`, repository `netbird/restic`, keeps its own retention
 |Offsite sync |Copies the whole S3 to pCloud and verifies the copy |Keeps deleted or overwritten files 30 days in `Backups-deleted`
 |===
 
 Everything writes to the S3 only, pCloud is written by the offsite sync alone. Not covered:
-the PVCs of the Kubernetes apps and MariaDB. MongoDB is not operated (`mongodb_hosts` is empty), if it is, Databasus
-backs it up like the PostgreSQL databases.
+the PVCs of the Kubernetes apps. MariaDB (`docker01`) is not backed up until a database is added in the Databasus UI with its backup login, MongoDB is not operated
+(`mongodb_hosts` is empty), if it is, Databasus backs it up like the PostgreSQL databases.
 
 ==== Retention, checks and schedule
 
