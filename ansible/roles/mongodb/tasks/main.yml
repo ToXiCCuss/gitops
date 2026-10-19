@@ -49,3 +49,14 @@
     name: mongod
     state: started
     enabled: true
+
+- name: Tune the kernel and service limits for MongoDB
+  ansible.builtin.include_role:
+    name: database_tuning
+  vars:
+    database_tuning_name: mongodb
+    database_tuning_unit: mongod.service
+    database_tuning_service: mongod
+    database_tuning_extra_sysctls:
+      vm.max_map_count: 262144
+    database_tuning_transparent_hugepage: "{{ mongodb_transparent_hugepage }}"

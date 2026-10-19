@@ -1,2 +1,6 @@
 ---
 mongodb_version: "7.0"
+
+# MongoDB 8.0 wants THP enabled (TCMalloc), 7.0 and older want it disabled.
+# THP is host-wide: on a host shared with another database the last role to run wins.
+mongodb_transparent_hugepage: "{{ 'always' if mongodb_version is version('8.0', '>=') else 'never' }}"

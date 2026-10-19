@@ -1,0 +1,56 @@
+---
+- name: Require the per-role variables
+  ansible.builtin.assert:
+    that:
+      - database_tuning_name | length > 0
+      - database_tuning_unit | length > 0
+      - database_tuning_service | length > 0
+    fail_msg: "database_tuning_name, database_tuning_unit and database_tuning_service must be set by the including role."
+
+- name: Set the kernel parameters for databases
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: "/etc/sysctl.d/70-{{ database_tuning_name }}.conf"
+    state: present
+    reload: true
+  loop: "{{ (database_tuning_sysctls | combine(database_tuning_extra_sysctls)) | dict2items }}"
+
+# THP lives in sysfs, not in sysctl. tmpfiles.d writes it on every boot.
+- name: Set the transparent huge pages mode at boot
+  ansible.builtin.copy:
+    dest: /etc/tmpfiles.d/transparent-hugepage.conf
+    content: "w /sys/kernel/mm/transparent_hugepage/enabled - - - - {{ database_tuning_transparent_hugepage }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  register: database_tuning_hugepage_file
+
+- name: Apply the transparent huge pages mode now
+  ansible.builtin.command: systemd-tmpfiles --create /etc/tmpfiles.d/transparent-hugepage.conf
+  when: database_tuning_hugepage_file.changed
+
+- name: Create the systemd drop-in directory
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ database_tuning_unit }}.d"
+    state: directory
+    mode: "0755"
+
+- name: Write the systemd drop-in with the service limits
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ database_tuning_unit }}.d/limits.conf"
+    content: |
+      [Service]
+      LimitNOFILE={{ database_tuning_open_files_limit }}
+      OOMScoreAdjust={{ database_tuning_oom_score_adjust }}
+    owner: root
+    group: root
+    mode: "0644"
+  register: database_tuning_dropin
+
+- name: Reload systemd and restart the database service
+  ansible.builtin.systemd:
+    name: "{{ database_tuning_service }}"
+    state: restarted
+    daemon_reload: true
+  when: database_tuning_dropin.changed

@@ -17,3 +17,11 @@
     name: mariadb
     state: started
     enabled: true
+
+- name: Tune the kernel and service limits for MariaDB
+  ansible.builtin.include_role:
+    name: database_tuning
+  vars:
+    database_tuning_name: mariadb
+    database_tuning_unit: mariadb.service
+    database_tuning_service: mariadb
