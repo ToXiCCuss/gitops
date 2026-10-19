@@ -17,7 +17,7 @@ node_exporter_hosts:
    - docker01
 
 # Hosts with a UFW policy (default deny incoming, rules from host_config).
-# k8sdev01 has no rules on purpose: it is only reached through NetBird, everything else is denied.
+# k8sdev01 only allows the k3s pod and service CIDRs: it is reached through NetBird, everything else is denied.
 firewall_hosts:
    - docker01
    - k8sdev01
@@ -55,6 +55,11 @@ host_config:
       - { port: 5432,  proto: tcp, from_ip: 172.16.0.0/12, comment: "PostgreSQL from the Docker networks" }
       - { port: 8333,  proto: tcp, from_ip: 172.16.0.0/12, comment: "SeaweedFS S3 from the Docker networks" }
   k8sdev01:
+    # Only reached through NetBird, but UFW also filters what the pods send to the host
+    # (e.g. the Kubernetes service address of the API server). docs.k3s.io asks for both CIDRs.
+    firewall_rules:
+      - { from_ip: 10.42.0.0/16, comment: "k3s pod CIDR" }
+      - { from_ip: 10.43.0.0/16, comment: "k3s service CIDR" }
     k3s_config:
       cluster-init: true
       flannel-backend: wireguard-native
