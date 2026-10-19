@@ -5,6 +5,15 @@
   roles:
     - base
 
+# Before the firewall: the host joins NetBird first, so it stays reachable once UFW denies
+# everything that is not allowed.
+- name: Install NetBird (only on hosts listed in netbird_hosts)
+  hosts: all
+  become: true
+  roles:
+    - role: netbird
+      when: ansible_hostname in netbird_hosts
+
 - name: Configure the firewall (only on hosts listed in firewall_hosts)
   hosts: all
   become: true
@@ -54,13 +63,6 @@
   roles:
     - role: mongodb
       when: ansible_hostname in mongodb_hosts
-
-- name: Install NetBird (only on hosts listed in netbird_hosts)
-  hosts: all
-  become: true
-  roles:
-    - role: netbird
-      when: ansible_hostname in netbird_hosts
 
 - name: Install k3s (only on hosts listed in k3s_hosts)
   hosts: all
