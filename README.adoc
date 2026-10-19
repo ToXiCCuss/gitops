@@ -123,7 +123,7 @@ Values are in the role's `defaults/main.yml`; MariaDB runs on `docker01`, MongoD
 
 === MariaDB (audit log and backup user)
 
-The role `mariadb` sets `event_scheduler = ON` (`/etc/mysql/mariadb.conf.d/60-event-scheduler.cnf`). The scripts in `scripts/mariadb/`
+The role `mariadb` sets `bind-address` and `event_scheduler = ON` (`/etc/mysql/mariadb.conf.d/60-gitops.cnf`). The scripts in `scripts/mariadb/`
 (run them on the host with `sudo`) add an audit log and the backup user. MariaDB runs on `docker01` (`mariadb_hosts`), port 3306 is open for the Docker networks `172.16.0.0/12` only (`firewall_rules`, like PostgreSQL).
 
 [cols="2,3"]
