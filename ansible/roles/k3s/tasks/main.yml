@@ -1,4 +1,13 @@
 ---
+- name: Set the kernel parameters the kubelet expects
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/90-kubelet.conf
+    state: present
+    reload: true
+  loop: "{{ k3s_kernel_sysctls | dict2items }}"
+
 # Both checks only read, so they also run in check mode and the dry run is accurate.
 - name: Read the installed k3s version
   ansible.builtin.command: /usr/local/bin/k3s --version
