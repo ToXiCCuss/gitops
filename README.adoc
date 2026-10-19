@@ -14,6 +14,9 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 |`docker/`
 |One Docker Compose project per service on the Docker host (Backrest, Databasus, SeaweedFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate.
 
+|`istio/`
+|`IstioOperator` file for the manual `istioctl install` (outside ArgoCD).
+
 |`kubernetes/`
 |ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, spring).
 
@@ -64,8 +67,8 @@ ansible-playbook -i inventory.ini site.yml
 === Firewall
 
 The role `firewall` runs on the hosts in `firewall_hosts` (`group_vars/all/main.yml`). It allows the ports listed in
-`host_config.<host>.firewall_rules`, denies all other incoming traffic and enables UFW. Each rule needs `port`, `proto` and
-`comment`, `from_ip` is optional (default: any):
+`host_config.<host>.firewall_rules`, denies all other incoming traffic and enables UFW. Each rule needs a `comment`; `port` and
+`proto` are optional (without them the rule opens every port for `from_ip`), `from_ip` is optional (default: any):
 
 [source,yaml]
 ----
@@ -98,6 +101,25 @@ official install script, writes `/etc/rancher/k3s/config.yaml` and keeps the ser
   unit without flags, they move to `config.yaml`, and k3s restarts once.
 * The cluster uses embedded etcd (`cluster-init`). Its snapshots are only local (`/var/lib/rancher/k3s/server/db/snapshots`),
   they are not part of the backups yet.
+* The role also writes the kernel parameters the kubelet expects (`/etc/sysctl.d/90-kubelet.conf`, variable
+  `k3s_kernel_sysctls`). Without `protect-kernel-defaults` the kubelet would set them itself, the file makes them persistent.
+* `k8sdev01` has a UFW rule for the pod CIDR `10.42.0.0/16` and the service CIDR `10.43.0.0/16`, so pods can reach the host
+  (for example the API server through the service address). Everything else stays closed, the node is reached through NetBird.
+* Istio is installed by hand after k3s with `istioctl` and `istio/istio-operator.yaml` (see <<istio-install>>).
+
+=== Database tuning
+
+The roles `postgresql`, `mariadb` and `mongodb` include the role `database_tuning` at their end. It sets, per database:
+
+* sysctls in `/etc/sysctl.d/70-<database>.conf` (`vm.swappiness=1`, `vm.dirty_*`, `net.core.somaxconn`,
+  `net.ipv4.tcp_keepalive_time`, `fs.aio-max-nr`; MongoDB also `vm.max_map_count`),
+* a systemd drop-in `limits.conf` with `LimitNOFILE` and `OOMScoreAdjust=-900` (the OOM killer takes containers first),
+* the transparent huge pages mode via `/etc/tmpfiles.d/transparent-hugepage.conf`: `madvise` for PostgreSQL and MariaDB,
+  for MongoDB `never` (7.0 and older) or `always` (8.0). THP is host-wide, so databases with different modes on one host
+  overwrite each other.
+
+`/etc/security/limits.conf` is not used: systemd services ignore it. The service restarts once when the drop-in changes.
+Values are in the role's `defaults/main.yml`; MariaDB and MongoDB are not assigned to a host yet.
 
 === Secrets (ansible-vault)
 
@@ -950,13 +972,31 @@ automated sync.
 
 . Kubernetes cluster reachable, `kubectl`/`helm` configured against it.
 . Istio installed via `istioctl` (base + istiod + ingressgateway) — still
-  needed for the remaining public apps (`microcks.rjst.de`, `rjst.de`).
+  needed for the remaining public apps (`microcks.rjst.de`, `rjst.de`). See <<istio-install>>.
 . NetBird self-hosted server running (per the
   https://docs.netbird.io/selfhosted/selfhosted-quickstart[quickstart script]),
   reachable at `proxy.rjst.de`, with its own Traefik reverse proxy.
 . A NetBird personal access token (Management API scope) for the Kubernetes
   operator.
 
+[[istio-install]]
+==== Istio installation (`istioctl`, by hand)
+
+Istio is installed from `istio/istio-operator.yaml` (profile `default`: istiod and the public `istio-ingressgateway`). The file
+keeps what a plain `istioctl install` would reset: `externalTrafficPolicy: Local` on the gateway Service, so the apps see the
+client's real source address. Use an `istioctl` that matches the Istio version you want, the file does not pin it
+(`istioctl version` shows the client and the running control plane).
+
+----
+istioctl x precheck
+istioctl install -f istio/istio-operator.yaml
+istioctl verify-install -f istio/istio-operator.yaml
+----
+
+* Upgrade: download the `istioctl` of the new version and run the same commands. Then restart the workloads in the namespaces
+  labelled `istio-injection: enabled` so they get the new sidecar.
+* Check: `kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.spec.externalTrafficPolicy}'` must print `Local`.
+* The second, internal gateway (`istio-internal-gateway`) is not part of this file, it is an ArgoCD Application in `kubernetes/infra/helm`.
 
 ==== 1. Bootstrap ArgoCD
 
