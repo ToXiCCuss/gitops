@@ -12,6 +12,19 @@
     line: "bind-address            = {{ mariadb_bind_address }}"
   notify: restart mariadb
 
+# Events are off by default. The audit log of scripts/mariadb/audit_setup.sh adds and drops its
+# partitions with a daily event.
+- name: Enable the event scheduler
+  copy:
+    dest: /etc/mysql/mariadb.conf.d/60-event-scheduler.cnf
+    content: |
+      [mysqld]
+      event_scheduler = ON
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart mariadb
+
 - name: Ensure MariaDB service is enabled and running
   service:
     name: mariadb
