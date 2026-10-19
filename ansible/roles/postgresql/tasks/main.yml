@@ -22,11 +22,13 @@
     state: present
     update_cache: yes
 
+# pg_cron only works when it is preloaded (restart needed). scripts/postgresql/audit_setup.sh
+# schedules the partition maintenance of the audit log with it.
 - name: Configure shared_preload_libraries
   lineinfile:
     path: "{{ postgresql_conf }}"
     regexp: '^#?shared_preload_libraries\s*='
-    line: "shared_preload_libraries = 'pg_partman_bgw,pg_stat_statements'"
+    line: "shared_preload_libraries = 'pg_cron,pg_partman_bgw,pg_stat_statements'"
   notify: restart postgresql
 
 - name: Configure listen_addresses
