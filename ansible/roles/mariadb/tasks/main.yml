@@ -5,20 +5,15 @@
     state: present
     update_cache: yes
 
-- name: Configure bind-address in 50-server.cnf
-  lineinfile:
-    path: /etc/mysql/mariadb.conf.d/50-server.cnf
-    regexp: '^bind-address.*'
-    line: "bind-address            = {{ mariadb_bind_address }}"
-  notify: restart mariadb
-
-# Events are off by default. The audit log of scripts/mariadb/audit_setup.sh adds and drops its
-# partitions with a daily event.
-- name: Enable the event scheduler
+# Debian 13 ships no 50-server.cnf, so the settings live in their own file in mariadb.conf.d.
+# event_scheduler: events are off by default, the audit log of scripts/mariadb/audit_setup.sh
+# adds and drops its partitions with a daily event.
+- name: Configure MariaDB (bind-address, event scheduler)
   copy:
-    dest: /etc/mysql/mariadb.conf.d/60-event-scheduler.cnf
+    dest: /etc/mysql/mariadb.conf.d/60-gitops.cnf
     content: |
       [mysqld]
+      bind-address = {{ mariadb_bind_address }}
       event_scheduler = ON
     owner: root
     group: root
