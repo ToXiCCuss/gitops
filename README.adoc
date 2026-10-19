@@ -161,6 +161,43 @@ logged.
   what `mariadb-dump` needs; the Databasus documentation does not name them, adjust them if "Test connection" or a run complains.
   `mariabackup` (physical) is for later, when the dump gets too slow or too large.
 
+=== PostgreSQL (audit log)
+
+The scripts in `scripts/postgresql/` (run them on the host with `sudo`) add the same audit log as for MariaDB. The role
+`postgresql` preloads `pg_cron` (`shared_preload_libraries`, the first run restarts PostgreSQL), `pg_partman` and `pg_cron` are
+installed by the role too.
+
+[cols="2,3"]
+|===
+|Script |Purpose
+
+|`audit_setup.sh <db> [months]`
+|Creates the schema `audit` with `audit.audit_log` (monthly partitions by `pg_partman`, plus a default partition) and the trigger
+function in the database, and a daily `pg_cron` job (03:00) that runs `partman.run_maintenance()`: it adds the next months and drops
+the partitions older than the retention (default 6 months). Run it again to change the retention (`audit_setup.sh shop 12`),
+without months the current value stays. The data is kept.
+
+|`audit_enable.sh <db> <table> ...`
+|Triggers write the old and new row of every INSERT, UPDATE and DELETE as JSON. Tables are `name` (schema `public`) or
+`schema.name`. The record id is the primary key (several columns joined by `-`), `NULL` without one. An UPDATE that changes nothing
+is not logged. Run it again after the primary key changed.
+
+|`audit_disable.sh <db> <table> ...`
+|Removes the triggers. Rows already logged stay until the retention drops them.
+
+|`audit_list.sh <db>`
+|Audited tables, retention, the `pg_cron` job and the partitions with their size and row count.
+|===
+
+* The application roles of `db_create.sh` cannot read or change `audit.audit_log` (no access to the schema). The trigger function
+  runs with the rights of its owner, so they can still write through it. `postgres` and the Databasus backup role (`pg_read_all_data`)
+  can read it.
+* The job lives in the `pg_cron` database (`cron.database_name`, default `postgres`), not in the audited database. After a restore
+  from a dump run `audit_setup.sh` again; `db_delete.sh` removes the job together with the database. Without `pg_cron` the default
+  partition catches every row, the log keeps working and only the partitions are not maintained.
+* An audited write costs one more INSERT, so switch it on only for the tables where you need the history.
+* Switching on `pg_cron` is the only change to the server: after the Ansible run, check `SHOW shared_preload_libraries;`.
+
 === Secrets (ansible-vault)
 
 Secrets do *not* live in `group_vars/all/main.yml` but in
