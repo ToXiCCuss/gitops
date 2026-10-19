@@ -19,6 +19,13 @@ psql_cmd() {
   sudo -u postgres psql "$@"
 }
 
+# Remove the partition maintenance job of audit_setup.sh, otherwise it fails every day (pg_cron
+# keeps its jobs in its own database, not in the one that is dropped).
+CRON_DATABASE=$(psql_cmd -tAc "SHOW cron.database_name" 2>/dev/null)
+if [ -n "$CRON_DATABASE" ]; then
+  psql_cmd -d "$CRON_DATABASE" -tAc "SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = 'audit-maintenance-$DB_NAME';" > /dev/null 2>&1
+fi
+
 psql_cmd -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid <> pg_backend_pid();"
 
 psql_cmd -c "DROP DATABASE IF EXISTS \"$DB_NAME\";"
