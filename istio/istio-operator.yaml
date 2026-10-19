@@ -1,0 +1,19 @@
+# Input for `istioctl install -f istio/istio-operator.yaml` (see README, "Istio").
+# Istio is installed by hand and stays outside ArgoCD. This file is not applied to the
+# cluster by itself, it only keeps the settings that a plain `istioctl install` would reset.
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: installed-state
+  namespace: istio-system
+spec:
+  profile: default
+  components:
+    ingressGateways:
+      - name: istio-ingressgateway
+        enabled: true
+        k8s:
+          service:
+            # Keeps the client's source address. A plain `istioctl install` sets the
+            # Service back to Cluster, which hides the real client IP from the apps.
+            externalTrafficPolicy: Local
