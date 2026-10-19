@@ -5,76 +5,89 @@
   roles:
     - base
 
+# Puts the host into one group per role that applies to it (has_<role>, from the
+# <role>_hosts lists in group_vars/all/main.yml). The plays below only run on their group,
+# so a role that does not apply shows as one skipped play instead of one line per task.
+# Needs the facts (ansible_hostname) of the play above.
+- name: Sort the host into the groups of the roles that apply to it
+  hosts: all
+  tags: always
+  tasks:
+    - name: Add the host to a group per role
+      ansible.builtin.group_by:
+        key: "has_{{ item }}"
+      loop:
+        - netbird
+        - firewall
+        - node_exporter
+        - docker
+        - mariadb
+        - postgresql
+        - postgres_exporter
+        - mongodb
+        - k3s
+      when: ansible_hostname in lookup('vars', item ~ '_hosts')
+
 # Before the firewall: the host joins NetBird first, so it stays reachable once UFW denies
 # everything that is not allowed.
-- name: Install NetBird (only on hosts listed in netbird_hosts)
-  hosts: all
+- name: Install NetBird
+  hosts: has_netbird
   become: true
   roles:
-    - role: netbird
-      when: ansible_hostname in netbird_hosts
+    - netbird
 
-- name: Configure the firewall (only on hosts listed in firewall_hosts)
-  hosts: all
+- name: Configure the firewall
+  hosts: has_firewall
   become: true
   roles:
     - role: firewall
-      when: ansible_hostname in firewall_hosts
       tags: firewall
 
-- name: Install Node Exporter (only on hosts listed in node_exporter_hosts)
-  hosts: all
+- name: Install Node Exporter
+  hosts: has_node_exporter
   become: true
   roles:
-    - role: node_exporter
-      when: ansible_hostname in node_exporter_hosts
+    - node_exporter
 
-- name: Install Docker (only on hosts listed in docker_hosts)
-  hosts: all
+- name: Install Docker
+  hosts: has_docker
   become: true
   roles:
-    - role: docker
-      when: ansible_hostname in docker_hosts
+    - docker
 
-- name: Install MariaDB (only on hosts listed in mariadb_hosts)
-  hosts: all
+- name: Install MariaDB
+  hosts: has_mariadb
   become: true
   roles:
-    - role: mariadb
-      when: ansible_hostname in mariadb_hosts
+    - mariadb
 
-- name: Install PostgreSQL (only on hosts listed in postgresql_hosts)
-  hosts: all
+- name: Install PostgreSQL
+  hosts: has_postgresql
   become: true
   roles:
-    - role: postgresql
-      when: ansible_hostname in postgresql_hosts
+    - postgresql
 
-- name: Install postgres_exporter (only on hosts listed in postgres_exporter_hosts)
-  hosts: all
+- name: Install postgres_exporter
+  hosts: has_postgres_exporter
   become: true
   roles:
-    - role: postgres_exporter
-      when: ansible_hostname in postgres_exporter_hosts
+    - postgres_exporter
 
-- name: Install MongoDB (only on hosts listed in mongodb_hosts)
-  hosts: all
+- name: Install MongoDB
+  hosts: has_mongodb
   become: true
   roles:
-    - role: mongodb
-      when: ansible_hostname in mongodb_hosts
+    - mongodb
 
-- name: Install k3s (only on hosts listed in k3s_hosts)
-  hosts: all
+- name: Install k3s
+  hosts: has_k3s
   become: true
   roles:
     - role: k3s
-      when: ansible_hostname in k3s_hosts
       tags: k3s
 
-- name: Configure Harbor pull-through mirrors for k3s (only on hosts listed in k3s_hosts)
-  hosts: all
+- name: Configure Harbor pull-through mirrors for k3s
+  hosts: has_k3s
   become: true
   roles:
-    - role: k3s_registries
-      when: ansible_hostname in k3s_hosts
+    - k3s_registries
