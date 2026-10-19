@@ -1,0 +1,31 @@
+---
+# Kernel and service settings shared by the database roles (postgresql, mariadb, mongodb).
+# Each of them includes this role at its end and sets the three "per role" variables.
+
+# Per role: name used in file names (/etc/sysctl.d/70-<name>.conf), systemd unit that carries
+# the drop-in (postgresql@.service for PostgreSQL: postgresql.service is only a wrapper) and
+# the service that is restarted when the drop-in changes.
+database_tuning_name: ""
+database_tuning_unit: ""
+database_tuning_service: ""
+
+# Per role: sysctls on top of the common ones, and the THP mode (madvise, never, always).
+database_tuning_extra_sysctls: {}
+database_tuning_transparent_hugepage: madvise
+
+# Keep the database cache in RAM, write dirty pages in smaller batches (less latency
+# spikes at checkpoints), queue more new connections, detect dead clients after 5 minutes
+# and allow enough asynchronous I/O requests.
+database_tuning_sysctls:
+  vm.swappiness: 1
+  vm.dirty_background_ratio: 5
+  vm.dirty_ratio: 15
+  net.core.somaxconn: 4096
+  net.ipv4.tcp_keepalive_time: 300
+  fs.aio-max-nr: 1048576
+
+database_tuning_open_files_limit: 65536
+
+# The OOM killer picks the process with the highest score; -900 puts the database last,
+# so containers on the same host are killed first.
+database_tuning_oom_score_adjust: -900

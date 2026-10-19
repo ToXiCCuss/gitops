@@ -47,3 +47,11 @@
     name: postgresql
     state: started
     enabled: true
+
+- name: Tune the kernel and service limits for PostgreSQL
+  ansible.builtin.include_role:
+    name: database_tuning
+  vars:
+    database_tuning_name: postgresql
+    database_tuning_unit: postgresql@.service
+    database_tuning_service: postgresql
