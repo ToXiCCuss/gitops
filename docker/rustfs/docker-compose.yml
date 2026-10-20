@@ -1,0 +1,23 @@
+services:
+  rustfs:
+    image: rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
+    container_name: rustfs
+    # Trial instance next to SeaweedFS, not part of the backup chain. Not in ALL_PROJECTS of deploy.sh:
+    # deploy it by name (scripts/docker/deploy.sh rustfs). The console logs in with Keycloak (RUSTFS_IDENTITY_OPENID_*).
+    env_file:
+      - "default.env"
+      - "override.env"
+    # The host DNS is the NetBird resolver (100.x), which containers cannot reach (RustFS must resolve auth.proxy.rjst.de)
+    dns:
+      - 1.1.1.1
+      - 9.9.9.9
+    ports:
+      # S3 API
+      - "9000:9000"
+      # Console
+      - "9001:9001"
+    volumes:
+      # Owned by 10001:10001, the runtime user of the image (pre-deploy.sh)
+      - /root/docker/rustfs/data:/data
+      - /root/docker/rustfs/logs:/app/logs
+    restart: unless-stopped

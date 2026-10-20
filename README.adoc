@@ -981,6 +981,30 @@ replaces all keys
 * After the first deploy open `http://<docker-host>:23646`. If it shows no login page, stop the project and do not publish the port:
   then the environment variables are not read by `weed mini`
 
+=== Setup RustFS (trial)
+
+`docker/rustfs` is a second S3 server next to SeaweedFS, to try its console with the login of Keycloak. It is *not* part of the backup chain
+(no identities of `setup-backup-host.sh`, not in `ALL_PROJECTS` of `deploy.sh`), so a normal `deploy.sh` run does not touch it. RustFS is young
+(1.0.x), so do not put backups on it before you trust it. Ports: `9000` S3 API, `9001` console.
+
+. Keycloak: set `RUSTFS_CLIENT_SECRET` in `docker/keycloak-config/override.env` (`openssl rand -base64 32`), then
+  `sudo scripts/docker/deploy.sh keycloak-config`. That creates the client `rustfs` and its client roles `consoleAdmin`, `readwrite` and `readonly`
+  (the names of the RustFS policies). The deploy of `keycloak-config` stops with an undefined variable until the secret is set.
+. Keycloak UI: give your user the client role `consoleAdmin` of the client `rustfs` (*Users > Role mapping*).
+. `docker/rustfs/override.env` from `override.env.example`: `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY` (root login, not `rustfsadmin`) and
+  `RUSTFS_IDENTITY_OPENID_CLIENT_SECRET` (the same value as `RUSTFS_CLIENT_SECRET`).
+. `sudo scripts/docker/deploy.sh rustfs`. `pre-deploy.sh` makes the data directories belong to the user `10001` of the image.
+. NetBird dashboard: the reverse proxy service `s3-admin.proxy.rjst.de` (the one of the SeaweedFS admin UI) points to port `9001` of the Docker host,
+  restricted to your peers. To compare, switch its target between `23646` (SeaweedFS) and `9001` (RustFS).
+
+* RustFS fetches the discovery document and the token from `https://auth.proxy.rjst.de`. Test from a container with the same DNS before the first login:
+  `docker run --rm --dns 1.1.1.1 curlimages/curl -s https://auth.proxy.rjst.de/realms/rjst/.well-known/openid-configuration`.
+  If the address resolves to a NetBird address, the origin is already allowed for RustFS in `default.env` (`RUSTFS_OUTBOUND_ALLOW_ORIGINS`).
+* The user of a login gets the RustFS policies named in the claim `roles`. The root login (`RUSTFS_ACCESS_KEY`) stays as the emergency login.
+* Not verified: whether the callback `/rustfs/admin/v3/oidc/callback/default` is served on the console port `9001` or on the API port `9000`.
+  If the login ends in a 404 after Keycloak, let the reverse proxy route `/rustfs/admin/` to port `9000`.
+* The RustFS data is `/root/docker/rustfs/data`. Nothing backs it up.
+
 === Setup Pelican S3 backups
 
 Pelican can store the backups of its servers in an S3. The bucket `pelican` and the identity `pelican` (Read, Write, List
