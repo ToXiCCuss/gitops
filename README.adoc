@@ -198,6 +198,41 @@ is not logged. Run it again after the primary key changed.
 * An audited write costs one more INSERT, so switch it on only for the tables where you need the history.
 * Switching on `pg_cron` is the only change to the server: after the Ansible run, check `SHOW shared_preload_libraries;`.
 
+=== MongoDB (scripts)
+
+MongoDB is not assigned to a host yet (`mongodb_hosts` is empty). The role `mongodb` starts it with `authorization: enabled`.
+The scripts in `scripts/mongodb/` use `mongosh` on the host.
+
+*Admin login for the scripts:* MongoDB has no peer authentication like PostgreSQL, so the scripts read the admin login from
+`/etc/mongodb-admin.cred` if the file exists (without it they run without credentials, which only works through the localhost
+exception before the first user exists). Create the first admin user through the localhost exception (`mongosh`, `use admin`,
+`db.createUser({user: "admin", pwd: "...", roles: ["root"]})`), then the file:
+
+----
+ADMIN_USER="admin"
+ADMIN_PASS="..."
+----
+
+with `chown root:root` and `chmod 600`.
+
+[cols="2,3"]
+|===
+|Script |Purpose
+
+|`create_db_user.sh <db>`
+|Creates the database and its owner `<db>_owner` with the role `dbOwner`, prints the password.
+
+|`create_user.sh <db> <user> [role ...]`
+|Adds a user to the database. Roles: `ro` (`read`), `rw` (`readWrite`), `owner` (`dbOwner`) or any MongoDB role such as `dbAdmin`.
+Without roles it asks interactively, without a terminal it takes `readWrite`. Example: `create_user.sh shop app rw dbAdmin`.
+
+|`reset_password.sh <db> <user>`
+|Sets and prints a new random password.
+
+|`cleanup_db_user.sh <db>`
+|Drops the users of the database and the database. Refuses `admin`, `local` and `config`.
+|===
+
 === Secrets (ansible-vault)
 
 Secrets do *not* live in `group_vars/all/main.yml` but in
