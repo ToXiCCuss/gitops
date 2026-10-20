@@ -19,6 +19,13 @@ services:
     ports:
       - "8333:8333"
       - "23646:23646"
+    labels:
+      # Link on the portal page (kubernetes/management/kubectl/portal.yaml). The NetBird reverse proxy s3-admin.proxy.rjst.de
+      # points to the admin UI of SeaweedFS (23646) or of the RustFS trial (docker/rustfs, 9001): only this entry lists it
+      portal.name: "S3 Admin"
+      portal.url: "https://s3-admin.proxy.rjst.de"
+      portal.group: "Backup"
+      portal.description: "S3-Speicher"
     restart: unless-stopped
     volumes:
       - "/root/docker/seaweedfs:/data"
