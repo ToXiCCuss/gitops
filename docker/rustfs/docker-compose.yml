@@ -11,6 +11,9 @@ services:
     dns:
       - 1.1.1.1
       - 9.9.9.9
+    # host.docker.internal points to the Docker host, where Keycloak listens on 8180
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       # S3 API
       - "9000:9000"

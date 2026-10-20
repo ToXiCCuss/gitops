@@ -997,9 +997,13 @@ replaces all keys
 . NetBird dashboard: the reverse proxy service `s3-admin.proxy.rjst.de` (the one of the SeaweedFS admin UI) points to port `9001` of the Docker host,
   restricted to your peers. To compare, switch its target between `23646` (SeaweedFS) and `9001` (RustFS).
 
-* RustFS fetches the discovery document and the token from `https://auth.proxy.rjst.de`. Test from a container with the same DNS before the first login:
-  `docker run --rm --dns 1.1.1.1 curlimages/curl -s https://auth.proxy.rjst.de/realms/rjst/.well-known/openid-configuration`.
-  If the address resolves to a NetBird address, the origin is already allowed for RustFS in `default.env` (`RUSTFS_OUTBOUND_ALLOW_ORIGINS`).
+* The container cannot use `https://auth.proxy.rjst.de` (the NetBird proxy only serves peers and answers `403` for a container). RustFS therefore fetches the discovery
+  document, the keys and the token from the published port of Keycloak (`RUSTFS_IDENTITY_OPENID_CONFIG_URL=http://host.docker.internal:8180/realms/rjst`) and checks the
+  issuer against the public URL (`RUSTFS_IDENTITY_OPENID_ISSUER`). For that Keycloak needs `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` (`docker/keycloak/default.env`): a call to
+  port 8180 then gets the token and key endpoints of the address it used, while issuer and login page stay public. Deploy it first: `sudo scripts/docker/deploy.sh keycloak`
+  (a short restart of Keycloak, the apps keep their local logins). Check it before the first login, the token endpoint must be `http://host.docker.internal:8180/...` and the issuer public:
+  `docker run --rm --add-host host.docker.internal:host-gateway curlimages/curl -s http://host.docker.internal:8180/realms/rjst/.well-known/openid-configuration`.
+  If that call hangs, the firewall blocks the Docker network (`ufw allow from 172.16.0.0/12 to any port 8180 proto tcp`, as an entry in `firewall_rules` like the one for `8333`).
 * The user of a login gets the RustFS policies named in the claim `roles`. The root login (`RUSTFS_ACCESS_KEY`) stays as the emergency login.
 * Not verified: whether the callback `/rustfs/admin/v3/oidc/callback/default` is served on the console port `9001` or on the API port `9000`.
   If the login ends in a 404 after Keycloak, let the reverse proxy route `/rustfs/admin/` to port `9000`.
