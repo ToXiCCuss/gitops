@@ -20,5 +20,11 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
     command:
-      - '--housekeeping_interval=10s'
+      # Matches the Prometheus scrape interval of 30s, a shorter interval only burns CPU
+      - '--housekeeping_interval=30s'
       - '--docker_only=true'
+      # Without this every series carries all Docker labels (~4 KB per line, 8 MB per scrape)
+      - '--store_container_labels=false'
+      - '--whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service'
+      # The Grafana dashboard 21361 only uses cpu, memory and network metrics
+      - '--disable_metrics=disk,diskIO,percpu,process,sched,tcp,udp,advtcp,hugetlb,referenced_memory,cpu_topology,resctrl,memory_numa'
