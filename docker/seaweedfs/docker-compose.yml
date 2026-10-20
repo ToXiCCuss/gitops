@@ -3,18 +3,22 @@ services:
     image: chrislusf/seaweedfs@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     container_name: seaweedfs
     # The default command of the image is `weed mini` (master, volume server, filer and S3 in one process),
-    # this is also what this project ran before. Only the S3 port is published, the filer and the admin UI
-    # have no authentication. Access to S3 is controlled by the identities in s3.json.
+    # this is also what this project ran before. The S3 port and the admin UI are published, the filer has no
+    # authentication and stays closed. Access to S3 is controlled by the identities in s3.json. The admin UI
+    # asks for the login of default.env / override.env (WEED_ADMIN_*), use only the read-only account.
+    env_file:
+      - "default.env"
+      - "override.env"
     command:
       - "mini"
       - "-s3.config=/etc/seaweedfs/s3.json"
       - "-bucket=backups,databases,vault,pelican,netbird"
       - "-webdav=false"
-      - "-admin.ui=false"
       - "-s3.port.iceberg=0"
       - "-s3.port.lance=0"
     ports:
       - "8333:8333"
+      - "23646:23646"
     restart: unless-stopped
     volumes:
       - "/root/docker/seaweedfs:/data"
