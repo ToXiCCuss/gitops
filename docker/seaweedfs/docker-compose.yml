@@ -18,8 +18,7 @@ services:
       - "-s3.port.lance=0"
     ports:
       - "8333:8333"
-      # Admin UI. 23646 is only a compatibility port (HTTP and gRPC), it shows no pages
-      - "12535:12535"
+      - "23646:23646"
     restart: unless-stopped
     volumes:
       - "/root/docker/seaweedfs:/data"

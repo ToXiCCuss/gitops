@@ -967,13 +967,13 @@ replaces all keys
 * The keys of `backrest`, `offsite-sync` and `vault` are written into the `override.env` files by the script. Copy the keys of `databasus`, `pelican` and `netbird` from `/root/backup-credentials.env` into their settings, then delete the file
 * `Write` includes deleting objects in SeaweedFS, so a leaked `backrest` key can delete the local backups. pCloud keeps deleted files (`Backups-deleted`)
 * The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird` on start (`-bucket=`)
-* The S3 port `8333` and the admin UI (`12535`) are published, the filer (`8888`) is not. Like the other published ports they go around
-  UFW (Docker), so restrict `12535` outside the host (router, NetBird policy) and open it only for your peers
+* The S3 port `8333` and the admin UI (`23646`) are published, the filer (`8888`) is not. Like the other published ports they go around
+  UFW (Docker), so restrict `23646` outside the host (router, NetBird policy) and open it only for your peers
 * The admin UI asks for a login. Set `WEED_ADMIN_PASSWORD` and `WEED_ADMIN_READONLY_PASSWORD` in `docker/seaweedfs/override.env`
   (for example `openssl rand -base64 24`) *before* the first deploy, `deploy.sh` stops without them. Sign in with the user `viewer`
   (`WEED_ADMIN_READONLY_USER` in `default.env`) to browse buckets and objects. Do not create users in the UI: the identities live in
   `s3.json` (source of truth) and could be replaced. OIDC with Keycloak is an Enterprise feature of SeaweedFS
-* After the first deploy open `http://<docker-host>:12535`. If it shows no login page, stop the project and do not publish the port:
+* After the first deploy open `http://<docker-host>:23646`. If it shows no login page, stop the project and do not publish the port:
   then the environment variables are not read by `weed mini`
 
 === Setup Pelican S3 backups
