@@ -1,0 +1,3 @@
+# Copy to backend.hcl (ignored by Git) and fill in. The password is not part of it: set PGPASSWORD in the shell.
+# sslmode=disable: the connection runs through NetBird (WireGuard), PostgreSQL itself has no TLS.
+conn_str = "postgres://tofu_state_owner@<docker-host>:5432/tofu_state?sslmode=disable"

@@ -1,0 +1,18 @@
+#cloud-config
+# Minimal on purpose: only what Ansible needs to take over. Everything else is configured by
+# the roles in ansible/ from the checkout below.
+hostname: ${hostname}
+manage_etc_hosts: true
+# Ansible runs as root; the base role hardens sshd afterwards (PermitRootLogin prohibit-password).
+disable_root: false
+ssh_authorized_keys: ${jsonencode(ssh_public_keys)}
+
+package_update: true
+packages:
+  - ansible
+  - git
+  - qemu-guest-agent
+
+runcmd:
+  - systemctl start qemu-guest-agent
+  - git clone --branch ${gitops_branch} ${gitops_repository_url} ${gitops_directory}

@@ -5,3 +5,9 @@
 
 # Secrets of the Docker projects, only on the server (see override.env.example in each project)
 override.env
+
+# OpenTofu: downloaded providers, local state (the real state lives in the S3 backend) and backend settings
+.terraform/
+*.tfstate
+*.tfstate.*
+/tofu/proxmox/backend.hcl

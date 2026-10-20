@@ -17,6 +17,9 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 |`istio/`
 |`IstioOperator` file for the manual `istioctl install` (outside ArgoCD).
 
+|`tofu/`
+|OpenTofu: VMs on the Proxmox host (`tofu/proxmox/`), state in PostgreSQL. Cloud-init installs Ansible and checks out this repository on each VM.
+
 |`kubernetes/`
 |ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, spring).
 
@@ -367,6 +370,71 @@ is missing, _every_ `ansible-playbook` run aborts with
 `The vault password file .vault_pass was not found` - run the script first.
 Tasks that use secrets already have `no_log: true`, so the values do not show
 up in the output or in `--check --diff`.
+
+== OpenTofu (Proxmox VMs)
+
+`tofu/proxmox/` creates the VMs on the Proxmox host with the `bpg/proxmox` provider. OpenTofu only creates the VM (CPU, RAM,
+disk, IP, SSH key). Cloud-init installs `git`, `ansible` and the QEMU guest agent and clones this repository to `/root/gitops`.
+Everything inside the VM is then configured by Ansible (see <<Ansible>>), run on the VM itself.
+
+Run everything in this section from the `tofu/proxmox/` folder.
+
+=== Prerequisites on the Proxmox host
+
+* Proxmox VE 8.4 or newer (disk import from a cloud image).
+* The datastore in `image_datastore_id` has the content type *Import*, the one in `snippet_datastore_id` has *Snippets*
+  (Datacenter -> Storage -> Content).
+* An API token of a dedicated user with a minimal role. The provider additionally needs SSH access to the host
+  (`proxmox_ssh_username`, key in the SSH agent).
+
+=== Setup
+
+. Create the state database on the Docker host. The script prints the password of the user `tofu_state_owner` once, store it in
+  the password manager. Add the database `tofu_state` in Databasus so that the state is part of the backups. The PostgreSQL
+  host must not be a VM managed by this state:
++
+[source,bash]
+----
+sudo scripts/postgresql/db_create.sh tofu_state
+----
+. Copy `backend.hcl.example` to `backend.hcl` (ignored by Git) and fill in the address of the Docker host (reached through
+  NetBird).
+. Replace every `CHANGE_ME` in `terraform.tfvars`.
+. Set the secrets in the shell, never in a file:
++
+[source,powershell]
+----
+$env:PROXMOX_VE_ENDPOINT = "https://<proxmox-host>:8006/"
+$env:PROXMOX_VE_API_TOKEN = "<user>@<realm>!<token-name>=<secret>"
+$env:PGPASSWORD = "<password of tofu_state_owner>"
+$env:TF_ENCRYPTION = 'key_provider "pbkdf2" "state" { passphrase = "<at least 16 characters>" }'
+----
+. Initialise:
++
+[source,powershell]
+----
+tofu init -backend-config=backend.hcl
+----
+
+The passphrase in `TF_ENCRYPTION` encrypts the state and the plan (they contain the cloud-init content). Keep it in the
+password manager: without it the state cannot be read. The `pg` backend locks the state with an advisory lock of PostgreSQL.
+The connection uses `sslmode=disable` because it runs through NetBird and PostgreSQL has no TLS.
+
+=== Add a VM
+
+Add an entry to `vms.auto.tfvars` (hostname as key, `vm_id` and IP must be unique), then check and apply:
+
+[source,powershell]
+----
+tofu plan
+tofu apply
+----
+
+After the first boot, check `cloud-init status` on the VM. Then add the host to the Ansible configuration
+(`ansible/group_vars/all/main.yml`) and run the playbook on the VM from `/root/gitops/ansible`. `tofu output vm_ip_addresses`
+lists the addresses.
+
+The VMs have `prevent_destroy` set. To remove one on purpose, delete that line in `modules/vm/main.tf` first.
 
 == Docker
 
