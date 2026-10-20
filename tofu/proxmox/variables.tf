@@ -24,7 +24,7 @@ variable "snippet_datastore_id" {
 variable "disk_datastore_id" {
   description = "Datastore for the VM disks and the cloud-init drive."
   type        = string
-  default     = "local-lvm"
+  default     = "local-zfs"
 }
 
 variable "image_url" {
@@ -44,7 +44,8 @@ variable "network_prefix_length" {
 }
 
 variable "network_gateway" {
-  type = string
+  description = "Default gateway of the VMs, a VM can set its own (gateway)."
+  type        = string
 }
 
 variable "dns_servers" {
@@ -78,12 +79,18 @@ variable "gitops_directory" {
 }
 
 variable "vms" {
-  description = "The VMs, keyed by hostname."
+  description = "The VMs, keyed by hostname. Optional: own gateway and prefix length (e.g. routed additional IPs), CPU type, a data disk, tags and start order."
   type = map(object({
-    vm_id            = number
-    ip_address       = string
-    cores            = optional(number, 2)
-    memory_mebibytes = optional(number, 2048)
-    disk_gibibytes   = optional(number, 20)
+    vm_id                 = number
+    ip_address            = string
+    gateway               = optional(string)
+    network_prefix_length = optional(number)
+    cores                 = optional(number, 2)
+    memory_mebibytes      = optional(number, 2048)
+    disk_gibibytes        = optional(number, 20)
+    data_disk_gibibytes   = optional(number)
+    cpu_type              = optional(string, "x86-64-v2-AES")
+    tags                  = optional(list(string), [])
+    startup_order         = optional(number)
   }))
 }

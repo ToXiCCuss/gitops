@@ -20,6 +20,10 @@ resource "proxmox_virtual_environment_vm" "this" {
   node_name = var.node_name
   vm_id     = var.vm_id
   on_boot   = true
+  tags      = sort(var.tags)
+
+  # One I/O thread per disk, needs the single controller
+  scsi_hardware = "virtio-scsi-single"
 
   operating_system {
     type = "l26"
@@ -31,7 +35,7 @@ resource "proxmox_virtual_environment_vm" "this" {
 
   cpu {
     cores = var.cores
-    type  = "x86-64-v2-AES"
+    type  = var.cpu_type
   }
 
   memory {
@@ -44,6 +48,28 @@ resource "proxmox_virtual_environment_vm" "this" {
     interface    = "scsi0"
     size         = var.disk_gibibytes
     discard      = "on"
+    iothread     = true
+  }
+
+  dynamic "disk" {
+    for_each = var.data_disk_gibibytes == null ? [] : [var.data_disk_gibibytes]
+
+    content {
+      datastore_id = var.disk_datastore_id
+      interface    = "scsi1"
+      size         = disk.value
+      file_format  = "raw"
+      discard      = "on"
+      iothread     = true
+    }
+  }
+
+  dynamic "startup" {
+    for_each = var.startup_order == null ? [] : [var.startup_order]
+
+    content {
+      order = startup.value
+    }
   }
 
   network_device {

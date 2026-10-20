@@ -23,6 +23,26 @@ variable "disk_gibibytes" {
   type = number
 }
 
+variable "data_disk_gibibytes" {
+  description = "Size of a second disk for data (scsi1), kept apart from the system disk. Null: no data disk."
+  type        = number
+  default     = null
+}
+
+variable "cpu_type" {
+  type = string
+}
+
+variable "tags" {
+  type = list(string)
+}
+
+variable "startup_order" {
+  description = "Start order on the host (lower starts first). Null: no order."
+  type        = number
+  default     = null
+}
+
 variable "node_name" {
   type = string
 }

@@ -17,13 +17,18 @@ module "vm" {
   memory_mebibytes = each.value.memory_mebibytes
   disk_gibibytes   = each.value.disk_gibibytes
 
+  data_disk_gibibytes = each.value.data_disk_gibibytes
+  cpu_type            = each.value.cpu_type
+  tags                = each.value.tags
+  startup_order       = each.value.startup_order
+
   node_name             = var.node_name
   image_file_id         = proxmox_download_file.cloud_image.id
   disk_datastore_id     = var.disk_datastore_id
   snippet_datastore_id  = var.snippet_datastore_id
   network_bridge        = var.network_bridge
-  network_prefix_length = var.network_prefix_length
-  network_gateway       = var.network_gateway
+  network_prefix_length = coalesce(each.value.network_prefix_length, var.network_prefix_length)
+  network_gateway       = coalesce(each.value.gateway, var.network_gateway)
   dns_servers           = var.dns_servers
 
   ssh_public_keys       = var.ssh_public_keys

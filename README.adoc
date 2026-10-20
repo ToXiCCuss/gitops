@@ -422,7 +422,12 @@ The connection uses `sslmode=disable` because it runs through NetBird and Postgr
 
 === Add a VM
 
-Add an entry to `vms.auto.tfvars` (hostname as key, `vm_id` and IP must be unique), then check and apply:
+Add an entry to `vms.auto.tfvars` (hostname as key, `vm_id` and IP must be unique). Optional per VM: `cores`, `memory_mebibytes`,
+`disk_gibibytes` (system disk), `cpu_type` (`host` for databases and game servers), `data_disk_gibibytes` (a second disk `scsi1` for the
+data, Ansible formats and mounts it), `gateway` and `network_prefix_length` (for routed additional IPs, otherwise the values of
+`terraform.tfvars` apply), `tags` and `startup_order` (lower starts first). The VMs are created on the datastore `disk_datastore_id`
+(default `local-zfs`, the ZFS pool of the Proxmox installation). The file contains the planned VMs of the dedicated server
+(`postgres01`, `mariadb01`, `mongodb01`, `games01`) as comments. Then check and apply:
 
 [source,powershell]
 ----
