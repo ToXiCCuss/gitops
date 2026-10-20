@@ -50,6 +50,14 @@ roles:
         description: Spring Boot Admin prod, read only
       - name: admin
         description: Spring Boot Admin prod, actions
+    # The role names are the policies of RustFS: consoleAdmin may do everything, readwrite and readonly work on the buckets
+    rustfs:
+      - name: consoleAdmin
+        description: RustFS administrator
+      - name: readwrite
+        description: RustFS, reads and writes objects
+      - name: readonly
+        description: RustFS, read only
 
 clients:
   - clientId: grafana
@@ -220,6 +228,35 @@ clients:
         protocolMapper: oidc-usermodel-client-role-mapper
         config:
           usermodel.clientRoleMapping.clientId: vault
+          claim.name: roles
+          jsonType.label: String
+          multivalued: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+
+  - clientId: rustfs
+    name: RustFS
+    protocol: openid-connect
+    enabled: true
+    publicClient: false
+    secret: $(env:RUSTFS_CLIENT_SECRET)
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    rootUrl: https://s3-admin.proxy.rjst.de
+    redirectUris:
+      - https://s3-admin.proxy.rjst.de/rustfs/admin/v3/oidc/callback/default
+    webOrigins:
+      - https://s3-admin.proxy.rjst.de
+    attributes:
+      pkce.code.challenge.method: S256
+    protocolMappers:
+      - name: rustfs-roles
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-client-role-mapper
+        config:
+          usermodel.clientRoleMapping.clientId: rustfs
           claim.name: roles
           jsonType.label: String
           multivalued: "true"
