@@ -17,3 +17,9 @@ docker_daemon_options:
 
 # Docker-Netzwerke, die auf Docker-Hosts vorhanden sein sollen
 docker_networks: []
+
+# Container, die /var/run/docker.sock als Datei einbinden. Mit live-restore laufen sie bei einem
+# Neustart von dockerd (z. B. Paket-Update) weiter, hängen aber am alten Socket
+# ("connection refused"). Ein systemd-Drop-in startet sie nach jedem Start von dockerd neu.
+docker_socket_containers:
+  - pelican_wings

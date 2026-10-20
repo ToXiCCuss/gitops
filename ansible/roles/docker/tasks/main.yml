@@ -60,6 +60,27 @@
     mode: "0644"
   notify: restart docker
 
+- name: Create the systemd drop-in directory of Docker
+  file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    mode: "0755"
+
+# Only takes effect at the next start of dockerd, so Docker is not restarted here.
+- name: Restart the containers that mount the Docker socket after every start of dockerd
+  template:
+    src: docker-socket-containers.conf.j2
+    dest: /etc/systemd/system/docker.service.d/restart-socket-containers.conf
+    owner: root
+    group: root
+    mode: "0644"
+  register: docker_socket_dropin
+
+- name: Reload systemd after the drop-in changed
+  systemd:
+    daemon_reload: true
+  when: docker_socket_dropin is changed
+
 - name: Ensure Docker service is enabled and running
   service:
     name: docker

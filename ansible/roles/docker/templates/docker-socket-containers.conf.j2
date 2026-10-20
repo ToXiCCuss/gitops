@@ -1,0 +1,7 @@
+# {{ ansible_managed }}
+# Restarts the containers that mount /var/run/docker.sock after every start of dockerd, so they
+# use the new socket ("-": a missing container does not fail the Docker start).
+[Service]
+{% for container in docker_socket_containers %}
+ExecStartPost=-/usr/bin/docker restart {{ container }}
+{% endfor %}

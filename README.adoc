@@ -476,6 +476,11 @@ when it starts and keeps the old copy, so it can no longer resolve the NetBird n
 sudo scripts/docker/restart-host-network.sh
 ----
 
+Containers that mount `/var/run/docker.sock` (`pelican_wings`) need no manual step. Docker runs with `live-restore`, so a restart of
+`dockerd` (package update) keeps them running on the old socket and Wings fails with "dial unix /var/run/docker.sock: connect:
+connection refused". The role `docker` therefore adds a systemd drop-in (`docker.service.d/restart-socket-containers.conf`) that
+restarts the containers in `docker_socket_containers` after every start of `dockerd`.
+
 The secrets of a project are in `docker/<project>/override.env`. The file is *not* in Git (`.gitignore`), the variables a project needs are
 named in `docker/<project>/override.env.example` (`NAME=` is required, `#NAME=` is optional). `default.env` lists all variables of
 a project and the compose file reads `default.env` first and `override.env` second. `deploy.sh` checks the required variables before it
