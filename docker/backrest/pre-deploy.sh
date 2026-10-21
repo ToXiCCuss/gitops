@@ -31,11 +31,14 @@ TARGET="${1:-$CONFIG_FILE}"
 REQUIRED_VARIABLES=(AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY RESTIC_PASSWORD_DOCKER RESTIC_PASSWORD_VAULT RESTIC_PASSWORD_NETBIRD)
 OPTIONAL_VARIABLES=(DISCORD_WEBHOOK_URL)
 
-# Without a webhook the hooks are left out, Backrest would refuse an empty URL
+# Without a webhook the Discord hooks are left out, Backrest would refuse an empty URL. The other hooks stay
 RENDER_PROGRAM='
-def withoutHooks: walk(if type == "object" then del(.hooks) else . end);
+def withoutDiscordHooks: walk(
+    if type == "object" and has("hooks")
+    then .hooks |= map(select(has("actionDiscord") | not)) | (if (.hooks | length) == 0 then del(.hooks) else . end)
+    else . end);
 def substituted: walk(if type == "string" then gsub("\\$\\{(?<name>[A-Z0-9_]+)\\}"; $ENV[.name]) else . end);
-(if ($ENV.DISCORD_WEBHOOK_URL // "") == "" then withoutHooks else . end)
+(if ($ENV.DISCORD_WEBHOOK_URL // "") == "" then withoutDiscordHooks else . end)
 | substituted
 | .modno = ($live.modno // 1)
 | (if $live.auth then .auth = $live.auth else . end)

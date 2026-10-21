@@ -35,4 +35,6 @@ services:
       - /root/gitops:/userdata/gitops:ro
       # Only restore target that is writable
       - /root/docker/backrest/restore:/restore
+      # Textfile collector of the node_exporter: a successful snapshot of the key files leaves its time there
+      - /var/lib/prometheus/node-exporter:/metrics
     restart: unless-stopped

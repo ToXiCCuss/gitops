@@ -568,7 +568,7 @@ the PVCs of the Kubernetes apps. MariaDB (`docker01`) is not backed up until a d
 |`rclone check --one-way --size-only` S3 -> pCloud after every sync (S3 and pCloud have no common hash, so it compares sizes). A mismatch fails the sync
 
 |Failed jobs
-|Offsite sync, `vault-backup` and `netbird_backup.sh` (`DISCORD_WEBHOOK_URL`) post to a Discord webhook when a run fails. Databasus and Backrest have their own Discord notification, see <<Discord alerts>>. A job that does not run at all sends nothing itself. For `offsite-sync` and `vault-backup` Prometheus catches it, see <<Backup age alerts>>
+|Offsite sync, `vault-backup` and `netbird_backup.sh` (`DISCORD_WEBHOOK_URL`) post to a Discord webhook when a run fails. Databasus and Backrest have their own Discord notification, see <<Discord alerts>>. A job that does not run at all sends nothing itself. For `offsite-sync`, `vault-backup` and the Backrest key files plan Prometheus catches it, see <<Backup age alerts>>
 
 |Backups can be restored
 |By hand once per quarter: restore the latest PostgreSQL dump into a scratch database and a Vault snapshot, both from *pCloud*
@@ -615,12 +615,13 @@ of the repository: stop it once with `sudo scripts/docker/undeploy.sh uptimeKuma
 
 ==== Backup age alerts
 
-A job that does not run at all (container stopped, cron gone) sends no Discord message. To catch that, `offsite-sync` and `vault-backup`
+A job that does not run at all (container stopped, cron gone) sends no Discord message. To catch that, `offsite-sync`, `vault-backup` and Backrest
 write `backup_last_success_timestamp_seconds{backup="<job>"}` after every successful run into the textfile collector
 directory of the node_exporter on docker01 (`/var/lib/prometheus/node-exporter/<job>.prom`, created by the Ansible role `node_exporter`).
-Prometheus scrapes it with the other node_exporter metrics and the rules in `kubernetes/monitoring/kubectl/alert-rules.yaml` alert when the
-last success is older than 26 hours or when `offsite-sync` or `vault-backup` never reported. The alerts go through
-Alertmanager to a Discord webhook, which is set in Vault as `argocd/data/prometheus#discord_webhook_url`. Databasus, Backrest and
+Backrest does it with a command hook (`CONDITION_SNAPSHOT_SUCCESS`) on the plan of the key files, see `docker/backrest/config.template.json`,
+the other two in their scripts. Prometheus scrapes the files with the other node_exporter metrics and the rules in
+`kubernetes/monitoring/kubectl/alert-rules.yaml` alert when the last success is older than 26 hours or when one of the three never reported.
+The alerts go through Alertmanager to a Discord webhook, which is set in Vault as `argocd/data/prometheus#discord_webhook_url`. Databasus and
 `netbird_backup.sh` do not write this metric. They are only covered by their own Discord notification (NetBird is backed up by hand
 with every update, see `netbird_upgrade.sh`).
 

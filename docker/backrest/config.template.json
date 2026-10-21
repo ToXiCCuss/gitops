@@ -129,6 +129,12 @@
         {
           "conditions": ["CONDITION_ANY_ERROR"],
           "actionDiscord": { "webhookUrl": "${DISCORD_WEBHOOK_URL}" }
+        },
+        {
+          "conditions": ["CONDITION_SNAPSHOT_SUCCESS"],
+          "actionCommand": {
+            "command": "printf 'backup_last_success_timestamp_seconds{backup=\"backrest\"} %s\\n' \"$(date +%s)\" > /metrics/backrest.prom.tmp && mv /metrics/backrest.prom.tmp /metrics/backrest.prom"
+          }
         }
       ]
     }
