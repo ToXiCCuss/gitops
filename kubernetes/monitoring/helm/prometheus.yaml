@@ -33,6 +33,10 @@ spec:
               # Internal only (no gateway): look at it with a port-forward to the service
               alertmanagerSpec:
                 resources:
+                  # The operator defaults the memory request to 200Mi, which would exceed the limit
+                  requests:
+                    memory: 50Mi
+                    cpu: 10m
                   limits:
                     memory: 100Mi
                     cpu: 250m
