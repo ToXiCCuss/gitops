@@ -568,7 +568,7 @@ the PVCs of the Kubernetes apps. MariaDB (`docker01`) is not backed up until a d
 |`rclone check --one-way --size-only` S3 -> pCloud after every sync (S3 and pCloud have no common hash, so it compares sizes). A mismatch fails the sync
 
 |Failed jobs
-|Offsite sync, `vault-backup` and `netbird_backup.sh` (`DISCORD_WEBHOOK_URL`) post to a Discord webhook when a run fails. Databasus and Backrest have their own Discord notification, see <<Discord alerts>>. A job that does not run at all sends nothing
+|Offsite sync, `vault-backup` and `netbird_backup.sh` (`DISCORD_WEBHOOK_URL`) post to a Discord webhook when a run fails. Databasus and Backrest have their own Discord notification, see <<Discord alerts>>. A job that does not run at all sends nothing itself, Prometheus catches it, see <<Backup age alerts>>
 
 |Backups can be restored
 |By hand once per quarter: restore the latest PostgreSQL dump into a scratch database and a Vault snapshot, both from *pCloud*
@@ -612,6 +612,18 @@ docker exec offsite-sync sh -c 'wget -q -O /dev/null --header "Content-Type: app
 
 An old `PUSH_URL` in an `override.env` or in `/etc/netbird-backup.cred` is ignored now, delete the line. Uptime Kuma is no longer part
 of the repository: stop it once with `sudo scripts/docker/undeploy.sh uptimeKuma` (if that finds nothing, the container was created by the old management UI: `docker rm -f uptime-kuma`), its data stays in `/root/docker/uptime-kuma` until you delete it.
+
+==== Backup age alerts
+
+A job that does not run at all (container stopped, cron gone) sends no Discord message. To catch that, `offsite-sync`, `vault-backup` and
+`netbird_backup.sh` write `backup_last_success_timestamp_seconds{backup="<job>"}` after every successful run into the textfile collector
+directory of the node_exporter on docker01 (`/var/lib/prometheus/node-exporter/<job>.prom`, created by the Ansible role `node_exporter`).
+Prometheus scrapes it with the other node_exporter metrics and the rules in `kubernetes/monitoring/kubectl/alert-rules.yaml` alert when the
+last success is older than 26 hours (`netbird`: 33 days) or when `offsite-sync` or `vault-backup` never reported. The alerts go through
+Alertmanager to a Discord webhook, which is set in Vault as `argocd/data/prometheus#discord_webhook_url`. Databasus and Backrest do not write
+this metric, they are only covered by their own Discord notification.
+
+After the first deploy check the metric: `curl -s localhost:9100/metrics | grep backup_last` on docker01, or `backup_last_success_timestamp_seconds` in Prometheus.
 
 ==== Setting it up, in this order
 
@@ -1277,7 +1289,7 @@ setup nothing is deployed yet, so the commands below pass the port-forward addre
 |`api_key` (NetBird Management API personal access token)
 
 |`argocd/data/prometheus`
-|`password` (Grafana admin password), `oidc.client_secret` (secret of the Keycloak client `grafana`, generated, see Keycloak)
+|`password` (Grafana admin password), `oidc.client_secret` (secret of the Keycloak client `grafana`, generated, see Keycloak), `discord_webhook_url` (webhook of the alert channel for Alertmanager, see <<Backup age alerts>>)
 
 |`argocd/data/harbor`
 |`admin.password`, `database.username`, `database.password`
