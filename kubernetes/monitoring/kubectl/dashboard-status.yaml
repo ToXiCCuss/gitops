@@ -1,5 +1,5 @@
 # Grafana picks this up through the dashboard sidecar (label grafana_dashboard, all namespaces).
-# Overview of the targets, the web UI probes, the firing alerts and the backups, see alert-rules.yaml.
+# Overview of the targets, PostgreSQL, the web UI probes, the firing alerts and the backups, see alert-rules.yaml.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -39,7 +39,7 @@ data:
           "gridPos": {
             "x": 0,
             "y": 0,
-            "w": 6,
+            "w": 4,
             "h": 4
           },
           "targets": [
@@ -95,9 +95,9 @@ data:
             "uid": "prometheus"
           },
           "gridPos": {
-            "x": 6,
+            "x": 4,
             "y": 0,
-            "w": 6,
+            "w": 4,
             "h": 4
           },
           "targets": [
@@ -127,6 +127,77 @@ data:
                   },
                   {
                     "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          }
+        },
+        {
+          "id": 8,
+          "type": "stat",
+          "title": "PostgreSQL",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "min(pg_up) or vector(0)",
+              "legendFormat": "",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "DOWN",
+                      "color": "red"
+                    },
+                    "1": {
+                      "text": "UP",
+                      "color": "green"
+                    }
+                  }
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
                     "value": 1
                   }
                 ]
