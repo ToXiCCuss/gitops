@@ -16,4 +16,6 @@ services:
       - ./sync.sh:/sync.sh:ro
       # rclone.conf with the pCloud remote (only this container holds the pCloud credentials)
       - /root/docker/offsite-sync/rclone:/config/rclone
+      # Textfile collector of the node_exporter: the sync leaves the time of its last success there
+      - /var/lib/prometheus/node-exporter:/metrics
     restart: unless-stopped

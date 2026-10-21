@@ -11,4 +11,6 @@ services:
     entrypoint: ["/bin/sh", "/backup.sh"]
     volumes:
       - ./backup.sh:/backup.sh:ro
+      # Textfile collector of the node_exporter: the backup leaves the time of its last success there
+      - /var/lib/prometheus/node-exporter:/metrics
     restart: unless-stopped

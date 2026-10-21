@@ -17,7 +17,7 @@
 #
 # Optional overrides in /etc/netbird-backup.cred:
 #   NETBIRD_DIR, RESTIC_REPOSITORY,
-#   RESTIC_PASSWORD_FILE, BACKUP_DIR, RESTIC_KEEP_DAILY/WEEKLY/MONTHLY,
+#   RESTIC_PASSWORD_FILE, BACKUP_DIR, METRICS_DIR, RESTIC_KEEP_DAILY/WEEKLY/MONTHLY,
 #   DISCORD_WEBHOOK_URL (the only notification, failures only), AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 #   (keys of the S3 identity "netbird")
 #
@@ -57,6 +57,9 @@ RESTIC_KEEP_DAILY="${RESTIC_KEEP_DAILY:-0}"
 RESTIC_KEEP_WEEKLY="${RESTIC_KEEP_WEEKLY:-8}"
 RESTIC_KEEP_MONTHLY="${RESTIC_KEEP_MONTHLY:-6}"
 
+# Textfile collector directory of the node_exporter (node_exporter_textfile_dir in the Ansible role)
+METRICS_DIR="${METRICS_DIR:-/var/lib/prometheus/node-exporter}"
+
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/netbird}"
 STAGING_DIR="$BACKUP_DIR/latest"
 
@@ -67,6 +70,22 @@ CONFIG_FILES=(docker-compose.yml config.yaml dashboard.env proxy.env traefik-dyn
 notify_failure() {
     [ -n "${DISCORD_WEBHOOK_URL:-}" ] && curl -fsS -m 10 -H 'Content-Type: application/json' \
         -d "{\"content\":\"netbird-backup failed: $1\"}" "$DISCORD_WEBHOOK_URL" >/dev/null || true
+}
+
+# Publishes the time of a successful run for the node_exporter textfile collector (Prometheus alerts when
+# it gets too old). The file is written under another name and moved, so it is never read half written.
+write_metrics() {
+    local finished
+    finished=$(date +%s)
+    if [ -d "$METRICS_DIR" ]; then
+        { printf 'backup_last_success_timestamp_seconds{backup="netbird"} %s\n' "$finished" \
+            && printf 'backup_last_duration_seconds{backup="netbird"} %s\n' "$((finished - START_TIME))"; } \
+            > "$METRICS_DIR/netbird-backup.prom.tmp" \
+            && mv "$METRICS_DIR/netbird-backup.prom.tmp" "$METRICS_DIR/netbird-backup.prom" \
+            || echo "[WARN] Writing the metrics failed"
+    else
+        echo "[WARN] $METRICS_DIR does not exist, no metrics written (run the node_exporter role)"
+    fi
 }
 
 fail() {
@@ -182,6 +201,8 @@ else
     rm -rf "$STAGING_DIR"
     echo "[INFO] Local staging data deleted."
 fi
+
+write_metrics
 
 END_TIME=$(date +%s)
 DURATION_SECONDS=$((END_TIME - START_TIME))

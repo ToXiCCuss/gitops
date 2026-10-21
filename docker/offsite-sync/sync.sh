@@ -9,13 +9,28 @@ export RCLONE_CONFIG_SEAWEED_ENDPOINT="$S3_ENDPOINT"
 export RCLONE_CONFIG_SEAWEED_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
 export RCLONE_CONFIG_SEAWEED_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 
+# Mount of the textfile collector directory of the node_exporter, see docker-compose.yml
+METRICS_DIR=/metrics
+
 # Reports a failed run to the Discord webhook (optional). Successes are not reported.
 notify_failure() {
     [ -n "${DISCORD_WEBHOOK_URL:-}" ] && wget -q -O /dev/null --header 'Content-Type: application/json' \
         --post-data "{\"content\":\"offsite-sync failed: $1\"}" "$DISCORD_WEBHOOK_URL" || true
 }
 
+# Publishes the time of a successful run for the node_exporter textfile collector (Prometheus alerts when
+# it gets too old). The file is written under another name and moved, so it is never read half written.
+write_metrics() {
+    finished=$(date +%s)
+    { printf 'backup_last_success_timestamp_seconds{backup="offsite-sync"} %s\n' "$finished" \
+        && printf 'backup_last_duration_seconds{backup="offsite-sync"} %s\n' "$((finished - $1))"; } \
+        > "$METRICS_DIR/offsite-sync.prom.tmp" \
+        && mv "$METRICS_DIR/offsite-sync.prom.tmp" "$METRICS_DIR/offsite-sync.prom" \
+        || echo "Writing the metrics failed" >&2
+}
+
 run_sync() {
+    started=$(date +%s)
     day=$(date +%Y-%m-%d)
     rclone sync "SEAWEED:" "$PCLOUD_REMOTE:$PCLOUD_TARGET" \
         --backup-dir "$PCLOUD_REMOTE:$PCLOUD_DELETED/$day" \
@@ -27,6 +42,7 @@ run_sync() {
     rclone mkdir "$PCLOUD_REMOTE:$PCLOUD_DELETED" || return 1
     rclone delete "$PCLOUD_REMOTE:$PCLOUD_DELETED" --min-age "${RETENTION_DAYS}d" || return 1
     rclone rmdirs "$PCLOUD_REMOTE:$PCLOUD_DELETED" --leave-root || return 1
+    write_metrics "$started"
 }
 
 # One run right now and exit with its result (for tests): docker exec offsite-sync sh /sync.sh now

@@ -9,13 +9,28 @@ apk add --no-cache curl jq restic >/dev/null || { echo "apk add failed" >&2; exi
 export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY RESTIC_PASSWORD
 export RESTIC_REPOSITORY="s3:${S3_ENDPOINT}/vault/raft"
 
+# Mount of the textfile collector directory of the node_exporter, see docker-compose.yml
+METRICS_DIR=/metrics
+
 # Reports a failed run to the Discord webhook (optional). Successes are not reported.
 notify_failure() {
     [ -n "${DISCORD_WEBHOOK_URL:-}" ] && curl -fsS -m 10 -H 'Content-Type: application/json' \
         -d "{\"content\":\"vault-backup failed: $1\"}" "$DISCORD_WEBHOOK_URL" >/dev/null || true
 }
 
+# Publishes the time of a successful run for the node_exporter textfile collector (Prometheus alerts when
+# it gets too old). The file is written under another name and moved, so it is never read half written.
+write_metrics() {
+    finished=$(date +%s)
+    { printf 'backup_last_success_timestamp_seconds{backup="vault-backup"} %s\n' "$finished" \
+        && printf 'backup_last_duration_seconds{backup="vault-backup"} %s\n' "$((finished - $1))"; } \
+        > "$METRICS_DIR/vault-backup.prom.tmp" \
+        && mv "$METRICS_DIR/vault-backup.prom.tmp" "$METRICS_DIR/vault-backup.prom" \
+        || echo "Writing the metrics failed" >&2
+}
+
 run_backup() {
+    started=$(date +%s)
     snap="/tmp/vault-$(date +%Y%m%d-%H%M%S).snap"
 
     # Keep the periodic token alive
@@ -28,6 +43,7 @@ run_backup() {
     restic backup --tag vault "$snap" || { rm -f "$snap"; return 1; }
     rm -f "$snap"
     restic forget --tag vault --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" --prune || return 1
+    write_metrics "$started"
 }
 
 # One run right now and exit with its result (for tests): docker exec vault-backup sh /backup.sh now
