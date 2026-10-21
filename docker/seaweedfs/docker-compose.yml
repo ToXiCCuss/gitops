@@ -26,8 +26,8 @@ services:
       portal.url: "https://s3-admin.proxy.rjst.de"
       portal.group: "Backup"
       portal.description: "S3-Speicher"
-      # Neither SeaweedFS nor RustFS fits both: the generic S3 symbol (the portal shows it on a white background)
-      portal.icon: "https://cdn.jsdelivr.net/npm/simple-icons/icons/amazons3.svg"
+      # The entry stands for SeaweedFS and for the RustFS trial; dashboard-icons has no SeaweedFS icon, so the RustFS one
+      portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/rustfs.svg"
     restart: unless-stopped
     volumes:
       - "/root/docker/seaweedfs:/data"
