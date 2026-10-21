@@ -19,6 +19,35 @@ spec:
 
 ---
 
+# The probes of probes.yaml. The wildcard certificate is shared, so only the soonest expiry is reported.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: probes
+  namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  groups:
+    - name: probes
+      rules:
+        - alert: ProbeFailed
+          expr: probe_success == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.instance }} does not answer"
+        - alert: CertificateExpiresSoon
+          expr: bottomk(1, probe_ssl_earliest_cert_expiry - time()) < 14 * 24 * 3600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "The certificate of {{ $labels.instance }} expires in less than 14 days"
+
+---
+
 # The backup jobs write backup_last_success_timestamp_seconds into the textfile collector of the
 # node_exporter on docker01 after a successful run (see the *.sh scripts of the jobs). The nightly jobs
 # are late after 26 hours. A failed run is posted by the job itself, this catches a job that does not run.
