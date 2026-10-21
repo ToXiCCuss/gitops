@@ -9,6 +9,24 @@
     install_recommends: no
   notify: restart node_exporter
 
+- name: Create the textfile collector directory
+  ansible.builtin.file:
+    path: "{{ node_exporter_textfile_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# The Debian package reads the command line arguments from ARGS in this file
+- name: Enable the textfile collector
+  ansible.builtin.lineinfile:
+    path: /etc/default/prometheus-node-exporter
+    regexp: '^ARGS='
+    line: 'ARGS="--collector.textfile.directory={{ node_exporter_textfile_dir }}"'
+    create: true
+    mode: "0644"
+  notify: restart node_exporter
+
 # Right after the apt run systemd may not know the new unit yet, so the first try
 # can fail with "Could not find the requested service". Retry a few times.
 - name: Ensure node_exporter service is enabled and running
