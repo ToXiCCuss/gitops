@@ -1,0 +1,57 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: availability
+  namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  groups:
+    - name: availability
+      rules:
+        - alert: TargetDown
+          expr: up == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.job }} on {{ $labels.instance }} is not scraped"
+
+---
+
+# The backup jobs write backup_last_success_timestamp_seconds into the textfile collector of the
+# node_exporter on docker01 after a successful run (see the *.sh scripts of the jobs). The nightly jobs
+# are late after 26 hours, netbird (monthly cron) after 33 days. A failed run is posted by the job itself,
+# this catches a job that does not run.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: backups
+  namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  groups:
+    - name: backups
+      rules:
+        - alert: BackupTooOld
+          expr: time() - backup_last_success_timestamp_seconds{backup!="netbird"} > 26 * 3600
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Backup {{ $labels.backup }} has no successful run for more than 26 hours"
+        - alert: MonthlyBackupTooOld
+          expr: time() - backup_last_success_timestamp_seconds{backup="netbird"} > 33 * 24 * 3600
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Backup {{ $labels.backup }} has no successful run for more than 33 days"
+        - alert: BackupNeverReported
+          expr: absent(backup_last_success_timestamp_seconds{backup="offsite-sync"}) or absent(backup_last_success_timestamp_seconds{backup="vault-backup"})
+          for: 26h
+          labels:
+            severity: critical
+          annotations:
+            summary: "offsite-sync or vault-backup never reported a successful run"

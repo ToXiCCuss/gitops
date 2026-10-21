@@ -29,7 +29,27 @@ spec:
             defaultRules:
               create: false
             alertmanager:
-              enabled: false
+              enabled: true
+              # Internal only (no gateway): look at it with a port-forward to the service
+              alertmanagerSpec:
+                resources:
+                  limits:
+                    memory: 100Mi
+                    cpu: 250m
+              config:
+                route:
+                  receiver: discord
+                  group_by:
+                    - alertname
+                    - instance
+                  group_wait: 30s
+                  group_interval: 5m
+                  repeat_interval: 12h
+                receivers:
+                  - name: discord
+                    discord_configs:
+                      - webhook_url: <path:argocd/data/prometheus#discord_webhook_url>
+                        send_resolved: true
             grafana:
               enabled: true
               fullnameOverride: grafana
