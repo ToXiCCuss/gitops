@@ -46,6 +46,8 @@ spec:
                   group_interval: 5m
                   repeat_interval: 12h
                 receivers:
+                  # The chart routes Watchdog to "null"; setting receivers replaces the chart's list, so it is needed here
+                  - name: "null"
                   - name: discord
                     discord_configs:
                       - webhook_url: <path:argocd/data/prometheus#discord_webhook_url>
