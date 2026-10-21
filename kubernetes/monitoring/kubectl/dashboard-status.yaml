@@ -227,7 +227,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "up",
+              "expr": "min by (job, instance) (up{job!~\"probe/.*\"})",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -343,7 +343,8 @@ data:
                 "cellOptions": {
                   "type": "auto"
                 }
-              }
+              },
+              "noValue": "Keine Alarme"
             },
             "overrides": []
           },
