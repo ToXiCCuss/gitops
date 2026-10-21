@@ -426,12 +426,24 @@ spec:
             # VirtualServices in these namespaces are apps with a stage (namespace = stage).
             - name: STAGE_NAMESPACES
               value: dev,test,stage,prod
-            # Services that are neither a VirtualService nor in docker/ (NetBird runs on its own host).
+            # Services that are neither a VirtualService nor in docker/ (NetBird runs on its own host)
+            # and external links.
             - name: STATIC_SERVICES
               value: |
                 [{"name": "NetBird", "url": "https://proxy.rjst.de", "group": "Plattform",
                   "description": "VPN und Zugriffsverwaltung",
-                  "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/netbird.svg"}]
+                  "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/netbird.svg"},
+                 {"name": "Hetzner", "url": "https://www.hetzner.com/de/", "group": "Extern",
+                  "description": "Server und Hosting",
+                  "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/hetzner.svg"},
+                 {"name": "ZAP-Hosting", "url": "https://zap-hosting.com/de", "group": "Extern",
+                  "description": "Gameserver-Hosting"},
+                 {"name": "GitHub ToXiCCuss", "url": "https://github.com/ToXiCCuss?tab=repositories", "group": "Extern",
+                  "description": "Persönliche Repositories",
+                  "icon": "github"},
+                 {"name": "GitHub RJST-DEVELOP", "url": "https://github.com/orgs/RJST-DEVELOP/repositories", "group": "Extern",
+                  "description": "Organisations-Repositories",
+                  "icon": "github"}]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
