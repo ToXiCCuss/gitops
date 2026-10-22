@@ -6,14 +6,15 @@
 #   - creates the restic password file and initializes the repository
 #   - writes /etc/netbird-backup.cred (S3 keys, optional Discord webhook URL)
 #   - installs the backup/restore/upgrade/rollback scripts to /usr/local/bin
-#     and a cron job
+#     and removes the cron job of earlier versions (backups run by hand and
+#     before every upgrade)
 #
 # Usage (run from the scripts/netbird directory):
-#   sudo ./netbird_backup_setup.sh [--dir /opt/netbird] [--schedule "0 0 1 * *"]
+#   sudo ./netbird_backup_setup.sh [--dir /opt/netbird]
 #                                  [--s3-endpoint http://127.0.0.1:8333] [--discord-webhook URL]
 #                                  [--run]
 # The S3 keys (identity "netbird" of setup-backup-host.sh) are read from AWS_ACCESS_KEY_ID and
-# AWS_SECRET_ACCESS_KEY or asked for. The schedule is in the local time of the host.
+# AWS_SECRET_ACCESS_KEY or asked for.
 # Re-running is safe: existing password file, cred file and repository are kept.
 # =============================================================================
 
@@ -54,18 +55,16 @@ RESTIC_PASSWORD_FILE="/root/restic"
 DISCORD_WEBHOOK_URL=""
 
 NETBIRD_DIR=""
-SCHEDULE="0 0 1 * *"
 RUN_NOW=false
 
 usage() {
-    sed -n '11,16p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '12,17p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --dir)      NETBIRD_DIR="$2"; shift 2 ;;
-        --schedule) SCHEDULE="$2"; shift 2 ;;
         --s3-endpoint) S3_ENDPOINT="$2"; shift 2 ;;
         --discord-webhook) DISCORD_WEBHOOK_URL="$2"; shift 2 ;;
         --run)      RUN_NOW=true; shift ;;
@@ -222,7 +221,7 @@ EOF
     chmod 600 "$CONFIG_FILE"
 }
 
-# ── 6. Scripts + cron ─────────────────────────────────────────────────────────
+# ── 6. Scripts, cron cleanup, log rotation ────────────────────────────────────
 install_scripts() {
     step "Installing scripts to $INSTALL_DIR"
 
@@ -238,19 +237,15 @@ install_scripts() {
     done
 }
 
-install_cron() {
-    step "Installing cron job ($SCHEDULE)"
+# Earlier versions installed a monthly cron job; backups now run by hand and before every upgrade
+remove_cron() {
+    if [[ -f "$CRON_FILE" ]]; then
+        rm -f "$CRON_FILE"
+        success "Removed cron job $CRON_FILE"
+    fi
+}
 
-    cat > "$CRON_FILE" <<EOF
-# NetBird backup - managed by netbird_backup_setup.sh
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-HOME=/root
-
-$SCHEDULE root $INSTALL_DIR/netbird_backup.sh >> $LOG_FILE 2>&1
-EOF
-    chmod 644 "$CRON_FILE"
-
+setup_log_rotation() {
     cat > /etc/logrotate.d/netbird-backup <<EOF
 $LOG_FILE {
     weekly
@@ -260,7 +255,7 @@ $LOG_FILE {
     notifempty
 }
 EOF
-    success "Cron job: $CRON_FILE (log: $LOG_FILE)"
+    success "Log rotation for $LOG_FILE"
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -276,7 +271,8 @@ main() {
     setup_restic
     write_config
     install_scripts
-    install_cron
+    remove_cron
+    setup_log_rotation
 
     if $RUN_NOW; then
         step "Running first backup (NetBird will be stopped briefly)"
