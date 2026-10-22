@@ -58,7 +58,10 @@ metadata:
   namespace: gatus
   annotations:
     argocd.argoproj.io/sync-wave: "4"
-    portal.rjst.de/hidden: "true"
+    portal.rjst.de/name: Status
+    portal.rjst.de/group: Monitoring
+    portal.rjst.de/description: Öffentliche Status-Seite
+    portal.rjst.de/icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/gatus.svg
 spec:
   hosts:
     - status.rjst.de
