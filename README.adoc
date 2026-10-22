@@ -1205,6 +1205,25 @@ installation are deliberately kept outside of GitOps (`istioctl` /
 `helm install` per above), since both carry too much blast radius for
 automated sync.
 
+=== Public status page
+
+`https://status.rjst.de` shows the state of four services to anyone: Auth-Provider (Keycloak), VPN-Provider (NetBird), Gameserver-Frontend
+(Pelican panel) and Database01 (PostgreSQL). It is Gatus (`kubernetes/monitoring/helm/gatus.yaml`, namespace `gatus`), the only app on the
+public `istio-ingressgateway` (`kubernetes/monitoring/kubectl/status-page.yaml`, certificate from the `letsencrypt` ClusterIssuer).
+Everything else stays on the internal gateway.
+
+* The page shows names and state only: URLs, hosts, conditions and error texts are hidden (`ui.hide-*` per endpoint). Add a service to the
+  list of `endpoints` in `gatus.yaml`.
+* Gatus checks from inside the cluster, so it shows whether a service answers there, not whether a visitor can reach it. A status below 500
+  counts as up (a login wall too). Database01 reads `pg_up` from the `postgres_exporter` (port 5432 is closed to the cluster).
+* There are no UDP checks (STUN, WireGuard): without a request body Gatus only dials, which always succeeds for UDP, and the STUN request
+  needs a byte that a YAML body cannot carry.
+* The host is also listed in the `AuthorizationPolicy` `ingress-policy-public` (`kubernetes/infra/kubectl/kube-istio-security.yaml`), which
+  denies every other host on the public gateway. A new public host needs an entry there.
+* By hand: the DNS record `status.rjst.de` (A, `89.144.46.204`, the public IP of `k8sdev01`) at Hetzner, and the firewall rule for ports 80
+  and 443 on `k8sdev01` (`sudo ansible-playbook -i inventory.ini site.yml --tags firewall`). Whether UFW lets traffic to the ServiceLB ports
+  through depends on the FORWARD chain; check it from outside with `curl -I https://status.rjst.de` after the first run.
+
 === Deployment Guide
 
 ==== 0. Prerequisites (outside of GitOps, done once manually)
