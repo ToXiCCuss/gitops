@@ -4,8 +4,9 @@
 # Rolls NetBird back to a rollback point created by netbird_upgrade.sh:
 #   - re-tags the old images (netbird-rollback/<svc>:<ts>) to the image
 #     references used in docker-compose.yml
-#   - restores the config files and /var/lib/netbird from the local copy of
-#     the pre-upgrade backup (database migrations of the new version are undone)
+#   - restores the config files, the crowdsec/ config, the CrowdSec data and
+#     /var/lib/netbird from the local copy of the pre-upgrade backup (database
+#     migrations of the new version are undone)
 #   - recreates the containers
 #
 # Everything changed in NetBird after the upgrade (new peers, policies, ...)
@@ -55,7 +56,7 @@ POINT=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --yes|-y)  ASSUME_YES=true; shift ;;
-        -h|--help) sed -n '15p' "$0" | sed 's/^# //'; exit 0 ;;
+        -h|--help) sed -n '16p' "$0" | sed 's/^# //'; exit 0 ;;
         *)         POINT="$1"; shift ;;
     esac
 done
@@ -143,6 +144,10 @@ main() {
 
     step "Restoring configuration files..."
     find "$RP/data" -maxdepth 1 -type f ! -name .mgmt_service -exec cp -a {} "$NETBIRD_DIR/" \;
+    if [[ -d "$RP/data/crowdsec" ]]; then
+        rm -rf "$NETBIRD_DIR/crowdsec"
+        cp -a "$RP/data/crowdsec" "$NETBIRD_DIR/crowdsec"
+    fi
     success "Configuration restored."
 
     step "Restoring old images..."
@@ -167,6 +172,12 @@ main() {
         warn "Could not determine the volume path, falling back to 'docker compose cp'."
         docker compose create "$MGMT_SERVICE"
         docker compose cp -a "$RP/data/netbird/." "$MGMT_SERVICE:/var/lib/netbird/"
+    fi
+
+    if [[ -d "$RP/data/crowdsec_db" ]]; then
+        step "Restoring CrowdSec data..."
+        docker compose create crowdsec
+        docker compose cp -a "$RP/data/crowdsec_db/." crowdsec:/var/lib/crowdsec/data/
     fi
 
     step "Starting NetBird with the old images..."
