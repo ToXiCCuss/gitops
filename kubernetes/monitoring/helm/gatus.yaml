@@ -45,8 +45,10 @@ spec:
                 description: Availability of the services
                 dashboard-heading: Services
                 dashboard-subheading: ""
+                default-sort-by: group
               endpoints:
                 - name: Auth-Provider
+                  group: Access
                   url: https://auth.proxy.rjst.de
                   interval: 1m
                   conditions:
@@ -59,12 +61,14 @@ spec:
                     hide-errors: true
                     dont-resolve-failed-conditions: true
                 - name: VPN-Provider
+                  group: Access
                   url: https://proxy.rjst.de
                   interval: 1m
                   conditions:
                     - "[STATUS] < 500"
                   ui: *hide-details
                 - name: Gameserver-Frontend
+                  group: Gameserver
                   url: https://webinterface.proxy.rjst.de
                   interval: 1m
                   conditions:
@@ -73,6 +77,7 @@ spec:
                 # PostgreSQL is not reachable from the cluster (UFW lets port 5432 in from the Docker networks only).
                 # The postgres_exporter keeps answering when the database is down, so the body is checked for pg_up.
                 - name: Database01
+                  group: Database
                   url: http://docker01.server.lan:9187/metrics
                   interval: 1m
                   conditions:

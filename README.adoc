@@ -1226,7 +1226,7 @@ public `istio-ingressgateway` (`kubernetes/monitoring/kubectl/status-page.yaml`,
 Everything else stays on the internal gateway.
 
 * The page shows names and state only: URLs, hosts, conditions and error texts are hidden (`ui.hide-*` per endpoint). Add a service to the
-  list of `endpoints` in `gatus.yaml`.
+  list of `endpoints` in `gatus.yaml`, with a `group` (Access, Gameserver, Database); the page sorts by group.
 * Gatus checks from inside the cluster, so it shows whether a service answers there, not whether a visitor can reach it. A status below 500
   counts as up (a login wall too). Database01 reads `pg_up` from the `postgres_exporter` (port 5432 is closed to the cluster).
 * There are no UDP checks (STUN, WireGuard): without a request body Gatus only dials, which always succeeds for UDP, and the STUN request
