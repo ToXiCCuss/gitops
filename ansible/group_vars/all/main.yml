@@ -62,6 +62,8 @@ host_config:
     firewall_rules:
       - { from_ip: 10.42.0.0/16, comment: "k3s pod CIDR" }
       - { from_ip: 10.43.0.0/16, comment: "k3s service CIDR" }
+      - { port: 80,  proto: tcp, comment: "Public status page (HTTP, redirects to HTTPS)" }
+      - { port: 443, proto: tcp, comment: "Public status page (HTTPS)" }
     k3s_config:
       cluster-init: true
       flannel-backend: wireguard-native
