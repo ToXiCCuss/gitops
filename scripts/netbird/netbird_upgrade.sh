@@ -20,7 +20,8 @@
 # them: the new docker-compose.yml is prepared as a copy, used for the pull and
 # only written after the backup, so netbird_rollback.sh restores the old one.
 # --traefik v3.7.12 or newer also sets aliasHeadersStrategy=delete on the web and
-# websecure entrypoints.
+# websecure entrypoints and --providers.docker.network is set to the real network
+# of the container when it has exactly one.
 #
 # Usage: sudo ./netbird_upgrade.sh [--yes] [--auto-rollback] [--keep N] [--traefik TAG] [--crowdsec TAG] [--bouncer VERSION]
 #
@@ -94,7 +95,7 @@ while [[ $# -gt 0 ]]; do
         --traefik)       require_version "$1" "${2:-}"; NEW_TAG[traefik]="$2"; shift 2 ;;
         --crowdsec)      require_version "$1" "${2:-}"; NEW_TAG[crowdsec]="$2"; shift 2 ;;
         --bouncer)       require_version "$1" "${2:-}"; NEW_BOUNCER_VERSION="$2"; shift 2 ;;
-        -h|--help)       sed -n '25p' "$0" | sed 's/^# //'; exit 0 ;;
+        -h|--help)       sed -n '26p' "$0" | sed 's/^# //'; exit 0 ;;
         *)               error "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -220,18 +221,39 @@ set_alias_headers_strategy() {
     fi
 }
 
-# Traefik silently falls back to another network when the flag does not match the Compose network
+# Traefik silently falls back to another network when the flag does not match the Compose network.
+# With exactly one network the right value is unambiguous: --traefik writes it (TRAEFIK_NETWORK_FIX).
 check_traefik_network() {
     local configured actual
+    TRAEFIK_NETWORK_FIX=""
     if [[ -n "${REF[traefik]:-}" ]]; then
         configured=$(docker compose config | grep -oP $'providers\\.docker\\.network=\\K[^"\'\\s]+' | head -n1 || true)
         actual=$(docker inspect -f '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' \
             "$(docker compose ps -aq traefik)")
         if [[ -n "$configured" ]] && ! grep -qx "$configured" <<< "$actual"; then
             warn "Traefik has --providers.docker.network=$configured, but its networks are: $(tr '\n' ' ' <<< "$actual")"
-            warn "Set the flag to the real network name in $COMPOSE_FILE_NAME (see NetBird upgrade docs)."
+            if [[ "$actual" != *$'\n'* ]]; then
+                TRAEFIK_NETWORK_FIX="$actual"
+                info "Run with --traefik to set the flag to $actual."
+            else
+                warn "Set the flag to the real network name in $COMPOSE_FILE_NAME (see NetBird upgrade docs)."
+            fi
         fi
     fi
+}
+
+set_traefik_network() {
+    sed -i -E "s/(providers\.docker\.network=)[^\"' ]+/\1$1/" "$2"
+}
+
+prepare_traefik_changes() {
+    local file="$1"
+    if is_version_at_least "${NEW_TAG[traefik]}" "v3.7.12"; then
+        set_alias_headers_strategy "$file"
+    else
+        warn "Traefik ${NEW_TAG[traefik]} is older than v3.7.12 (header-alias spoofing, GHSA-rf44-j88r-hh8c)."
+    fi
+    [[ -z "$TRAEFIK_NETWORK_FIX" ]] || set_traefik_network "$TRAEFIK_NETWORK_FIX" "$file"
 }
 
 prepare_compose_changes() {
@@ -245,13 +267,7 @@ prepare_compose_changes() {
             TARGET_REF[$svc]=$(retag_reference "${REF[$svc]}" "${NEW_TAG[$svc]}")
             set_image_reference "$svc" "${TARGET_REF[$svc]}" "$UPGRADE_COMPOSE"
         done
-        if [[ -n "${NEW_TAG[traefik]:-}" ]]; then
-            if is_version_at_least "${NEW_TAG[traefik]}" "v3.7.12"; then
-                set_alias_headers_strategy "$UPGRADE_COMPOSE"
-            else
-                warn "Traefik ${NEW_TAG[traefik]} is older than v3.7.12 (header-alias spoofing, GHSA-rf44-j88r-hh8c)."
-            fi
-        fi
+        [[ -z "${NEW_TAG[traefik]:-}" ]] || prepare_traefik_changes "$UPGRADE_COMPOSE"
         [[ -z "$NEW_BOUNCER_VERSION" ]] || set_bouncer_version "$NEW_BOUNCER_VERSION" "$UPGRADE_COMPOSE"
 
         COMPOSE_FILE="$UPGRADE_COMPOSE_NAME" docker compose config --quiet

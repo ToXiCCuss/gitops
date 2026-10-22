@@ -1084,7 +1084,9 @@ sudo netbird_upgrade.sh --traefik v3.7.14 --crowdsec v1.8.1 --bouncer v1.7.1
 The script writes the tags and the bouncer plugin version (`--experimental.plugins.bouncer.version` in the `traefik` command)
 into `docker-compose.yml`, shows the diff and does that only after the backup, so `netbird_rollback.sh` restores the old file.
 From Traefik `v3.7.12` it also sets `aliasHeadersStrategy=delete` on the `web` and `websecure` entrypoints (the fix for
-header-alias spoofing does nothing without it) and warns if `--providers.docker.network` does not match the Compose network
+header-alias spoofing does nothing without it). If `--providers.docker.network` does not match the Compose network
+(`netbird` instead of `netbird_netbird`), it warns and, with `--traefik`, sets the flag to the network of the container
+when that has exactly one
 * `netbird_backup_setup.sh` installs them to `/usr/local/bin`, writes `/etc/netbird-backup.cred` and a cron job
 
 Set it up on `docker01`, the S3 is reached on `127.0.0.1:8333`, no NetBird is involved:
