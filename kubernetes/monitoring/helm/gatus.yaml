@@ -1,0 +1,87 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gatus
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  destination:
+    namespace: gatus
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://twin.github.io/helm-charts
+    targetRevision: 1.5.0
+    chart: gatus
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            fullnameOverride: gatus
+            resources:
+              requests:
+                memory: 32Mi
+                cpu: 10m
+              limits:
+                memory: 100Mi
+                cpu: 200m
+            persistence:
+              enabled: true
+              size: 200Mi
+              storageClassName: local-path
+            # Public status page, see kubernetes/monitoring/kubectl/status-page.yaml. The page is open to everyone,
+            # so it shows only the names and the state: no URLs, hosts, conditions or error texts.
+            # Every service answered below 500 counts as up, a login wall (401/403) too.
+            # No UDP checks on purpose: without a body Gatus only dials, which always succeeds for UDP, and the
+            # STUN request of NetBird needs the byte 0xA4, which a YAML body cannot carry. WireGuard never answers.
+            config:
+              storage:
+                type: sqlite
+                path: /data/data.db
+              ui:
+                title: Status
+                header: Status
+                description: Availability of the services
+                dashboard-heading: Services
+                dashboard-subheading: ""
+              endpoints:
+                - name: Auth-Provider
+                  url: https://auth.proxy.rjst.de
+                  interval: 1m
+                  conditions:
+                    - "[STATUS] < 500"
+                  ui: &hide-details
+                    hide-url: true
+                    hide-hostname: true
+                    hide-port: true
+                    hide-conditions: true
+                    hide-errors: true
+                    dont-resolve-failed-conditions: true
+                - name: VPN-Provider
+                  url: https://proxy.rjst.de
+                  interval: 1m
+                  conditions:
+                    - "[STATUS] < 500"
+                  ui: *hide-details
+                - name: Gameserver-Frontend
+                  url: https://webinterface.proxy.rjst.de
+                  interval: 1m
+                  conditions:
+                    - "[STATUS] < 500"
+                  ui: *hide-details
+                # PostgreSQL is not reachable from the cluster (UFW lets port 5432 in from the Docker networks only).
+                # The postgres_exporter keeps answering when the database is down, so the body is checked for pg_up.
+                - name: Database01
+                  url: http://docker01.server.lan:9187/metrics
+                  interval: 1m
+                  conditions:
+                    - "[STATUS] == 200"
+                    - "[BODY] == pat(*pg_up 1*)"
+                  ui: *hide-details
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

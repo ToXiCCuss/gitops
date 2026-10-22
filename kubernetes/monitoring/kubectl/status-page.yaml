@@ -1,0 +1,72 @@
+# Public status page: https://status.rjst.de -> gatus.gatus:80
+# It is the only app on the public istio-ingressgateway (LoadBalancer on the public IP of the node, ports 80 and 443).
+# All other apps stay on the internal gateway (kube-istio-internal.yaml). The host must also be in the
+# AuthorizationPolicy ingress-policy-public (kubernetes/infra/kubectl/kube-istio-security.yaml), which denies
+# every other host. The DNS record status.rjst.de (A, public IP of k8sdev01) is set by hand at Hetzner.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: status
+  namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  secretName: status-tls
+  dnsNames:
+    - status.rjst.de
+  issuerRef:
+    name: letsencrypt
+    kind: ClusterIssuer
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: status
+  namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http-status
+        protocol: HTTP
+      hosts:
+        - status.rjst.de
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https-status
+        protocol: HTTPS
+      hosts:
+        - status.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: status-tls
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: status
+  namespace: gatus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+    portal.rjst.de/hidden: "true"
+spec:
+  hosts:
+    - status.rjst.de
+  gateways:
+    - istio-system/status
+  http:
+    - route:
+        - destination:
+            host: gatus.gatus.svc.cluster.local
+            port:
+              number: 80

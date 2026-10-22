@@ -19,3 +19,4 @@ spec:
             hosts:
               - "rjst.de"
               - "www.rjst.de"
+              - "status.rjst.de"
