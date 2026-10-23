@@ -12,7 +12,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 |Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter. Secrets in an ansible-vault file.
 
 |`docker/`
-|One Docker Compose project per service on the Docker host (Backrest, Databasus, SeaweedFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate.
+|One Docker Compose project per service on the Docker host (restic-backup, Databasus, SeaweedFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate.
 
 |`istio/`
 |`IstioOperator` file for the manual `istioctl install` (outside ArgoCD).
@@ -450,7 +450,7 @@ recreated when its compose file or its environment changed.
 
 ----
 sudo scripts/docker/deploy.sh                       # all projects, in a fixed order
-sudo scripts/docker/deploy.sh backrest vault-backup # only these
+sudo scripts/docker/deploy.sh restic-backup vault-backup # only these
 sudo scripts/docker/deploy.sh --pull seaweedfs      # git pull --ff-only first
 sudo scripts/docker/deploy.sh --list
 ----
@@ -460,7 +460,7 @@ at least one project name, asks before it acts and removes only the containers a
 
 ----
 sudo scripts/docker/undeploy.sh uptimeKuma
-sudo scripts/docker/undeploy.sh --yes backrest databasus   # without the question
+sudo scripts/docker/undeploy.sh --yes restic-backup databasus   # without the question
 ----
 
 `cleanup.sh` shows what Docker keeps without using it (dry run) and with `--apply` removes only the safe part: unused images without a tag
@@ -489,14 +489,14 @@ restarts the containers in `docker_socket_containers` after every start of `dock
 The secrets of a project are in `docker/<project>/override.env`. The file is *not* in Git (`.gitignore`), the variables a project needs are
 named in `docker/<project>/override.env.example` (`NAME=` is required, `#NAME=` is optional). `default.env` lists all variables of
 a project and the compose file reads `default.env` first and `override.env` second. `deploy.sh` checks the required variables before it
-touches a container and lists what is missing. Projects with secrets: `backrest`, `offsite-sync`, `seaweedfs`, `vault-backup`.
+touches a container and lists what is missing. Projects with secrets: `restic-backup`, `offsite-sync`, `seaweedfs`, `vault-backup`.
 
 New or changed secret:
 
 . Edit `docker/<project>/override.env` on the server (a new variable in the example file after a `git pull` is reported the same way).
 . `sudo scripts/docker/deploy.sh <project>`: Compose sees the changed environment and recreates the container within seconds.
   The data lives in folders on the host and stays.
-. The S3 keys of `backrest`, `offsite-sync` and `vault-backup` do not need to be copied: `setup-backup-host.sh` writes them into the
+. The S3 keys of `restic-backup`, `offsite-sync` and `vault-backup` do not need to be copied: `setup-backup-host.sh` writes them into the
   `override.env` files (`s3.json` is the source of truth). After new keys run it and deploy these projects again.
 
 NetBird is not part of this: it runs from its own folder (`/root/netbird`, created by the NetBird installer, with secrets), see Setup NetBird backup.
@@ -517,9 +517,9 @@ flowchart LR
   vault[("Vault (Kubernetes)")]
   subgraph host["Docker host"]
     vault -->|"snapshot API, periodic token"| vaultbackup["vault-backup (restic)"]
-    keys["Key files"] -->|read-only| backrest["Backrest (restic)"]
+    keys["Key files"] -->|read-only| resticbackup["restic-backup (restic)"]
     pg[("PostgreSQL")] --> databasus["Databasus (pg_dump)"]
-    backrest -->|bucket backups| s3[("SeaweedFS S3")]
+    resticbackup -->|bucket backups| s3[("SeaweedFS S3")]
     databasus -->|bucket databases| s3
     vaultbackup -->|bucket vault| s3
     netbird["NetBird server (netbird_backup.sh, restic)"] -->|bucket netbird| s3
@@ -533,7 +533,7 @@ flowchart LR
 |Service |Task |Notes
 
 |SeaweedFS |Local S3 staging |One identity per service, the offsite sync can only read
-|Backrest |Backs up a few static key files, checks the repositories and browses and restores snapshots |restic, repository `backups/docker`. Also used to check and restore the Vault and NetBird repositories
+|restic-backup |One nightly run: backs up a few static key files, thins out and prunes the repository and checks it, then checks the Vault and NetBird repositories |restic, repository `backups/docker`. Reports every step to Prometheus. Restore with `scripts/docker/restore.sh`
 |Databasus |Logical PostgreSQL backups (`pg_dump`), MariaDB the same way once it is installed (login from `scripts/mariadb/backup_user_create.sh`) |bucket `databases`
 |vault-backup |Daily Raft snapshot of Vault |Periodic token that may only read the snapshot, bucket `vault`, repository `vault/raft`, keeps its own retention
 |NetBird backup |Config and database of the self-hosted NetBird server (`scripts/netbird/`) |bucket `netbird`, repository `netbird/restic`, keeps its own retention
@@ -552,7 +552,7 @@ the PVCs of the Kubernetes apps. MariaDB (`docker01`) is not backed up until a d
 
 |Vault |14 |8 |12 |`vault-backup` (`restic forget --prune` after each run)
 |PostgreSQL dumps |14 |8 |6 |Databasus, per database
-|Key files |7 |4 |6 |Backrest plan (retention policy)
+|Key files |7 |4 |6 |`restic-backup` (`KEEP_*` in `default.env`, `restic forget` after each backup)
 |NetBird |0 |8 |6 |`netbird_backup.sh` (`RESTIC_KEEP_*` in `/etc/netbird-backup.cred`)
 |Deleted files in pCloud |30 days | | |`RETENTION_DAYS` of the offsite sync
 |===
@@ -562,13 +562,13 @@ the PVCs of the Kubernetes apps. MariaDB (`docker01`) is not backed up until a d
 |Check |How
 
 |Repository structure and a sample of the data
-|Backrest, per repository (`backups/docker` and `vault/raft`): check policy weekly with a 10% read-data subset
+|`restic-backup`, every night on the repositories `docker`, `vault` and `netbird`: `restic check` with a 10% read-data subset (`CHECK_READ_DATA_SUBSET`), so the whole repository has been read after about ten nights
 
 |Offsite copy complete and intact
 |`rclone check --one-way --size-only` S3 -> pCloud after every sync (S3 and pCloud have no common hash, so it compares sizes). A mismatch fails the sync
 
 |Failed jobs
-|Offsite sync, `vault-backup` and `netbird_backup.sh` (`DISCORD_WEBHOOK_URL`) post to a Discord webhook when a run fails. Databasus and Backrest have their own Discord notification, see <<Discord alerts>>. A job that does not run at all sends nothing itself. For `offsite-sync`, `vault-backup` and the Backrest key files plan Prometheus catches it, see <<Backup age alerts>>
+|Offsite sync, `vault-backup` and `netbird_backup.sh` (`DISCORD_WEBHOOK_URL`) post to a Discord webhook when a run fails. `restic-backup` does it too (optional, a failed step is named). Databasus has its own Discord notification, see <<Discord alerts>>. A job that does not run at all sends nothing itself. For `offsite-sync`, `vault-backup` and `restic-backup` Prometheus catches it, see <<Backup age alerts>>
 
 |Backups can be restored
 |By hand once per quarter: restore the latest PostgreSQL dump into a scratch database and a Vault snapshot, both from *pCloud*
@@ -580,8 +580,7 @@ the PVCs of the Kubernetes apps. MariaDB (`docker01`) is not backed up until a d
 
 |01:00 |Databasus (PostgreSQL dumps)
 |02:30 |vault-backup (Vault snapshot)
-|03:00 |Backrest plan (key files)
-|Sunday 03:30 |Backrest prune and check of both repositories
+|03:00 |restic-backup (backup of the key files, forget, prune, check of `docker`, check of `vault` and `netbird`)
 |05:00 |Offsite sync with check, runs when nothing writes to the S3 any more
 |===
 
@@ -597,10 +596,9 @@ does not run at all (container stopped, host down) sends nothing, so look at `do
 [cols="1,3"]
 |===
 |Job |Where
-|`offsite-sync`, `vault-backup` |`DISCORD_WEBHOOK_URL` in `docker/<project>/override.env`, then `sudo scripts/docker/deploy.sh <project>`
+|`offsite-sync`, `vault-backup`, `restic-backup` |`DISCORD_WEBHOOK_URL` in `docker/<project>/override.env`, then `sudo scripts/docker/deploy.sh <project>`
 |`netbird_backup.sh` |`sudo ./netbird_backup_setup.sh --discord-webhook <url>` (writes it to `/etc/netbird-backup.cred`)
 |Databasus |In the UI add a Discord notifier with the URL and select it for every database (failed backups)
-|Backrest |In the UI add a Discord hook to the repositories and the plan, condition `CONDITION_ANY_ERROR`
 |===
 . Test the webhook, a message must appear in the channel:
 +
@@ -614,12 +612,16 @@ of the repository: stop it once with `sudo scripts/docker/undeploy.sh uptimeKuma
 
 ==== Backup age alerts
 
-A job that does not run at all (container stopped, cron gone) sends no Discord message. To catch that, `offsite-sync`, `vault-backup` and Backrest
+A job that does not run at all (container stopped, cron gone) sends no Discord message. To catch that, `offsite-sync`, `vault-backup` and `restic-backup`
 write `backup_last_success_timestamp_seconds{backup="<job>"}` after every successful run into the textfile collector
 directory of the node_exporter on docker01 (`/var/lib/prometheus/node-exporter/<job>.prom`, created by the Ansible role `node_exporter`).
-Backrest does it with a command hook (`CONDITION_SNAPSHOT_SUCCESS`) on the plan of the key files, see `docker/backrest/config.template.json`,
-the other two in their scripts. Prometheus scrapes the files with the other node_exporter metrics and the rules in
+`restic-backup` writes it only when every step of the run worked. Prometheus scrapes the files with the other node_exporter metrics and the rules in
 `kubernetes/monitoring/kubectl/alert-rules.yaml` alert when the last success is older than 26 hours or when one of the three never reported.
+
+`restic-backup` additionally reports every step (`backup`, `forget`, `prune` and `check` of the repository `docker`, `check` of `vault` and `netbird`)
+in `restic-backup-<repository>-<step>.prom`: `restic_step_success{repository,step}` (1 or 0), `restic_step_last_success_timestamp_seconds` and
+`restic_step_duration_seconds`. The rule `ResticStepFailed` alerts as soon as a step failed, the table "Restic steps" of the Status dashboard shows the
+last result of every step. The output of the steps (the run log) is in `docker logs restic-backup`.
 The alerts go through Alertmanager to a Discord webhook, which is set in Vault as `argocd/data/prometheus#discord_webhook_url`. Databasus and
 `netbird_backup.sh` do not write this metric. They are only covered by their own Discord notification (NetBird is backed up by hand
 with every update, see `netbird_upgrade.sh`).
@@ -641,7 +643,7 @@ sudo scripts/docker/setup-backup-host.sh
 ----
 . Deploy the `seaweedfs` project: `sudo scripts/docker/deploy.sh seaweedfs`.
 . Run the script again, now it creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird`. SeaweedFS is restarted by the
-  script when identities changed. The script also writes the S3 keys into `docker/backrest/override.env`,
+  script when identities changed. The script also writes the S3 keys into `docker/restic-backup/override.env`,
   `docker/offsite-sync/override.env` and `docker/vault-backup/override.env`.
 . Fill in what is still missing in these files (`deploy.sh` stops and lists it):
 +
@@ -649,8 +651,8 @@ sudo scripts/docker/setup-backup-host.sh
 |===
 |Project |Still to enter in `override.env`
 
-|`backrest`
-|the restic passwords of the repositories, `scripts/docker/setup-backrest.sh` fills them in
+|`restic-backup`
+|the restic passwords of the repositories, `scripts/docker/setup-restic-backup.sh` fills them in
 
 |`offsite-sync`
 |nothing required, `DISCORD_WEBHOOK_URL` is optional
@@ -669,30 +671,28 @@ the script prints it once:
 The Docker host must reach `https://vault.k8sdev.rjst.de`: `docker01` is a NetBird peer, put it into the
 group `vault-users` (the policy `vault-users` -> `k8s-vault` exists, see NetBird configuration).
 
-. Deploy them: `sudo scripts/docker/deploy.sh backrest databasus vault-backup offsite-sync`.
-. Configure the services in their UIs (see the sections below): Backrest (admin user, repository,
-  plan for the key files, a second repository `s3:<S3_ENDPOINT>/vault/raft` with the restic
-  password of the Vault backup, only to check and restore) and Databasus (S3 storage with the
-  `databasus` keys, databases, schedule). Databasus is the only place that needs the `databasus` keys.
+. Deploy them: `sudo scripts/docker/deploy.sh restic-backup databasus vault-backup offsite-sync`.
+. Configure Databasus in its UI (see the section below): S3 storage with the `databasus` keys, databases, schedule.
+  Databasus is the only place that needs the `databasus` keys. `restic-backup` has no UI, run it once to test it:
+  `docker exec restic-backup sh /backup.sh now`.
 . Delete `/root/backup-credentials.env` and store the restic password and `rclone.conf` in your
   password manager. Without them the pCloud backups cannot be read after a total loss.
 
-Backrest (`9898`), Databasus (`4005`), Keycloak (`8180`) and the S3 port (`8333`) are published on all interfaces
+Databasus (`4005`), Keycloak (`8180`) and the S3 port (`8333`) are published on all interfaces
 of the host. Restrict them to NetBird with a host firewall and allow them for your peers with
 NetBird policies. The backups should run before the sync, so schedule them between 01:00 and 03:00.
 
 ==== Test the restore
 
 A backup that was never restored is not a backup. After the first nightly sync, and then once per
-quarter, restore a volume or a database from *pCloud*, not from the local S3: add the pCloud
-repository (`rclone:pCloud:/Backups/s3/backups/docker`) in Backrest as an additional repository and
-restore into `/restore`.
+quarter, restore a volume or a database from *pCloud*, not from the local S3. For the key files:
+`sudo scripts/docker/restore.sh --from pcloud restore docker`, see <<Key files>>.
 
 === Restore
 
 Keep these in the password manager, nothing can be read without them and they are not on the servers:
 
-* the restic passwords of the repositories `docker` (Backrest), `vault` (project `vault-backup`) and `netbird` (`/root/restic`)
+* the restic passwords of the repositories `docker` (project `restic-backup`), `vault` (project `vault-backup`) and `netbird` (`/root/restic`)
 * the `rclone.conf` of pCloud (the token)
 * the Vault unseal keys and the root token (printed once by `init-vault.ps1`) and the Ansible vault password (`ansible/.vault_pass`)
 
@@ -700,7 +700,7 @@ Keep these in the password manager, nothing can be read without them and they ar
 |===
 |Data |Restore with
 
-|Secrets and key files (the `override.env` files, `rclone.conf`, `seaweedfs-s3.json`, `secret.key`) |Backrest, repository `docker` (below)
+|Secrets and key files (the `override.env` files, `rclone.conf`, `seaweedfs-s3.json`, `secret.key`) |`scripts/docker/restore.sh`, repository `docker` (below)
 |PostgreSQL |Databasus (below)
 |Vault |`scripts/vault/vault_restore.sh` (below)
 |NetBird server |`netbird_restore.sh` (below)
@@ -710,13 +710,28 @@ Keep these in the password manager, nothing can be read without them and they ar
 
 ==== Key files
 
-. Backrest: repository `docker` -> snapshots -> browse the snapshot, select the file -> restore to a *new* folder below `/restore`,
-  e.g. `/restore/test1` (`/restore` is the only writable path, `/root/docker/backrest/restore` on the host). Backrest refuses a target that
-  exists already (`target directory "/restore" already exists`), so use a new name each time or delete the old folder. The restored
-  files hold secrets in plain text, delete the folder afterwards.
+. Look at the snapshots and the files in one of them:
++
+----
+sudo scripts/docker/restore.sh snapshots docker
+sudo scripts/docker/restore.sh files docker <snapshot>
+----
+. Restore a snapshot (default `latest`), or only some paths of it:
++
+----
+sudo scripts/docker/restore.sh restore docker
+sudo scripts/docker/restore.sh restore docker <snapshot> --include /userdata/docker/seaweedfs-s3.json
+----
++
+The script restores into a *new* folder `/root/docker/restic-backup/restore/<repository>-<snapshot>-<time>` (the only writable place of the
+container, it never overwrites anything) and prints it. The files hold secrets in plain text, delete the folder afterwards.
+`/userdata/docker` in the snapshot is `/root/docker` on the host, `/userdata/gitops` is `/root/gitops`.
 . Copy the file back to its place (`/root/gitops/docker/<project>/override.env`, `/root/docker/seaweedfs-s3.json`,
-  `/root/docker/backrest/rclone/rclone.conf`, `/root/docker/offsite-sync/rclone/rclone.conf`, `/root/docker/databasus/secret.key`),
+  `/root/docker/offsite-sync/rclone/rclone.conf`, `/root/docker/databasus/secret.key`),
   check the owner and mode (`override.env` `600`) and deploy the project with `deploy.sh`.
+
+`restore.sh` takes the repositories `docker`, `vault` and `netbird` (the Vault and NetBird snapshots can also be browsed this way, they
+are restored with their own scripts below). It needs the running container `restic-backup`. With the S3 gone use `--from pcloud`.
 
 After a total loss restore `seaweedfs-s3.json` first or create the identities again with `setup-backup-host.sh`.
 The key files are also in the repository `docker` on pCloud, see the last section.
@@ -745,7 +760,7 @@ password manager as well: without it the dumps are unreadable.
 
 . Vault runs (Argo, `kube-vault.yaml`) and is initialised and unsealed (`init-vault.ps1` on a fresh Vault).
 . On a host with the `vault` CLI: `VAULT_ADDR` and `VAULT_TOKEN` (root token) set, and `/etc/vault-backup.cred` with the lines
-  `S3_ENDPOINT=...`, `AWS_ACCESS_KEY_ID=...` and `AWS_SECRET_ACCESS_KEY=...` (identity `vault` or `backrest`).
+  `S3_ENDPOINT=...`, `AWS_ACCESS_KEY_ID=...` and `AWS_SECRET_ACCESS_KEY=...` (identity `vault` or `restic-backup`).
 . Put the restic password of the Vault repository into a file and run the script, it lists the snapshots and asks which one to restore:
 +
 ----
@@ -784,90 +799,56 @@ restic -r rclone:pCloud:/Backups/s3/vault/raft restore latest --target /restore/
 restic -r rclone:pCloud:/Backups/s3/netbird/restic restore latest --target /restore/netbird
 ----
 
-In Backrest the repository `pcloud` does the same in the UI. To fill a new SeaweedFS again, run the nightly sync the other way
+With the container `restic-backup` running, `sudo scripts/docker/restore.sh --from pcloud restore docker` does the same for the key files
+(it reads the `rclone.conf` of the offsite sync, the S3 is not needed). To fill a new SeaweedFS again, run the nightly sync the other way
 round: `rclone sync pCloud:/Backups/s3 SEAWEED:` (with an S3 remote named `SEAWEED` and the admin key).
 
-=== Setup Backrest
+=== Setup restic-backup
 
-Backrest is the web UI for restic on the Docker host. It backs up a few static key files read-only to the local
-SeaweedFS S3, checks the repositories and is used to browse and restore snapshots. It reaches the S3 as
-`host.docker.internal` (set in the compose file), the firewall must allow the Docker network to reach port 8333
-(see Setup Databasus).
+`restic-backup` is one container with a shell script (`docker/restic-backup/backup.sh`, no UI). Once a night (03:00 UTC, after `vault-backup`, before the
+offsite sync) it runs everything on the local SeaweedFS S3 in one go, so backup, forget, prune and check never fight over the repository lock:
 
-* Secrets are in `docker/backrest/override.env` (`setup-backup-host.sh` writes the S3 keys of the identity `backrest`), `default.env` lists all variables.
+[cols="1,1,3"]
+|===
+|Repository |Steps |Notes
+
+|`docker` (`backups/docker`)
+|`backup`, `forget`, `prune`, `check`
+|The key files (below). `forget` keeps 7 daily, 4 weekly and 6 monthly snapshots over *all* snapshots of the repository (`--group-by ''`), so the snapshots of the former Backrest age out as well. `prune` removes a pack when more than 10% of it is unused. `check` reads 10% of the data. `forget` and `prune` are skipped when the backup failed
+
+|`vault` (`vault/raft`), `netbird` (`netbird/restic`)
+|`check`
+|Written and pruned by `vault-backup` and `netbird_backup.sh`. The repositories must exist, a missing one fails the step
+|===
+
+Every step leaves its result for Prometheus, see <<Backup age alerts>>. The container exits the run with an error if a step failed and posts the failed steps to Discord (optional).
+The log of a run is in `docker logs restic-backup`, a run right now: `docker exec restic-backup sh /backup.sh now`.
+
+* Secrets are in `docker/restic-backup/override.env` (`setup-backup-host.sh` writes the S3 keys of the identity `restic-backup`), `default.env` lists all variables, also
+  the time of the run (`BACKUP_HOUR`, `BACKUP_MINUTE`), the retention (`KEEP_*`) and the share of data that `check` reads (`CHECK_READ_DATA_SUBSET`).
   Besides the S3 keys it holds the restic passwords of the repositories (`RESTIC_PASSWORD_DOCKER`, `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD`) and
-  optionally `DISCORD_WEBHOOK_URL`. `sudo scripts/docker/setup-backrest.sh` fills them in: the vault password from `docker/vault-backup/override.env`, the
+  optionally `DISCORD_WEBHOOK_URL`. `sudo scripts/docker/setup-restic-backup.sh` fills them in: the vault password from `docker/vault-backup/override.env`, the
   NetBird password from `/root/restic`, the webhook from `docker/offsite-sync/override.env`. It asks for the `docker` password (an empty answer generates a new
-  one, shown once, for a fresh setup) and never changes a value that is set. Order on a new host: `setup-backup-host.sh`, `setup-backrest.sh`, `deploy.sh backrest`
-* The configuration (repositories, schedules, plan, hooks) is in Git: `docker/backrest/config.template.json`. `docker/backrest/pre-deploy.sh`
-  (run by `deploy.sh`) renders `/root/docker/backrest/config/config.json` from it, fills the `${NAME}` placeholders from the env files, keeps the users and
-  restarts Backrest. *Change repositories, plans and hooks in the template, not in the UI:* the next deploy overwrites UI changes. Check a change first
-  with `bash docker/backrest/pre-deploy.sh /tmp/config.test.json` (writes only that file, restarts nothing)
-* If Backrest does not answer on port 9898 after the restart (for example because it refuses the new file), `pre-deploy.sh` puts the previous file back
-  (saved as `config.json.before-deploy`), restarts Backrest again and fails, so `deploy.sh` shows `backrest: pre-deploy.sh failed`. Read the reason with
-  `docker logs backrest`; the log of the failed start is also printed
-* Deploy the project with `sudo scripts/docker/deploy.sh backrest`, open `http://<docker-host>:9898` and create the admin user *at once*
-  (Backrest has no login until then, and Hooks run shell commands). The users stay across deploys
-* The pCloud remote (`rclone.conf`) for restoring from pCloud is created and installed to `/root/docker/backrest/rclone/rclone.conf` by `setup-backup-host.sh`
-* Restore only into `/restore`, then move the data into place
+  one, shown once, for a fresh setup) and never changes a value that is set. Order on a new host: `setup-backup-host.sh`, `setup-restic-backup.sh`, `deploy.sh restic-backup`
+* The repository `docker` is initialised by the first run. `vault` and `netbird` already exist (created by `vault-backup` and `netbird_backup.sh`), `restic-backup` only checks them
+* The repository checkout (`/root/gitops`) and `/root/docker` are mounted read-only, the container can only write to `/restore` and the restic cache
+* The `rclone.conf` of the offsite sync is mounted read-only. It is only used to restore from pCloud, the container never writes to pCloud
+* Restore with `scripts/docker/restore.sh`, see <<Key files>>
 * Store the restic passwords and `rclone.conf` outside the server as well (password manager)
 
-==== Repositories
+==== Move from Backrest (once)
 
-The template defines the four repositories `docker`, `vault`, `netbird` and `pcloud` and the plan below. `pcloud` is the copy of `docker` in pCloud
-(same restic repository and password, so the same `guid`), for restores that do not need the local S3; its prune and check are off. The `guid` of each
-repository is its restic repository id (`restic cat config`), Backrest refuses a repository without it. The tables describe the settings.
+. `sudo scripts/docker/undeploy.sh --yes backrest` (the data stays in `/root/docker/backrest`).
+. `git pull`, then `sudo scripts/docker/setup-backup-host.sh`: it renames the S3 identity `backrest` to `restic-backup` (same keys), creates
+  `/root/docker/restic-backup` and writes the keys into `docker/restic-backup/override.env`.
+. `sudo scripts/docker/setup-restic-backup.sh`. Use the *same* password for `docker` as Backrest had (the repository `docker` already exists).
+. `sudo scripts/docker/deploy.sh restic-backup`, then `docker exec restic-backup sh /backup.sh now` and check the result: the log must end with `Run finished`
+  and `backup_last_success_timestamp_seconds{backup="restic-backup"}` must show up in Prometheus.
+. Look at what `forget` would remove from the old snapshots: `docker exec restic-backup sh -c '. /common.sh && select_repository docker s3 && restic forget --dry-run --group-by "" --keep-daily 7 --keep-weekly 4 --keep-monthly 6'`.
+. Delete the old data once you trust the new run: `rm -r /root/docker/backrest`. In the NetBird dashboard remove the reverse proxy service `backrest.proxy.rjst.de`.
 
-The repository `docker` is new, you choose its password. `vault` and `netbird` already exist (created by `vault-backup`
-and `netbird_backup.sh`): enter their existing passwords and leave auto initialize off. The S3 keys in the environment
-variables of every repository are the ones of the identity `backrest` (`jq -r '.identities[] | select(.name=="backrest") |
-.credentials[0]' /root/docker/seaweedfs-s3.json`): `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, one entry each, without spaces or
-quotes (the Backrest docs list them in the environment variables of the repository, they do not say whether the environment
-of the container is passed on). `SignatureDoesNotMatch` means a wrong secret, "wrong password" a wrong repository password.
-
-[cols="1,2,2,2,2"]
-|===
-|Setting |`docker` |`vault` |`netbird` |`pcloud` (restore only)
-
-|URI
-|`s3:http://host.docker.internal:8333/backups/docker`
-|`s3:http://host.docker.internal:8333/vault/raft`
-|`s3:http://host.docker.internal:8333/netbird/restic`
-|`rclone:pCloud:/Backups/s3/backups/docker`
-
-|Password
-|new, store it in the password manager
-|`RESTIC_PASSWORD` of the `vault-backup` project
-|content of `/root/restic` on the Docker host
-|the one of `docker`
-
-|Auto initialize
-|on
-|off
-|off
-|off
-
-|Prune policy
-|weekly, Sunday 03:30 UTC (`30 3 * * 0`), max unused 10%
-|*off*, `vault-backup` runs `forget --prune` itself
-|*off*, `netbird_backup.sh` runs `forget --prune` itself
-|off
-
-|Check policy
-|weekly, Sunday 04:00 UTC (`0 4 * * 0`), read data subset 10%
-|the same
-|the same
-|off, check by hand
-|===
-
-You see the existing snapshots of `vault` and `netbird` right after saving the repository. That also proves that the identity `backrest`
-may read these buckets (`access denied` for `netbird` means that SeaweedFS was not restarted after the rights were updated).
-
-==== Plan for the key files
-
-The plan only takes files that never change while running, and the repository checkout with the secrets. The data directories of running
-services (the internal database of Databasus) are not copied, a copy of a live database is not consistent. PostgreSQL is
-backed up by Databasus.
+The key files are in the plan of the script (`KEY_FILES` in `backup.sh`), the data directories of running services (the internal database of Databasus) are not copied,
+a copy of a live database is not consistent. PostgreSQL is backed up by Databasus.
 
 [cols="1,3"]
 |===
@@ -878,16 +859,13 @@ backed up by Databasus.
 * `/userdata/gitops` (the repository checkout `/root/gitops` with the `override.env` files, they hold the secrets and are not in Git)
 * `/userdata/docker/databasus/secret.key`
 * `/userdata/docker/seaweedfs-s3.json`
-* `/userdata/docker/backrest/rclone/rclone.conf`
 * `/userdata/docker/offsite-sync/rclone/rclone.conf`
-* `/userdata/docker/backrest/config`
 |Excludes |`/userdata/gitops/.git` (the history is on GitHub)
-|Schedule |`0 3 * * *`, UTC
+|Schedule |daily 03:00 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`)
 |Retention |daily 7, weekly 4, monthly 6
 |===
 
-Test it: "Backup now" on the plan, then "Check" on the repository and restore a file into `/restore`. Restoring from
-pCloud (repository `pcloud`) is done after the first offsite sync.
+Test it: `docker exec restic-backup sh /backup.sh now`, then restore a file with `scripts/docker/restore.sh`. Restoring from pCloud (`--from pcloud`) is done after the first offsite sync.
 
 === Setup Databasus
 
@@ -973,7 +951,7 @@ SeaweedFS is the local S3 staging for all backups. Access is controlled by separ
 |Identity |Bucket |Rights
 
 |`admin` |all |Admin (only for you, not used by containers)
-|`backrest` |`backups`, `vault`, `netbird` |Read, Write, List
+|`restic-backup` |`backups`, `vault`, `netbird` |Read, Write, List
 |`databasus` |`databases` |Read, Write, List
 |`vault` |`vault` |Read, Write, List
 |`pelican` |`pelican` |Read, Write, List (for the S3 backups of Pelican)
@@ -987,8 +965,8 @@ missing identities and buckets are added (needs `jq`). To add a service later, a
 in the script and in the `-bucket=` flag of the compose file, run the script (it restarts SeaweedFS when identities or rights changed, `--no-restart` skips that). `--regenerate-s3`
 replaces all keys
 * Deploy the seaweedfs project with `deploy.sh seaweedfs`, then run the script again to create the buckets
-* The keys of `backrest`, `offsite-sync` and `vault` are written into the `override.env` files by the script. Copy the keys of `databasus`, `pelican` and `netbird` from `/root/backup-credentials.env` into their settings, then delete the file
-* `Write` includes deleting objects in SeaweedFS, so a leaked `backrest` key can delete the local backups. pCloud keeps deleted files (`Backups-deleted`)
+* The keys of `restic-backup`, `offsite-sync` and `vault` are written into the `override.env` files by the script. Copy the keys of `databasus`, `pelican` and `netbird` from `/root/backup-credentials.env` into their settings, then delete the file
+* `Write` includes deleting objects in SeaweedFS, so a leaked `restic-backup` key can delete the local backups. pCloud keeps deleted files (`Backups-deleted`)
 * The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird` on start (`-bucket=`)
 * The S3 port `8333` and the admin UI (`23646`) are published, the filer (`8888`) is not. Like the other published ports they go around
   UFW (Docker), so restrict `23646` outside the host (router, NetBird policy) and open it only for your peers

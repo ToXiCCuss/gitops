@@ -1,11 +1,11 @@
 #!/bin/bash
 # =============================================================================
-# setup-backrest.sh
-# Fills docker/backrest/override.env with the secrets that pre-deploy.sh puts into the Backrest
-# configuration, as far as they can be found on this host. A value that is already set is never
-# changed. Run it after setup-backup-host.sh (it writes the S3 keys) and before deploying Backrest.
+# setup-restic-backup.sh
+# Fills docker/restic-backup/override.env with the restic passwords of the repositories, as far as
+# they can be found on this host. A value that is already set is never changed. Run it after
+# setup-backup-host.sh (it writes the S3 keys) and before deploying restic-backup.
 #
-#   sudo scripts/docker/setup-backrest.sh
+#   sudo scripts/docker/setup-restic-backup.sh
 #
 # Where the values come from:
 #   RESTIC_PASSWORD_VAULT    docker/vault-backup/override.env (RESTIC_PASSWORD, the same repository)
@@ -14,8 +14,7 @@
 #                            it is shown once, put it into the password manager
 #   DISCORD_WEBHOOK_URL      docker/offsite-sync/override.env, if it is set there
 #
-# Afterwards: bash docker/backrest/pre-deploy.sh /tmp/config.test.json, then
-# sudo scripts/docker/deploy.sh backrest
+# Afterwards: sudo scripts/docker/deploy.sh restic-backup
 # =============================================================================
 
 set -euo pipefail
@@ -30,14 +29,14 @@ error()   { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 step()    { echo -e "\n${BOLD}${CYAN}▶ $*${RESET}"; }
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ENV_FILE="$REPO_DIR/docker/backrest/override.env"
+ENV_FILE="$REPO_DIR/docker/restic-backup/override.env"
 VAULT_BACKUP_ENV="$REPO_DIR/docker/vault-backup/override.env"
 OFFSITE_SYNC_ENV="$REPO_DIR/docker/offsite-sync/override.env"
 NETBIRD_PASSWORD_FILE="${NETBIRD_PASSWORD_FILE:-/root/restic}"
 GENERATED_PASSWORD_BYTES=24
 
 if [[ $EUID -ne 0 ]]; then
-    error "This script must be run as root (sudo scripts/docker/setup-backrest.sh)"
+    error "This script must be run as root (sudo scripts/docker/setup-restic-backup.sh)"
     exit 1
 fi
 
@@ -121,7 +120,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 chmod 600 "$ENV_FILE"
 
-step "S3 keys of the identity backrest"
+step "S3 keys of the identity restic-backup"
 for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
     if ! has_value "$name"; then
         error "$name is missing. Run scripts/docker/setup-backup-host.sh first, it writes the S3 keys."
@@ -139,8 +138,8 @@ fill_required_password RESTIC_PASSWORD_NETBIRD "$(first_line_of "$NETBIRD_PASSWO
 
 step "Discord webhook"
 fill_from DISCORD_WEBHOOK_URL "$(value_of "$OFFSITE_SYNC_ENV" DISCORD_WEBHOOK_URL)" "docker/offsite-sync/override.env" \
-    || info "No webhook found, Backrest will not report failures (set DISCORD_WEBHOOK_URL in override.env by hand)"
+    || info "No webhook found, restic-backup will not report failures to Discord (set DISCORD_WEBHOOK_URL in override.env by hand)"
 
 echo
-success "Done. Check the result with: bash docker/backrest/pre-deploy.sh /tmp/config.test.json"
-info "Then deploy: sudo scripts/docker/deploy.sh backrest"
+success "Done."
+info "Deploy: sudo scripts/docker/deploy.sh restic-backup"

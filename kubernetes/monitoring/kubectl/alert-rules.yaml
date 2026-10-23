@@ -92,9 +92,18 @@ spec:
           annotations:
             summary: "Backup {{ $labels.backup }} has no successful run for more than 26 hours"
         - alert: BackupNeverReported
-          expr: absent(backup_last_success_timestamp_seconds{backup="offsite-sync"}) or absent(backup_last_success_timestamp_seconds{backup="vault-backup"}) or absent(backup_last_success_timestamp_seconds{backup="backrest"})
+          expr: absent(backup_last_success_timestamp_seconds{backup="offsite-sync"}) or absent(backup_last_success_timestamp_seconds{backup="vault-backup"}) or absent(backup_last_success_timestamp_seconds{backup="restic-backup"})
           for: 26h
           labels:
             severity: critical
           annotations:
-            summary: "offsite-sync, vault-backup or backrest never reported a successful run"
+            summary: "offsite-sync, vault-backup or restic-backup never reported a successful run"
+        # restic-backup runs backup, forget, prune and check in one run and writes the result of every step
+        # (restic_step_success), so a failed step shows up here the same night, not only after 26 hours
+        - alert: ResticStepFailed
+          expr: restic_step_success == 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Step {{ $labels.step }} of the restic repository {{ $labels.repository }} failed"

@@ -1,0 +1,33 @@
+services:
+  restic-backup:
+    image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+    container_name: restic-backup
+    hostname: restic-backup-docker
+    env_file:
+      - "default.env"
+      - "override.env"
+    # The host DNS is the NetBird resolver (100.x), which containers cannot reach (needed for pCloud restores)
+    dns:
+      - 1.1.1.1
+      - 9.9.9.9
+    # host.docker.internal points to the Docker host, where the SeaweedFS S3 listens
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - ./common.sh:/common.sh:ro
+      # restic cache, so that check and prune do not read the metadata from the S3 again every night
+      - /root/docker/restic-backup/cache:/root/.cache/restic
+      # Backup sources, read-only. Only static files (keys, config), see the README.
+      # Never the data directories of running databases, they are not consistent when copied.
+      - /root/docker:/userdata/docker:ro
+      # The repository checkout incl. the override.env files with the secrets (not in Git)
+      - /root/gitops:/userdata/gitops:ro
+      # rclone.conf of the offsite sync (read-only), only for restoring from pCloud
+      - /root/docker/offsite-sync/rclone:/root/.config/rclone:ro
+      # Only restore target that is writable (scripts/docker/restore.sh)
+      - /root/docker/restic-backup/restore:/restore
+      # Textfile collector of the node_exporter: every step leaves its result there
+      - /var/lib/prometheus/node-exporter:/metrics
+    restart: unless-stopped
