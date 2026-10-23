@@ -33,6 +33,7 @@ ROOT_ENV_FILE="$REPO_DIR/docker/rustfs/override.env"
 
 RCLONE_IMAGE="rclone/rclone:1.75.1"
 CHECK_OBJECT=".setup-rustfs-check"
+ERROR_LENGTH=300
 S3_ENDPOINT="http://127.0.0.1:9000"
 ADMIN_API_PATH="rustfs/admin/v3"
 SIGNING_SCOPE="aws:amz:us-east-1:s3"
@@ -212,14 +213,30 @@ apply_identities() {
     for_each_identity apply_identity
 }
 
+# The last message of rclone for a refused test is part of the report
+last_error() {
+    tail -n 1 "$WORK_DIR/last-error.txt" 2>/dev/null | cut -c1-$ERROR_LENGTH || true
+}
+
 can_list() {
-    run_rclone_as "$1" "$2" lsf "RUSTFS:$3" >/dev/null 2>&1
+    run_rclone_as "$1" "$2" lsf "RUSTFS:$3" >/dev/null 2>"$WORK_DIR/last-error.txt"
 }
 
 # can_write <access key> <secret key> <bucket>: true if the user can store an object in the bucket (it is removed again)
 can_write() {
-    run_rclone_as "$1" "$2" touch "RUSTFS:$3/$CHECK_OBJECT" >/dev/null 2>&1 || return 1
+    run_rclone_as "$1" "$2" touch "RUSTFS:$3/$CHECK_OBJECT" >/dev/null 2>"$WORK_DIR/last-error.txt" || return 1
     run_rclone_as "$1" "$2" deletefile "RUSTFS:$3/$CHECK_OBJECT" >/dev/null 2>&1 || true
+}
+
+# check_root_write: if even the root key cannot store an object, the problem is the S3 and not a policy
+check_root_write() {
+    local bucket
+    bucket=$(jq -r '.buckets[0]' "$IDENTITIES_FILE")
+    if can_write "$ROOT_ACCESS_KEY" "$ROOT_SECRET_KEY" "$bucket"; then
+        success "The root key can store objects in '$bucket'"
+    else
+        error "The root key cannot store an object in '$bucket': $(last_error)"
+    fi
 }
 
 # check_identity <name> <readwrite|read> <bucket>...: the user really has the rights of its policy, with its own keys:
@@ -229,10 +246,10 @@ check_identity() {
     keys=$(identity_keys "$name") || return 1
     user="${keys%% *}"; secret="${keys#* }"
     for bucket in "${@:3}"; do
-        can_list "$user" "$secret" "$bucket" || problems+=("cannot list $bucket")
+        can_list "$user" "$secret" "$bucket" || problems+=("cannot list $bucket: $(last_error)")
     done
     if [[ "$access" == "readwrite" ]]; then
-        can_write "$user" "$secret" "$3" || problems+=("cannot write to $3")
+        can_write "$user" "$secret" "$3" || problems+=("cannot write to $3: $(last_error)")
     elif can_write "$user" "$secret" "$3"; then
         problems+=("can write to $3")
     fi
@@ -265,6 +282,7 @@ success "Logged in at $VAULT_ADDR"
 step "Policies and users"
 apply_identities
 step "Rights check with the keys of each identity"
+check_root_write
 verify_identities
 
 echo
