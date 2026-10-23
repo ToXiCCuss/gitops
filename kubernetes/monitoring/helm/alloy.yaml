@@ -20,7 +20,7 @@ spec:
           value: |
             fullnameOverride: alloy
             # Reads the logs of all pods through the Kubernetes API (loki.source.kubernetes), so one pod is enough
-            # and it needs no host path. The logs of docker01 are collected by Alloy there (docker/alloy).
+            # and it needs no host path. The logs of docker01 are not collected.
             # No dollar sign in this file: ArgoCD replaces $NAME in the plugin env values.
             controller:
               type: deployment

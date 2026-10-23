@@ -20,12 +20,11 @@ spec:
         - name: HELM_VALUES
           value: |
             fullnameOverride: loki
-            # One pod, filesystem storage on a local-path volume. Grafana reads it as the datasource loki
-            # (http://loki.loki:3100), the Alloy DaemonSet and Alloy on docker01 push to it
-            # (docker01 through https://loki.k8sdev.rjst.de, see kubernetes/monitoring/kubectl/loki.yaml).
+            # One pod, filesystem storage on a local-path volume. Internal only (no gateway): Grafana reads it as the
+            # datasource loki (http://loki.loki:3100, kubernetes/monitoring/kubectl/loki.yaml), Alloy pushes to it.
             deploymentMode: Monolithic
             loki:
-              # No login of its own: who may reach it is decided by the NetBird policy loki-users -> k8s-loki.
+              # No login of its own, the service is not reachable from outside the cluster.
               auth_enabled: false
               commonConfig:
                 replication_factor: 1
