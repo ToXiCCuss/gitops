@@ -8,6 +8,14 @@ metadata:
   namespace: istio-system
 spec:
   profile: default
+  meshConfig:
+    # The provider only exists here, the Telemetry resource in kubernetes/infra/kubectl/kube-istio-telemetry.yaml
+    # switches it on. Tempo takes the spans as OTLP/gRPC.
+    extensionProviders:
+      - name: tempo
+        opentelemetry:
+          service: tempo.tempo.svc.cluster.local
+          port: 4317
   components:
     ingressGateways:
       - name: istio-ingressgateway

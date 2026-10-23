@@ -1,0 +1,14 @@
+# Needs the extension provider "tempo" from istio/istio-operator.yaml (istioctl install), otherwise istiod
+# rejects the provider name. Root namespace = applies to the whole mesh.
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: mesh-tracing
+  namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  tracing:
+    - providers:
+        - name: tempo
+      randomSamplingPercentage: 10

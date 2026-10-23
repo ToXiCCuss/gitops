@@ -1242,6 +1242,24 @@ istioctl verify-install -f istio/istio-operator.yaml
 * Check: `kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.spec.externalTrafficPolicy}'` must print `Local`.
 * The second, internal gateway (`istio-internal-gateway`) is not part of this file, it is an ArgoCD Application in `kubernetes/infra/helm`.
 
+===== Distributed tracing (Tempo)
+
+The sidecars and gateways send their spans as OTLP/gRPC to Tempo (`kubernetes/monitoring/helm/tempo.yaml`, namespace `tempo`,
+ClusterIP only). Two parts have to match:
+
+* `meshConfig.extensionProviders` in `istio/istio-operator.yaml` defines the provider `tempo`. Run `istioctl install` **before** the
+  `Telemetry` resource (`kubernetes/infra/kubectl/kube-istio-telemetry.yaml`) syncs, otherwise istiod rejects the unknown provider.
+  Restart the workloads in the `istio-injection: enabled` namespaces afterwards so the sidecars pick up the provider.
+* The `Telemetry` resource samples 10 % of the requests mesh-wide. Raise `randomSamplingPercentage` while debugging, or add a
+  `Telemetry` in a single namespace to override it there.
+
+The apps still have to pass the trace headers on (Spring Boot: Micrometer Tracing with the OpenTelemetry bridge, W3C `traceparent`),
+otherwise every hop is a trace of its own. Put `traceId` into the log pattern to find the logs of a trace later.
+
+Tempo turns the spans into the RED metrics and the service graph and writes them to Prometheus
+(`prometheusSpec.enableRemoteWriteReceiver`). Grafana reads both through the datasource `Tempo` (Explore -> Tempo -> Service Graph).
+Traces are kept 48 hours and are not backed up.
+
 ==== 1. Bootstrap ArgoCD
 
 ----

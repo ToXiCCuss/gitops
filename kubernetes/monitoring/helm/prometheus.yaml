@@ -89,6 +89,20 @@ spec:
                   email_attribute_path: email
                   role_attribute_path: "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'editor') && 'Editor' || contains(roles[*], 'viewer') && 'Viewer'"
                   role_attribute_strict: true
+              additionalDataSources:
+                - name: Tempo
+                  uid: tempo
+                  type: tempo
+                  access: proxy
+                  url: http://tempo.tempo:3200
+                  jsonData:
+                    nodeGraph:
+                      enabled: true
+                    # Service graph and the "Tempo" links of the RED table come from the metrics Tempo writes to Prometheus
+                    serviceMap:
+                      datasourceUid: prometheus
+                    tracesToMetrics:
+                      datasourceUid: prometheus
               sidecar:
                 dashboards:
                   enabled: true
@@ -291,6 +305,8 @@ spec:
                           storage: 100Gi
                 retentionSize: "50GB"
                 enableAdminAPI: false
+                # Tempo writes the RED metrics and the service graph of the traces here (kubernetes/monitoring/helm/tempo.yaml).
+                enableRemoteWriteReceiver: true
                 walCompression: true
                 scrapeInterval: 30s
                 evaluationInterval: 30s

@@ -1,0 +1,63 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  destination:
+    namespace: tempo
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    # The chart moved from grafana/helm-charts (deprecated) to grafana-community/helm-charts.
+    repoURL: https://grafana-community.github.io/helm-charts
+    targetRevision: 3.2.1
+    chart: tempo
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            fullnameOverride: tempo
+            # Internal only (no gateway): Grafana reads it as the datasource tempo (http://tempo.tempo:3200),
+            # the Istio sidecars send their spans to tempo.tempo:4317 (OTLP/gRPC, see istio/istio-operator.yaml).
+            tempo:
+              reportingEnabled: false
+              # Traces are short-lived diagnostics: no backup, a short retention keeps the volume small.
+              retention: 48h
+              resources:
+                requests:
+                  memory: 256Mi
+                  cpu: 50m
+                limits:
+                  memory: 1Gi
+                  cpu: 500m
+              # Turns the spans into the RED metrics and the service graph in Grafana. Both end up in Prometheus
+              # (prometheusSpec.enableRemoteWriteReceiver), the processors have to be switched on in the overrides too.
+              metricsGenerator:
+                enabled: true
+                remoteWriteUrl: http://prometheus-prometheus.prometheus:9090/api/v1/write
+                processor:
+                  service_graphs: {}
+                  span_metrics: {}
+                storage:
+                  path: /var/tempo/generator/wal
+              overrides:
+                defaults:
+                  metrics_generator:
+                    processors:
+                      - service-graphs
+                      - span-metrics
+            persistence:
+              enabled: true
+              size: 5Gi
+              storageClassName: local-path
+            serviceMonitor:
+              enabled: true
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
