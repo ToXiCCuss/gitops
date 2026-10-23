@@ -1003,11 +1003,20 @@ replaces all keys
 * After the first deploy open `http://<docker-host>:23646`. If it shows no login page, stop the project and do not publish the port:
   then the environment variables are not read by `weed mini`
 
-=== Setup RustFS (trial)
+=== Setup RustFS
 
-`docker/rustfs` is a second S3 server next to SeaweedFS, to try its console with the login of Keycloak. It is *not* part of the backup chain
-(no identities of `setup-backup-host.sh`, not in `ALL_PROJECTS` of `deploy.sh`), so a normal `deploy.sh` run does not touch it. RustFS is young
-(1.0.x), so do not put backups on it before you trust it. Ports: `9000` S3 API, `9001` console.
+`docker/rustfs` is the S3 server that replaces SeaweedFS. It runs next to it (RustFS on `9000`, console `9001`; SeaweedFS stays on `8333`) while the
+clients are switched one after the other: copy the repository, put the client on `:9000` and the keys of its identity, run it once, check it.
+SeaweedFS goes away when all clients are switched. RustFS is young (1.0.x), so check every repository after the switch (`restore.sh snapshots`).
+
+Buckets, users and policies come from `docker/rustfs/identities.json` (names and buckets, no keys). The keys are in Vault (`docker/s3/<name>`):
+
+. On Windows: `.\scripts\vault\create-s3-identities.ps1 -VaultToken <token>` creates the missing keys. It never changes an existing one.
+  Read a key with `vault kv get docker/s3/<name>` (for Databasus, Pelican and NetBird).
+. On the Docker host (after the steps below, RustFS running, the AppRole files in place, see Secrets from Vault):
+  `sudo scripts/docker/setup-rustfs.sh` creates the buckets with the root key of `docker/rustfs/override.env`, then a policy and a user per identity with `mc`.
+  RustFS serves the `mc admin` API, but this is not verified for 1.0.x: if a step is refused, the script names it.
+. The firewall rule for port `9000` from the Docker networks is in `ansible/group_vars/all/main.yml` (run the Ansible playbook for the host).
 
 . Keycloak: set `RUSTFS_CLIENT_SECRET` in `docker/keycloak-config/override.env` (`openssl rand -base64 32`), then
   `sudo scripts/docker/deploy.sh keycloak-config`. That creates the client `rustfs` and its client roles `consoleAdmin`, `readwrite` and `readonly`

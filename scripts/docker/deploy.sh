@@ -47,7 +47,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DOCKER_DIR="$REPO_DIR/docker"
 
 # Order: the S3 first, the services that write to it afterwards
-ALL_PROJECTS=(seaweedfs restic-backup databasus keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
+ALL_PROJECTS=(seaweedfs rustfs restic-backup databasus keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
 
 # Projects whose secrets come from Vault (docker/<project>), see the README
 VAULT_PROJECTS=(keycloak keycloak-config)
