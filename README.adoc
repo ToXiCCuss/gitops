@@ -511,9 +511,10 @@ The compose file reads `default.env`, `override.env` and `vault.env`; both of th
 
 Set up once (on Windows, with the root token):
 
-. `.\scripts\vault\configure-vault-docker.ps1 -VaultToken <token> -AllowedCidr <NetBird address of docker01>/32 -NewSecretId`
-  mounts the KV engine `docker`, writes the read-only policy `docker` and the AppRole `docker01` (token lifetime 5 minutes, bound to the address).
-  It prints the `role_id` and the `secret_id` once.
+. `.\scripts\vault\configure-vault-docker.ps1 -VaultToken <token> -NewSecretId`
+  mounts the KV engine `docker`, writes the read-only policy `docker` and the AppRole `docker01` (token lifetime 5 minutes).
+  It prints the `role_id` and the `secret_id` once. Do not bind the role to the address of the Docker host (`-AllowedCidr`): Vault runs in the
+  cluster and sees the address of a pod (`10.42.x.x`), so the login fails with "source address unauthorized by CIDR restrictions".
 . On the Docker host as root: `install -d -m 700 /etc/gitops`, then `(umask 077; cat > /etc/gitops/secret_id)` and the same for `role_id`
   (paste, Ctrl-D). A new `secret_id` (`-NewSecretId`) destroys the old one, so a leaked file is cut off by running the script again.
 . Put the values of a project into Vault, e.g. `vault kv put docker/keycloak KC_DB_USERNAME=... KC_DB_PASSWORD=... KC_BOOTSTRAP_ADMIN_PASSWORD=...`

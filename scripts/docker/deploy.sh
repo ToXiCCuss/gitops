@@ -112,10 +112,15 @@ vault_login() {
     command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || { error "curl and jq are required for the projects with secrets from Vault"; return 1; }
     response=$(jq -n --rawfile role_id "$VAULT_ROLE_ID_FILE" --rawfile secret_id "$VAULT_SECRET_ID_FILE" \
         '{role_id: ($role_id | rtrimstr("\n")), secret_id: ($secret_id | rtrimstr("\n"))}' \
-        | curl -fsS -m "$VAULT_TIMEOUT_SECONDS" -H 'Content-Type: application/json' -d @- "$VAULT_ADDR/v1/auth/approle/login") \
-        || { error "Vault login at $VAULT_ADDR failed: Vault not reachable, wrong secret_id or an address outside the CIDR of the role"; return 1; }
-    VAULT_TOKEN=$(jq -r '.auth.client_token // empty' <<<"$response")
-    [[ -n "$VAULT_TOKEN" ]] || { error "Vault login: the response holds no token"; return 1; }
+        | curl -sS -m "$VAULT_TIMEOUT_SECONDS" -H 'Content-Type: application/json' -d @- "$VAULT_ADDR/v1/auth/approle/login") \
+        || { error "Vault login: $VAULT_ADDR is not reachable"; return 1; }
+    VAULT_TOKEN=$(jq -r '.auth.client_token // empty' <<<"$response" 2>/dev/null)
+    [[ -n "$VAULT_TOKEN" ]] || { error "Vault login refused: $(vault_errors "$response")"; return 1; }
+}
+
+# vault_errors <response>: the error messages of a Vault answer, empty if it has none
+vault_errors() {
+    jq -r '(.errors // []) | join("; ")' <<<"$1" 2>/dev/null || true
 }
 
 # Reads the keys of a secret as NAME='value' lines (single quotes: Compose does not interpolate $ in them).
@@ -132,8 +137,10 @@ VAULT_ENV_PROGRAM='
 write_vault_env() {
     local directory="$VAULT_ENV_DIR/$1" file="$VAULT_ENV_DIR/$1/vault.env" response
     [[ -n "$VAULT_TOKEN" ]] || vault_login || return 1
-    response=$(vault_header | curl -fsS -m "$VAULT_TIMEOUT_SECONDS" -H @- "$VAULT_ADDR/v1/$VAULT_KV_MOUNT/data/$1") \
-        || { error "$1: cannot read $VAULT_KV_MOUNT/$1 from Vault (does the secret exist, does the policy allow it?)"; return 1; }
+    response=$(vault_header | curl -sS -m "$VAULT_TIMEOUT_SECONDS" -H @- "$VAULT_ADDR/v1/$VAULT_KV_MOUNT/data/$1") \
+        || { error "$1: $VAULT_ADDR is not reachable"; return 1; }
+    jq -e '.data.data' >/dev/null 2>&1 <<<"$response" \
+        || { error "$1: cannot read $VAULT_KV_MOUNT/$1 from Vault (does the secret exist, does the policy allow it?) $(vault_errors "$response")"; return 1; }
     install -d -m 700 "$VAULT_ENV_DIR" "$directory"
     VAULT_ENV_FILES+=("$file")
     (umask 077; jq -r --arg quote "'" "$VAULT_ENV_PROGRAM" <<<"$response" > "$file") \

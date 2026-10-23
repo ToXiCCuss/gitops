@@ -21,9 +21,12 @@
     (e.g. the root token from init-vault.ps1).
 
 .PARAMETER AllowedCidr
-    Addresses the AppRole may be used from (secret_id and the tokens it issues are bound to them),
-    e.g. the NetBird address of the Docker host as 100.x.y.z/32. Without it a leaked secret_id works
-    from anywhere that reaches Vault.
+    Addresses the AppRole may be used from (secret_id and the tokens it issues are bound to them).
+    Leave it empty for the setup of this repo: Vault runs in the cluster and sees the address of a pod
+    of the cluster network (10.42.x.x) instead of the NetBird address of the Docker host, so a binding to
+    the host fails with "source address unauthorized by CIDR restrictions". Without it a leaked secret_id
+    works from anywhere that reaches Vault, which the short token lifetime and the rotation by
+    -NewSecretId make up for.
 
 .PARAMETER NewSecretId
     Creates a new secret_id and destroys the older ones.
@@ -95,15 +98,17 @@ Write-Ok "Policy '$PolicyName' written (read on $Engine/data/*)."
 
 # ── 4. AppRole ──────────────────────────────────────────────────────────────
 Write-Step "Writing the AppRole $RoleName"
+# Both fields are always sent: Vault keeps a value that is left out on an update, an empty list removes the binding.
+# A secret_id keeps the binding it was created with, so after a change create a new one (-NewSecretId).
 $role = @{
-    token_policies = @($PolicyName)
-    token_ttl      = $TokenTtl
-    token_max_ttl  = $TokenMaxTtl
-    secret_id_ttl  = "0"
+    token_policies        = @($PolicyName)
+    token_ttl             = $TokenTtl
+    token_max_ttl         = $TokenMaxTtl
+    secret_id_ttl         = "0"
+    token_bound_cidrs     = @($AllowedCidr)
+    secret_id_bound_cidrs = @($AllowedCidr)
 }
 if ($AllowedCidr.Count -gt 0) {
-    $role.token_bound_cidrs = @($AllowedCidr)
-    $role.secret_id_bound_cidrs = @($AllowedCidr)
     Write-Ok "Bound to: $($AllowedCidr -join ', ')"
 } else {
     Write-Warn2 "No -AllowedCidr: the secret_id works from every address that reaches Vault."
