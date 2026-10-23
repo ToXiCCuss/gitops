@@ -501,6 +501,30 @@ New or changed secret:
 
 NetBird is not part of this: it runs from its own folder (`/root/netbird`, created by the NetBird installer, with secrets), see Setup NetBird backup.
 
+==== Secrets from Vault
+
+The projects in `VAULT_PROJECTS` of `deploy.sh` (`keycloak`, `keycloak-config`) read their secrets from Vault instead of, or next to, `override.env`.
+`deploy.sh` logs in with an AppRole (`/etc/gitops/role_id`, `/etc/gitops/secret_id`, mode 600), reads the KV secret `docker/<project>`,
+writes its keys to `/run/gitops/<project>/vault.env` (tmpfs, mode 600) and removes the file as soon as Compose has started the container.
+The compose file reads `default.env`, `override.env` and `vault.env`; both of the last two are optional and the later file wins.
+`deploy.sh` checks the required variables of `override.env.example` over both files. It needs `curl` and `jq` on the host.
+
+Set up once (on Windows, with the root token):
+
+. `.\scripts\vault\configure-vault-docker.ps1 -VaultToken <token> -AllowedCidr <NetBird address of docker01>/32 -NewSecretId`
+  mounts the KV engine `docker`, writes the read-only policy `docker` and the AppRole `docker01` (token lifetime 5 minutes, bound to the address).
+  It prints the `role_id` and the `secret_id` once.
+. On the Docker host as root: `install -d -m 700 /etc/gitops`, then `(umask 077; cat > /etc/gitops/secret_id)` and the same for `role_id`
+  (paste, Ctrl-D). A new `secret_id` (`-NewSecretId`) destroys the old one, so a leaked file is cut off by running the script again.
+. Put the values of a project into Vault, e.g. `vault kv put docker/keycloak KC_DB_USERNAME=... KC_DB_PASSWORD=... KC_BOOTSTRAP_ADMIN_PASSWORD=...`
+  (`vault kv patch` changes single keys). Values must not contain a single quote or a control character (a line break), `deploy.sh` refuses them.
+. `sudo scripts/docker/deploy.sh keycloak`, then delete the same variables from `docker/keycloak/override.env`.
+
+* If Vault is not reachable (or the secret does not exist), that project is not deployed; running containers are not touched, and there is no fallback
+  to an old file. Deploy these projects only with `deploy.sh`: a manual `docker compose up` does not create `vault.env` and would start the
+  container without the secrets.
+* After a total loss of Vault restore it first (see Restore), then deploy these projects.
+
 Move from the old management UI (once): `git pull`, run `setup-backup-host.sh` (it writes the S3 keys), fill the rest of the `override.env`
 files, then deploy project by project with `--adopt`. That removes the existing container of the same name that belongs to another
 Compose project (a short interruption, the data stays) and creates it again. Finally stop and remove the old UI container.
