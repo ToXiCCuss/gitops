@@ -528,24 +528,6 @@ Set up once (on Windows, with the root token):
 * After a total loss of Vault restore it first (see Restore), then deploy the projects. The restic passwords of the Vault repository and the
   `rclone.conf` for pCloud are in your password manager, that is the way back (the backups on pCloud need no S3 and no Vault).
 
-Move the old `override.env` files into Vault (once, on Windows; the values are never printed, the S3 keys are left out because `deploy.sh` takes them
-from the S3 identity). `import-docker-envs.ps1` does `rustfs`, `restic-backup`, `offsite-sync` and `vault-backup` in one go (it reads the files over SSH,
-a project without values is skipped and named). Check the key names with `-DryRun` first:
-
-----
-.\scripts\vault\import-docker-envs.ps1 -DryRun
-.\scripts\vault\import-docker-envs.ps1 -VaultToken <token>
-----
-
-For a single project use `import-docker-env.ps1`:
-
-----
-ssh root@docker01 "cat /root/gitops/docker/<project>/override.env" | .\scripts\vault\import-docker-env.ps1 -Project <project> -VaultToken <token> -DryRun
-ssh root@docker01 "cat /root/gitops/docker/<project>/override.env" | .\scripts\vault\import-docker-env.ps1 -Project <project> -VaultToken <token>
-----
-
-Then `sudo scripts/docker/deploy.sh <project>` on the host and delete the old `override.env` there.
-
 Move from the old management UI (once): `git pull`, run `setup-backup-host.sh` (data directories, `rclone.conf`), put the
 secrets into Vault, then deploy project by project with `--adopt`. That removes the existing container of the same name that belongs to another
 Compose project (a short interruption, the data stays) and creates it again. Finally stop and remove the old UI container.
