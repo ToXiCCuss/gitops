@@ -486,28 +486,29 @@ Containers that mount `/var/run/docker.sock` (`pelican_wings`) need no manual st
 connection refused". The role `docker` therefore adds a systemd drop-in (`docker.service.d/restart-socket-containers.conf`) that
 restarts the containers in `docker_socket_containers` after every start of `dockerd`.
 
-The secrets of a project are in `docker/<project>/override.env`. The file is *not* in Git (`.gitignore`), the variables a project needs are
-named in `docker/<project>/override.env.example` (`NAME=` is required, `#NAME=` is optional). `default.env` lists all variables of
-a project and the compose file reads `default.env` first and `override.env` second. `deploy.sh` checks the required variables before it
-touches a container and lists what is missing. Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `vault-backup`.
+The secrets of a project are in Vault (KV engine `docker`, secret `docker/<project>`), never in a file of the repository or of the host: there is no
+`override.env`. The keys a project needs are named in `docker/<project>/vault.env.example` (`NAME=` is required, `#NAME=` is optional), `default.env`
+lists all variables of a project with empty secrets. `deploy.sh` reads the keys from Vault, checks the required ones before it touches a container and lists
+what is missing. Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `vault-backup`, `keycloak` and `keycloak-config`.
 
 New or changed secret:
 
-. Edit `docker/<project>/override.env` on the server (a new variable in the example file after a `git pull` is reported the same way).
+. Change the secret in Vault on Windows: `vault kv patch docker/<project> NAME=value` (`vault kv put` replaces the whole secret). A new variable in the
+  example file after a `git pull` is reported by `deploy.sh` in the same way.
 . `sudo scripts/docker/deploy.sh <project>`: Compose sees the changed environment and recreates the container within seconds.
   The data lives in folders on the host and stays.
-. The S3 keys of `restic-backup` and `offsite-sync` are not in their `override.env`: `deploy.sh` reads them from Vault (`docker/s3/<project>`,
-  see Setup RustFS). `vault-backup` keeps the keys of the identity `vault` in its `override.env`, because it must run without Vault.
+. The S3 keys of `restic-backup`, `offsite-sync` and `vault-backup` are not in `docker/<project>`: `deploy.sh` adds them from the S3 identity
+  (`docker/s3/<identity>`, see Setup RustFS; `vault-backup` uses the identity `vault`).
 
 NetBird is not part of this: it runs from its own folder (`/root/netbird`, created by the NetBird installer, with secrets), see Setup NetBird backup.
 
 ==== Secrets from Vault
 
-The projects in `VAULT_PROJECTS` of `deploy.sh` (`keycloak`, `keycloak-config`) read their secrets from Vault instead of, or next to, `override.env`.
+Every project with a `vault.env.example` reads its secrets from Vault.
 `deploy.sh` logs in with an AppRole (`/etc/gitops/role_id`, `/etc/gitops/secret_id`, mode 600), reads the KV secret `docker/<project>`,
 writes its keys to `/run/gitops/<project>/vault.env` (tmpfs, mode 600) and removes the file as soon as Compose has started the container.
-The compose file reads `default.env`, `override.env` and `vault.env`; both of the last two are optional and the later file wins.
-`deploy.sh` checks the required variables of `override.env.example` over both files. It needs `curl` and `jq` on the host.
+The compose file reads `default.env` and `vault.env` (the later wins; `vault.env` is optional only so that `docker compose logs` works without it).
+`deploy.sh` checks the required variables of `vault.env.example` against the keys from Vault. It needs `curl` and `jq` on the host.
 
 Set up once (on Windows, with the root token):
 
@@ -519,15 +520,26 @@ Set up once (on Windows, with the root token):
   (paste, Ctrl-D). A new `secret_id` (`-NewSecretId`) destroys the old one, so a leaked file is cut off by running the script again.
 . Put the values of a project into Vault, e.g. `vault kv put docker/keycloak KC_DB_USERNAME=... KC_DB_PASSWORD=... KC_BOOTSTRAP_ADMIN_PASSWORD=...`
   (`vault kv patch` changes single keys). Values must not contain a single quote or a control character (a line break), `deploy.sh` refuses them.
-. `sudo scripts/docker/deploy.sh keycloak`, then delete the same variables from `docker/keycloak/override.env`.
+. `sudo scripts/docker/deploy.sh keycloak`.
 
 * If Vault is not reachable (or the secret does not exist), that project is not deployed; running containers are not touched, and there is no fallback
-  to an old file. Deploy these projects only with `deploy.sh`: a manual `docker compose up` does not create `vault.env` and would start the
+  to a file on the host. Deploy the projects only with `deploy.sh`: a manual `docker compose up` does not create `vault.env` and would start the
   container without the secrets.
-* After a total loss of Vault restore it first (see Restore), then deploy these projects.
+* After a total loss of Vault restore it first (see Restore), then deploy the projects. The restic passwords of the Vault repository and the
+  `rclone.conf` for pCloud are in your password manager, that is the way back (the backups on pCloud need no S3 and no Vault).
 
-Move from the old management UI (once): `git pull`, run `setup-backup-host.sh` (data directories, `rclone.conf`), fill the rest of the `override.env`
-files, then deploy project by project with `--adopt`. That removes the existing container of the same name that belongs to another
+Move an old `override.env` into Vault (once per project, on Windows; the values are never printed, the S3 keys are left out because `deploy.sh` takes them
+from the S3 identity). Check the key names with `-DryRun` first:
+
+----
+ssh root@docker01 "cat /root/gitops/docker/<project>/override.env" | .\scripts\vault\import-docker-env.ps1 -Project <project> -VaultToken <token> -DryRun
+ssh root@docker01 "cat /root/gitops/docker/<project>/override.env" | .\scripts\vault\import-docker-env.ps1 -Project <project> -VaultToken <token>
+----
+
+Then `sudo scripts/docker/deploy.sh <project>` on the host and delete the old `override.env` there.
+
+Move from the old management UI (once): `git pull`, run `setup-backup-host.sh` (data directories, `rclone.conf`), put the
+secrets into Vault, then deploy project by project with `--adopt`. That removes the existing container of the same name that belongs to another
 Compose project (a short interruption, the data stays) and creates it again. Finally stop and remove the old UI container.
 
 === Backups
@@ -621,7 +633,7 @@ does not run at all (container stopped, host down) sends nothing, so look at `do
 [cols="1,3"]
 |===
 |Job |Where
-|`offsite-sync`, `vault-backup`, `restic-backup` |`DISCORD_WEBHOOK_URL` in `docker/<project>/override.env`, then `sudo scripts/docker/deploy.sh <project>`
+|`offsite-sync`, `vault-backup`, `restic-backup` |`DISCORD_WEBHOOK_URL` in the Vault secret `docker/<project>` (`vault kv patch`), then `sudo scripts/docker/deploy.sh <project>`
 |`netbird_backup.sh` |`sudo ./netbird_backup_setup.sh --discord-webhook <url>` (writes it to `/etc/netbird-backup.cred`)
 |Databasus |In the UI add a Discord notifier with the URL and select it for every database (failed backups)
 |===
@@ -632,7 +644,7 @@ curl -H 'Content-Type: application/json' -d '{"content":"test"}' '<webhook url>'
 docker exec offsite-sync sh -c 'wget -q -O /dev/null --header "Content-Type: application/json" --post-data "{\"content\":\"offsite-sync test\"}" "$DISCORD_WEBHOOK_URL"'
 ----
 
-An old `PUSH_URL` in an `override.env` or in `/etc/netbird-backup.cred` is ignored now, delete the line. Uptime Kuma is no longer part
+An old `PUSH_URL` in a secret of Vault or in `/etc/netbird-backup.cred` is ignored now, delete the line. Uptime Kuma is no longer part
 of the repository: stop it once with `sudo scripts/docker/undeploy.sh uptimeKuma` (if that finds nothing, the container was created by the old management UI: `docker rm -f uptime-kuma`), its data stays in `/root/docker/uptime-kuma` until you delete it.
 
 ==== Backup age alerts
@@ -666,25 +678,26 @@ sudo scripts/docker/setup-backup-host.sh
 ----
 . Set up RustFS (section Setup RustFS): create the keys of the identities in Vault, deploy `rustfs`, then `sudo scripts/docker/setup-rustfs.sh`
   creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird`, the users and the policies. `restic-backup` and `offsite-sync` read
-  their keys from Vault; put the keys of the identity `vault` (`vault kv get docker/s3/vault`) into `docker/vault-backup/override.env`.
-. Fill in what is still missing in these files (`deploy.sh` stops and lists it):
+  their keys, `vault-backup` those of the identity `vault`, all from Vault.
+. Put the secrets of the projects into Vault (`vault kv put docker/<project> ...`, on Windows). `deploy.sh` stops and lists what is missing:
 +
 [cols="1,3"]
 |===
-|Project |Still to enter in `override.env`
+|Secret in Vault |Keys
 
-|`restic-backup`
-|the restic passwords of the repositories, `scripts/docker/setup-restic-backup.sh` fills them in
+|`docker/restic-backup`
+|`RESTIC_PASSWORD_DOCKER` (a new one: `openssl rand -base64 24`, also into the password manager), `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD`
+(the same as `RESTIC_PASSWORD` of `docker/vault-backup` and the first line of `/root/restic`), optional `DISCORD_WEBHOOK_URL`
 
-|`offsite-sync`
-|nothing required, `DISCORD_WEBHOOK_URL` is optional
+|`docker/offsite-sync`
+|`DISCORD_WEBHOOK_URL`
 
-|`vault-backup`
+|`docker/vault-backup`
 |`VAULT_TOKEN` (see below), `RESTIC_PASSWORD` (the password of the Vault repository), optional `DISCORD_WEBHOOK_URL`
 |===
 
 `VAULT_TOKEN` is a periodic token that may only read the Raft snapshot. Create it once with the root token,
-the script prints it once:
+the script prints it once, put it into `docker/vault-backup` (`vault kv patch docker/vault-backup VAULT_TOKEN=...`):
 
 ----
 .\scripts\vault\create-snapshot-token.ps1 -VaultToken <root-token>
@@ -722,7 +735,7 @@ Keep these in the password manager, nothing can be read without them and they ar
 |===
 |Data |Restore with
 
-|Secrets and key files (the `override.env` files, `rclone.conf`, `secret.key`) |`scripts/docker/restore.sh`, repository `docker` (below)
+|Key files (`rclone.conf`, `secret.key`), the secrets are in Vault |`scripts/docker/restore.sh`, repository `docker` (below)
 |PostgreSQL |Databasus (below)
 |Vault |`scripts/vault/vault_restore.sh` (below)
 |NetBird server |`netbird_restore.sh` (below)
@@ -748,9 +761,8 @@ sudo scripts/docker/restore.sh restore docker <snapshot> --include /userdata/doc
 The script restores into a *new* folder `/root/docker/restic-backup/restore/<repository>-<snapshot>-<time>` (the only writable place of the
 container, it never overwrites anything) and prints it. The files hold secrets in plain text, delete the folder afterwards.
 `/userdata/docker` in the snapshot is `/root/docker` on the host, `/userdata/gitops` is `/root/gitops`.
-. Copy the file back to its place (`/root/gitops/docker/<project>/override.env`,
-  `/root/docker/offsite-sync/rclone/rclone.conf`, `/root/docker/databasus/secret.key`),
-  check the owner and mode (`override.env` `600`) and deploy the project with `deploy.sh`.
+. Copy the file back to its place (`/root/docker/offsite-sync/rclone/rclone.conf`, `/root/docker/databasus/secret.key`),
+  check the owner and mode (`600`) and deploy the project with `deploy.sh`.
 
 `restore.sh` takes the repositories `docker`, `vault` and `netbird` (the Vault and NetBird snapshots can also be browsed this way, they
 are restored with their own scripts below). It needs the running container `restic-backup`. With the S3 gone use `--from pcloud`.
@@ -823,7 +835,7 @@ restic -r rclone:pCloud:/Backups/s3/netbird/restic restore latest --target /rest
 
 With the container `restic-backup` running, `sudo scripts/docker/restore.sh --from pcloud restore docker` does the same for the key files
 (it reads the `rclone.conf` of the offsite sync, the S3 is not needed). To fill a new RustFS again, run the nightly sync the other way
-round: `rclone sync pCloud:/Backups/s3 RUSTFS:` (with an S3 remote named `RUSTFS` and the root key of `docker/rustfs/override.env`).
+round: `rclone sync pCloud:/Backups/s3 RUSTFS:` (with an S3 remote named `RUSTFS` and the root key from the secret `docker/rustfs` in Vault).
 
 === Setup restic-backup
 
@@ -847,12 +859,10 @@ Every step leaves its result for Prometheus, see <<Backup age alerts>>. The cont
 The log of a run is in `docker logs restic-backup`, a run right now: `docker exec restic-backup sh /backup.sh now`.
 All backups of the Docker host and then the offsite sync in one go: `sudo scripts/docker/backup-now.sh` (the log is also in `/var/log/backup-now.log`, with `--background` the run survives a dropped SSH session, follow it with `tail -f`; Databasus is started in its UI, the NetBird server with `netbird_backup.sh` on that host).
 
-* Secrets are in `docker/restic-backup/override.env` (the S3 keys of the identity `restic-backup` come from Vault, `docker/s3/restic-backup`), `default.env` lists all variables, also
+* Secrets are in Vault (`docker/restic-backup`, the S3 keys of the identity `restic-backup` are added from `docker/s3/restic-backup`), `default.env` lists all variables, also
   the time of the run (`BACKUP_HOUR`, `BACKUP_MINUTE`), the retention (`KEEP_*`) and the share of data that `check` reads (`CHECK_READ_DATA_SUBSET`).
-  Besides the S3 keys it holds the restic passwords of the repositories (`RESTIC_PASSWORD_DOCKER`, `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD`) and
-  optionally `DISCORD_WEBHOOK_URL`. `sudo scripts/docker/setup-restic-backup.sh` fills them in: the vault password from `docker/vault-backup/override.env`, the
-  NetBird password from `/root/restic`, the webhook from `docker/offsite-sync/override.env`. It asks for the `docker` password (an empty answer generates a new
-  one, shown once, for a fresh setup) and never changes a value that is set. Order on a new host: `setup-backup-host.sh`, `setup-restic-backup.sh`, `deploy.sh restic-backup`
+  The secret holds the restic passwords of the repositories (`RESTIC_PASSWORD_DOCKER`, `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD`) and
+  optionally `DISCORD_WEBHOOK_URL`. Order on a new host: `setup-backup-host.sh`, the secret in Vault (`vault kv put docker/restic-backup ...`), `deploy.sh restic-backup`
 * The repository `docker` is initialised by the first run. `vault` and `netbird` already exist (created by `vault-backup` and `netbird_backup.sh`), `restic-backup` only checks them
 * The repository checkout (`/root/gitops`) and `/root/docker` are mounted read-only, the container can only write to `/restore` and the restic cache
 * The `rclone.conf` of the offsite sync is mounted read-only. It is only used to restore from pCloud, the container never writes to pCloud
@@ -864,7 +874,7 @@ All backups of the Docker host and then the offsite sync in one go: `sudo script
 . `sudo scripts/docker/undeploy.sh --yes backrest` (the data stays in `/root/docker/backrest`).
 . `git pull`, then `sudo scripts/docker/setup-backup-host.sh`: it creates
   `/root/docker/restic-backup`. The S3 keys come from Vault (`docker/s3/restic-backup`).
-. `sudo scripts/docker/setup-restic-backup.sh`. Use the *same* password for `docker` as Backrest had (the repository `docker` already exists).
+. Put the secret into Vault (`vault kv put docker/restic-backup ...`). Use the *same* password for `docker` as Backrest had (the repository `docker` already exists).
 . `sudo scripts/docker/deploy.sh restic-backup`, then `docker exec restic-backup sh /backup.sh now` and check the result: the log must end with `Run finished`
   and `backup_last_success_timestamp_seconds{backup="restic-backup"}` must show up in Prometheus.
 . Look at what `forget` would remove from the old snapshots: `docker exec restic-backup sh -c '. /common.sh && select_repository docker s3 && restic forget --dry-run --group-by "" --keep-daily 7 --keep-weekly 4 --keep-monthly 6'`.
@@ -879,7 +889,7 @@ a copy of a live database is not consistent. PostgreSQL is backed up by Databasu
 
 |Repository |`docker`
 |Paths a|
-* `/userdata/gitops` (the repository checkout `/root/gitops` with the `override.env` files, they hold the secrets and are not in Git)
+* `/userdata/gitops` (the repository checkout `/root/gitops`, it holds no secrets)
 * `/userdata/docker/databasus/secret.key`
 * `/userdata/docker/offsite-sync/rclone/rclone.conf`
 |Excludes |`/userdata/gitops/.git` (the history is on GitHub)
@@ -960,7 +970,7 @@ Nightly `rclone sync` of the RustFS S3 to pCloud (05:00 UTC, `SYNC_HOUR`), follo
 pCloud credentials.
 
 * The `rclone.conf` with the pCloud remote is installed to `/root/docker/offsite-sync/rclone/rclone.conf` by `setup-backup-host.sh`
-* The S3 keys (read-only identity `offsite-sync`) come from Vault (`docker/s3/offsite-sync`); optionally set `DISCORD_WEBHOOK_URL` in `docker/offsite-sync/override.env`
+* The S3 keys (read-only identity `offsite-sync`) come from Vault (`docker/s3/offsite-sync`); set `DISCORD_WEBHOOK_URL` in the Vault secret `docker/offsite-sync`
 * `docker compose up -d` in the offsite-sync folder
 
 === Setup RustFS
@@ -973,18 +983,18 @@ Buckets, users and policies come from `docker/rustfs/identities.json` (names and
 . On Windows: `.\scripts\vault\create-s3-identities.ps1 -VaultToken <token>` creates the missing keys. It never changes an existing one.
   Read a key with `vault kv get docker/s3/<name>` (for Databasus, Pelican and NetBird).
 . On the Docker host (after the steps below, RustFS running, the AppRole files in place, see Secrets from Vault):
-  `sudo scripts/docker/setup-rustfs.sh` creates the buckets with the root key of `docker/rustfs/override.env`, then a policy and a user per identity
+  `sudo scripts/docker/setup-rustfs.sh` creates the buckets with the root key of the secret `docker/rustfs` (read with the AppRole), then a policy and a user per identity
   through the admin API of RustFS (`add-canned-policy`, `add-user`, `set-user-or-group-policy`, signed with the root key by `curl --aws-sigv4`, so
   `curl` 7.75 or newer). The script names the identity and prints the answer of RustFS when a step is refused. Last it tests every identity with its own keys:
   it lists its buckets, writes (`readwrite`) or must not write (`read`), and can neither write nor list a bucket outside its list.
 . The firewall rule for port `9000` from the Docker networks is in `ansible/group_vars/all/main.yml` (run the Ansible playbook for the host).
 
-. Keycloak: set `RUSTFS_CLIENT_SECRET` in `docker/keycloak-config/override.env` (`openssl rand -base64 32`), then
+. Keycloak: set `RUSTFS_CLIENT_SECRET` in the Vault secret `docker/keycloak-config` (`openssl rand -base64 32`), then
   `sudo scripts/docker/deploy.sh keycloak-config`. That creates the client `rustfs` and its client roles `consoleAdmin`, `readwrite` and `readonly`
   (the names of the RustFS policies). The deploy of `keycloak-config` stops with an undefined variable until the secret is set.
 . Keycloak UI: give your user the client role `consoleAdmin` of the client `rustfs` (*Users > Role mapping*).
-. `docker/rustfs/override.env` from `override.env.example`: `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY` (root login, not `rustfsadmin`) and
-  `RUSTFS_IDENTITY_OPENID_CLIENT_SECRET` (the same value as `RUSTFS_CLIENT_SECRET`).
+. The Vault secret `docker/rustfs` (`vault kv put docker/rustfs ...`, names in `docker/rustfs/vault.env.example`): `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY`
+  (root login, not `rustfsadmin`) and `RUSTFS_IDENTITY_OPENID_CLIENT_SECRET` (the same value as `RUSTFS_CLIENT_SECRET`).
 . `sudo scripts/docker/deploy.sh rustfs`. `pre-deploy.sh` makes the data directories belong to the user `10001` of the image.
 . NetBird dashboard: the reverse proxy service `s3-admin.proxy.rjst.de` points to port `9001` of the Docker host, restricted to your peers
   (the portal entry "S3 Admin" is a label of the container).
@@ -1085,7 +1095,7 @@ host network, so that it uses the NetBird DNS of the host to reach Vault and the
 
 * Create the token with `scripts/vault/create-snapshot-token.ps1` (see above). The token is periodic and renewed
 by every run, so it stays valid as long as the backup runs at least once per period (32 days)
-* Set `VAULT_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (identity `vault`), `RESTIC_PASSWORD` and optionally `DISCORD_WEBHOOK_URL` in `docker/vault-backup/override.env`
+* Put `VAULT_TOKEN`, `RESTIC_PASSWORD` and optionally `DISCORD_WEBHOOK_URL` into the Vault secret `docker/vault-backup`. The S3 keys of the identity `vault` are added from `docker/s3/vault`
 * `docker compose up -d` in the vault-backup folder
 * Restore with `scripts/vault/vault_restore.sh`. Snapshots from before the move are in `rclone:pCloud:/Backups/vault_pb`
 (set `RESTIC_REPOSITORY`)
@@ -1099,7 +1109,7 @@ token and in the config of every client, so choose it once. Keycloak serves one 
 
 . On the Docker host: `scripts/postgresql/db_create.sh keycloak` (prints the password of `keycloak_owner`), then add the database
   `keycloak` in the Databasus UI: the users and their group membership live only there (realm and clients are in Git, see below).
-. `cp docker/keycloak/override.env.example docker/keycloak/override.env`, `chmod 600`, enter the database user and password and the
+. The Vault secret `docker/keycloak` (`vault kv put docker/keycloak ...`, names in `docker/keycloak/vault.env.example`): the database user and password and the
   password of the first admin (`openssl rand -base64 24`). Keep them in the password manager.
 . `sudo scripts/docker/deploy.sh keycloak`
 . NetBird dashboard: a reverse proxy service `auth.proxy.rjst.de` to port `8180` of the Docker host, restricted to your peers (this is what keeps
@@ -1129,16 +1139,16 @@ What is *not* in the file: users, their passwords and their group membership. Th
 * A changed role is effective at the next login. The client has a mapper that puts its roles into the token as the claim `roles`; the app turns them into its own roles
   (in `kubernetes/monitoring/helm/prometheus.yaml`: `role_attribute_path`).
 * The client secrets are generated by `generate-secrets.ps1` into Vault (Grafana: `argocd/data/prometheus#oidc.client_secret`). The same value goes into
-  `docker/keycloak-config/override.env` (`GRAFANA_CLIENT_SECRET`), the file refers to it as `$(env:GRAFANA_CLIENT_SECRET)`.
-* `docker/keycloak-config/override.env` also needs a user of the realm `master` with the role `admin` (`KEYCLOAK_USER`, `KEYCLOAK_PASSWORD`).
+  the Vault secret `docker/keycloak-config` (`GRAFANA_CLIENT_SECRET`), the file refers to it as `$(env:GRAFANA_CLIENT_SECRET)`.
+* The Vault secret `docker/keycloak-config` also needs a user of the realm `master` with the role `admin` (`KEYCLOAK_USER`, `KEYCLOAK_PASSWORD`).
 
 * Spring Boot Admin: one client per stage, `sba-service-dev` and `sba-service-prod`, redirect URI
   `https://sba-service-<stage>.k8sdev.rjst.de/login/oauth2/code/keycloak` (Spring registration id `keycloak`). Roles `viewer` (look) and `admin` (actions such as
   loggers or shutdown). The secret of a Spring app is not in this repository: it lives in the Vault area of the app per stage (engines `dev` and `prod`) and the app
-  resolves it itself. The same value goes into `docker/keycloak-config/override.env` (`SBA_DEV_CLIENT_SECRET`, `SBA_PROD_CLIENT_SECRET`). The login itself
+  resolves it itself. The same value goes into the Vault secret `docker/keycloak-config` (`SBA_DEV_CLIENT_SECRET`, `SBA_PROD_CLIENT_SECRET`). The login itself
   (Spring Security) is part of the repository of the app.
 
-A new app: one more client block with its roles and the mapper in the file, its secret in Vault and in `override.env` (with a new variable in `default.env` and `override.env.example`),
+A new app: one more client block with its roles and the mapper in the file, its secret in Vault and in the Vault secret `docker/keycloak-config` (with a new variable in `default.env` and `vault.env.example`),
 then `sudo scripts/docker/deploy.sh keycloak-config`. Check the result with `docker logs keycloak-config`.
 
 The Pods fetch the token and the user info themselves from `https://auth.proxy.rjst.de`, so the cluster has to reach it. Test it from a Pod before the
@@ -1348,7 +1358,7 @@ Besides the root token and the Kubernetes login, Vault can be used with a Keyclo
 are external groups in Vault with one policy each: `admin` (policy `keycloak_admin`, everything) and `developer` (policy `keycloak_developer`, read and write the secrets in
 `dev/` and `prod/`, no delete). A user without one of the roles is refused at the login. The configuration lives in Vault itself (it is part of the Raft snapshot), not in Git:
 
-* `generate-secrets.ps1` writes the client secret to `argocd/data/vault#oidc.client_secret`. The same value goes into `docker/keycloak-config/override.env` as
+* `generate-secrets.ps1` writes the client secret to `argocd/data/vault#oidc.client_secret`. The same value goes into the Vault secret `docker/keycloak-config` as
   `VAULT_CLIENT_SECRET`, then `sudo scripts/docker/deploy.sh keycloak-config`.
 * `.\scripts\vault\configure-vault-oidc.ps1 -VaultToken <root token>` sets up the auth method, the policies and the groups. It can be run again.
 * Log in in the UI with the method *OIDC* and type `default` into the field *Role* (the UI does not fill it in by itself, empty gives "Invalid role"), or with `vault login -method=oidc`. Give the users the role `vault` in Keycloak (*Role mapping, client roles*).

@@ -1,6 +1,6 @@
 # Shared by backup.sh and the host script scripts/docker/restore.sh (docker exec): which restic
 # repositories exist and how to reach them. The S3 keys and the passwords come from the environment
-# of the container (default.env / override.env). Sourced by /bin/sh, so POSIX only.
+# of the container (default.env / vault.env). Sourced by /bin/sh, so POSIX only.
 
 PCLOUD_REMOTE=pCloud
 PCLOUD_ROOT=/Backups/s3

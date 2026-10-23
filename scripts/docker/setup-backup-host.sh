@@ -101,4 +101,4 @@ else
 fi
 
 echo
-success "Host is prepared. Next: set up RustFS (scripts/docker/setup-rustfs.sh), fill the override.env files and deploy the projects with scripts/docker/deploy.sh."
+success "Host is prepared. Next: set up RustFS (scripts/docker/setup-rustfs.sh), put the secrets of the projects into Vault (README) and deploy the projects with scripts/docker/deploy.sh."

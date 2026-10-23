@@ -3,7 +3,7 @@
 # setup-rustfs.sh
 # Creates the buckets, users and policies in RustFS from docker/rustfs/identities.json. The S3 keys
 # of the identities are read from Vault (docker/s3/<name>, created by scripts/vault/create-s3-identities.ps1),
-# the root key of RustFS comes from docker/rustfs/override.env. Idempotent: run it again after a change of
+# the root key of RustFS from the secret docker/rustfs (RUSTFS_ACCESS_KEY, RUSTFS_SECRET_KEY). Idempotent: run it again after a change of
 # identities.json or after a new RustFS.
 #
 #   sudo scripts/docker/setup-rustfs.sh [--endpoint http://127.0.0.1:9000]
@@ -29,7 +29,6 @@ step()    { echo -e "\n${BOLD}${CYAN}▶ $*${RESET}"; }
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IDENTITIES_FILE="$REPO_DIR/docker/rustfs/identities.json"
-ROOT_ENV_FILE="$REPO_DIR/docker/rustfs/override.env"
 
 RCLONE_IMAGE="rclone/rclone:1.75.1"
 CHECK_OBJECT=".setup-rustfs-check"
@@ -110,16 +109,15 @@ identity_keys() {
 }
 
 # ── Root key and tools ────────────────────────────────────────────────────────
-# env_value <file> <name>: the last assignment of NAME in an env file, without quotes
-env_value() {
-    grep "^$2=" "$1" 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d "\"'" || true
-}
-
+# read_root_key: the root key of RustFS from the secret docker/rustfs in Vault, split at the first blank (neither part has one)
 read_root_key() {
-    ROOT_ACCESS_KEY=$(env_value "$ROOT_ENV_FILE" RUSTFS_ACCESS_KEY)
-    ROOT_SECRET_KEY=$(env_value "$ROOT_ENV_FILE" RUSTFS_SECRET_KEY)
-    [[ -n "$ROOT_ACCESS_KEY" && -n "$ROOT_SECRET_KEY" ]] \
-        || { error "RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY are missing in $ROOT_ENV_FILE"; return 1; }
+    local response keys
+    response=$(vault_header | curl -sS -m "$VAULT_TIMEOUT_SECONDS" -H @- "$VAULT_ADDR/v1/$VAULT_KV_MOUNT/data/rustfs") \
+        || { error "$VAULT_ADDR is not reachable"; return 1; }
+    keys=$(jq -er '.data.data | select(.RUSTFS_ACCESS_KEY and .RUSTFS_SECRET_KEY) | "\(.RUSTFS_ACCESS_KEY) \(.RUSTFS_SECRET_KEY)"' <<<"$response" 2>/dev/null) \
+        || { error "no RUSTFS_ACCESS_KEY and RUSTFS_SECRET_KEY in $VAULT_KV_MOUNT/rustfs ($(vault_errors "$response"))"; return 1; }
+    ROOT_ACCESS_KEY="${keys%% *}"
+    ROOT_SECRET_KEY="${keys#* }"
 }
 
 # rustfs_admin <PUT|POST> <path and query> [body file]: a request to the admin API as root. The root key goes to curl
@@ -278,17 +276,17 @@ verify_identities() {
     for_each_identity check_identity
 }
 
-step "Reading the root key and the identities"
+step "Vault login and the root key"
 [[ -f "$IDENTITIES_FILE" ]] || { error "$IDENTITIES_FILE not found"; exit 1; }
+vault_login
+success "Logged in at $VAULT_ADDR"
 read_root_key
+success "Root key of RustFS read from $VAULT_KV_MOUNT/rustfs"
 WORK_DIR=$(mktemp -d)
 step "RustFS"
 wait_for_s3
 step "Buckets"
 create_buckets
-step "Vault login"
-vault_login
-success "Logged in at $VAULT_ADDR"
 step "Policies and users"
 apply_identities
 step "Rights check with the keys of each identity"
@@ -297,4 +295,3 @@ verify_identities
 
 echo
 success "RustFS is prepared. The keys of an identity: vault kv get $VAULT_KV_MOUNT/s3/<name>"
-info "Next: switch a client (endpoint $S3_ENDPOINT, the keys of its identity) and run it once."

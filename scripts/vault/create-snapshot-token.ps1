@@ -9,7 +9,7 @@
     it on every run) and an orphan (not bound to the token that created it).
 
     The token is printed once and not saved anywhere. Put it into
-    docker/vault-backup/override.env as VAULT_TOKEN.
+    the secret docker/vault-backup in Vault as VAULT_TOKEN (vault kv patch docker/vault-backup VAULT_TOKEN=...).
 
 .PARAMETER VaultAddr
     Vault API address reachable from this machine. Default: https://vault.k8sdev.rjst.de.
@@ -61,7 +61,7 @@ Write-Host "==============================================================" -For
 Write-Host "  VAULT_TOKEN for docker/vault-backup:  $token" -ForegroundColor Yellow
 Write-Host "==============================================================" -ForegroundColor Yellow
 Write-Host ""
-Read-Host "Press Enter once you've put it into docker/vault-backup/override.env" | Out-Null
+Read-Host "Press Enter once you've put it into docker/vault-backup in Vault" | Out-Null
 
 Write-Step "Done"
 Write-Ok "The token can only read sys/storage/raft/snapshot and is renewed by every backup run."

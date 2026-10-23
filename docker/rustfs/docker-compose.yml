@@ -4,9 +4,12 @@ services:
     container_name: rustfs
     # The local S3 of all backups. Buckets, users and policies: scripts/docker/setup-rustfs.sh. The console logs in with Keycloak
     # (RUSTFS_IDENTITY_OPENID_*).
+    # The secrets come from Vault (docker/rustfs), scripts/docker/deploy.sh writes them to vault.env before it starts the project.
+    # The file is optional so that docker compose logs/ps work without it. Deploy only with deploy.sh
     env_file:
       - "default.env"
-      - "override.env"
+      - path: "/run/gitops/rustfs/vault.env"
+        required: false
     # The host DNS is the NetBird resolver (100.x), which containers cannot reach (RustFS must resolve auth.proxy.rjst.de)
     dns:
       - 1.1.1.1

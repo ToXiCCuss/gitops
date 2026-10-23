@@ -5,12 +5,10 @@ services:
   keycloak-config:
     image: adorsys/keycloak-config-cli:6.5.1-26.5.5@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274
     container_name: keycloak-config
-    # override.env (local) and vault.env (written by scripts/docker/deploy.sh from Vault, docker/keycloak-config) are both optional,
-    # deploy.sh checks the required variables over both. A manual docker compose up does not create vault.env
+    # The secrets come from Vault (docker/keycloak-config), scripts/docker/deploy.sh writes them to vault.env before it starts the project.
+    # The file is optional so that docker compose logs/ps work without it. Deploy only with deploy.sh
     env_file:
       - "default.env"
-      - path: "override.env"
-        required: false
       - path: "/run/gitops/keycloak-config/vault.env"
         required: false
     volumes:

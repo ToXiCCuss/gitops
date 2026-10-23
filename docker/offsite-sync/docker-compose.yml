@@ -2,11 +2,10 @@ services:
   offsite-sync:
     image: rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5
     container_name: offsite-sync
-    # The S3 keys come from Vault (docker/s3/offsite-sync, written to vault.env by scripts/docker/deploy.sh), override.env is optional
+    # The secrets come from Vault (docker/offsite-sync), scripts/docker/deploy.sh writes them to vault.env before it starts the project.
+    # The file is optional so that docker compose logs/ps work without it. Deploy only with deploy.sh
     env_file:
       - "default.env"
-      - path: "override.env"
-        required: false
       - path: "/run/gitops/offsite-sync/vault.env"
         required: false
     extra_hosts:

@@ -3,12 +3,10 @@ services:
     image: quay.io/keycloak/keycloak:26.6.3@sha256:5fdbf2dbb5897cc34e82de49d13e23db011f9925089dbc555fc095f2c8bc1dac
     container_name: keycloak
     command: ["start"]
-    # override.env (local) and vault.env (written by scripts/docker/deploy.sh from Vault, docker/keycloak) are both optional,
-    # deploy.sh checks the required variables over both. A manual docker compose up does not create vault.env
+    # The secrets come from Vault (docker/keycloak), scripts/docker/deploy.sh writes them to vault.env before it starts the project.
+    # The file is optional so that docker compose logs/ps work without it. Deploy only with deploy.sh
     env_file:
       - "default.env"
-      - path: "override.env"
-        required: false
       - path: "/run/gitops/keycloak/vault.env"
         required: false
     # host.docker.internal points to the Docker host, where PostgreSQL runs

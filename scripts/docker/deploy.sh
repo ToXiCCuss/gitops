@@ -15,19 +15,15 @@
 #
 # Without a project name all projects are deployed in a fixed order.
 #
-# The secrets of a project are in docker/<project>/override.env (not in Git). The
-# variables a project needs are named in docker/<project>/override.env.example:
-# NAME= is required, #NAME= is optional. A missing or empty required variable
-# stops the deploy of that project before anything is changed.
-#
-# Projects in VAULT_PROJECTS get their secrets from Vault (KV engine docker, path
-# docker/<project>) as well: the script logs in with the AppRole of
-# /etc/gitops/role_id and /etc/gitops/secret_id, writes the keys to
-# /run/gitops/<project>/vault.env (tmpfs, mode 600) for the compose file and removes
-# the file again after the container was started. Required variables are checked over
-# override.env and vault.env together. If Vault cannot be reached, that project is not
-# deployed (no fallback). Projects in S3_PROJECTS get only their S3 keys from docker/s3/<project>.
-# Needs curl and jq.
+# The secrets of a project are in Vault (KV engine docker, path docker/<project>), never in a file
+# of the repository or of the host. A project that has a docker/<project>/vault.env.example gets them:
+# the script logs in with the AppRole of /etc/gitops/role_id and /etc/gitops/secret_id, writes the
+# keys to /run/gitops/<project>/vault.env (tmpfs, mode 600) for the compose file and removes the file
+# again after the container was started. The names a project needs are in vault.env.example:
+# NAME= is required, #NAME= is optional. A missing or empty required variable stops the deploy of that
+# project before anything is changed. If Vault cannot be reached, that project is not deployed (no
+# fallback). A project in S3_IDENTITIES also gets the keys of its S3 identity (docker/s3/<identity>)
+# as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. Needs curl and jq.
 #
 # A project can have a pre-deploy.sh: it is run with bash after the variables were
 # checked and before the container is started. If it fails, that project is not deployed.
@@ -50,11 +46,9 @@ DOCKER_DIR="$REPO_DIR/docker"
 # Order: the S3 first, the services that write to it afterwards
 ALL_PROJECTS=(rustfs restic-backup databasus keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
 
-# Projects whose secrets come from Vault (docker/<project>), see the README
-VAULT_PROJECTS=(keycloak keycloak-config)
-# Projects whose S3 keys (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) are those of the identity of the same name,
-# docker/s3/<project> in Vault (scripts/vault/create-s3-identities.ps1)
-S3_PROJECTS=(restic-backup offsite-sync)
+# Projects that need the keys of an S3 identity (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), as project:identity.
+# The keys are docker/s3/<identity> in Vault (scripts/vault/create-s3-identities.ps1)
+S3_IDENTITIES=(restic-backup:restic-backup offsite-sync:offsite-sync vault-backup:vault)
 VAULT_ADDR="${VAULT_ADDR:-https://vault.k8sdev.rjst.de}"
 VAULT_KV_MOUNT="docker"
 VAULT_ROLE_ID_FILE="/etc/gitops/role_id"
@@ -74,7 +68,7 @@ while [[ $# -gt 0 ]]; do
         --pull)  PULL=1; shift ;;
         --adopt) ADOPT=1; shift ;;
         --list)  LIST=1; shift ;;
-        -h|--help) sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) error "Unknown argument: $1"; exit 1 ;;
         *)  PROJECTS+=("$1"); shift ;;
     esac
@@ -98,13 +92,17 @@ if [[ -n "$PULL" ]]; then
     git -C "$REPO_DIR" pull --ff-only
 fi
 
-# is_listed <item> <list item>...
-is_listed() {
-    [[ " ${*:2} " == *" $1 "* ]]
+# A project gets its secrets from Vault if it names the keys it needs in vault.env.example
+is_vault_project() {
+    [[ -f "$DOCKER_DIR/$1/vault.env.example" ]]
 }
 
-is_vault_project() {
-    is_listed "$1" "${VAULT_PROJECTS[@]}" "${S3_PROJECTS[@]}"
+# s3_identity_of <project>: the S3 identity of the project, empty if it has none
+s3_identity_of() {
+    local entry
+    for entry in "${S3_IDENTITIES[@]}"; do
+        [[ "${entry%%:*}" != "$1" ]] || echo "${entry#*:}"
+    done
 }
 
 # Credentials for Vault requests: -H @- reads the header from stdin, the token stays out of the process list
@@ -160,29 +158,28 @@ append_secret_env() {
         || { error "$1: the secret $VAULT_KV_MOUNT/$1 cannot be written as an env file (see the message above)"; return 1; }
 }
 
-# append_s3_keys <project> <file>: the keys of the S3 identity docker/s3/<project> as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+# append_s3_keys <project> <identity> <file>: the keys of the S3 identity docker/s3/<identity> as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
 append_s3_keys() {
     local response
-    response=$(vault_get "s3/$1") || return 1
+    response=$(vault_get "s3/$2") || return 1
     (umask 077; jq -er --arg quote "'" '
         .data.data | select(.access_key and .secret_key)
         | "AWS_ACCESS_KEY_ID=\($quote)\(.access_key)\($quote)", "AWS_SECRET_ACCESS_KEY=\($quote)\(.secret_key)\($quote)"' \
-        <<<"$response" >> "$2") \
-        || { error "$1: $VAULT_KV_MOUNT/s3/$1 holds no access_key and secret_key (scripts/vault/create-s3-identities.ps1)"; return 1; }
+        <<<"$response" >> "$3") \
+        || { error "$1: $VAULT_KV_MOUNT/s3/$2 holds no access_key and secret_key (scripts/vault/create-s3-identities.ps1)"; return 1; }
 }
 
 # write_vault_env <project>: the secrets of the project from Vault to /run/gitops/<project>/vault.env
 write_vault_env() {
-    local directory="$VAULT_ENV_DIR/$1" file="$VAULT_ENV_DIR/$1/vault.env"
+    local directory="$VAULT_ENV_DIR/$1" file="$VAULT_ENV_DIR/$1/vault.env" identity
+    identity=$(s3_identity_of "$1")
     [[ -n "$VAULT_TOKEN" ]] || vault_login || return 1
     install -d -m 700 "$VAULT_ENV_DIR" "$directory"
     VAULT_ENV_FILES+=("$file")
     (umask 077; : > "$file")
-    if is_listed "$1" "${VAULT_PROJECTS[@]}"; then
-        append_secret_env "$1" "$file" || { rm -f "$file"; return 1; }
-    fi
-    if is_listed "$1" "${S3_PROJECTS[@]}"; then
-        append_s3_keys "$1" "$file" || { rm -f "$file"; return 1; }
+    append_secret_env "$1" "$file" || { rm -f "$file"; return 1; }
+    if [[ -n "$identity" ]]; then
+        append_s3_keys "$1" "$identity" "$file" || { rm -f "$file"; return 1; }
     fi
     [[ -s "$file" ]] || { error "$1: Vault holds no keys for this project"; rm -f "$file"; return 1; }
     info "$1: $(wc -l < "$file") keys from Vault"
@@ -204,29 +201,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# check_env <project>: every required variable of override.env.example must have a value in override.env
-# or, for the projects with secrets from Vault, in vault.env (the last file wins, as in the compose file)
+# check_env <project>: every required variable of vault.env.example must have a value in the keys from Vault
 check_env() {
-    local example="$DOCKER_DIR/$1/override.env.example" files=() missing=() name value file source_name="override.env"
+    local example="$DOCKER_DIR/$1/vault.env.example" file="$VAULT_ENV_DIR/$1/vault.env" missing=() name value
     [[ -f "$example" ]] || return 0
-    for file in "$DOCKER_DIR/$1/override.env" "$VAULT_ENV_DIR/$1/vault.env"; do
-        [[ ! -f "$file" ]] || files+=("$file")
-    done
-    if is_vault_project "$1"; then
-        source_name="override.env and Vault"
-    fi
-    if [[ ${#files[@]} -eq 0 ]]; then
-        error "$1: no $source_name. Copy override.env.example and fill it in"
-        return 1
-    fi
+    [[ -f "$file" ]] || { error "$1: the keys from Vault are missing"; return 1; }
     while IFS= read -r line; do
         [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]] || continue
         name="${BASH_REMATCH[1]}"
-        value=$(grep -h "^$name=" "${files[@]}" | tail -n 1 | cut -d= -f2- | tr -d "\"'" || true)
+        value=$(grep "^$name=" "$file" | tail -n 1 | cut -d= -f2- | tr -d "\"'" || true)
         [[ -n "$value" ]] || missing+=("$name")
     done < "$example"
     if [[ ${#missing[@]} -gt 0 ]]; then
-        error "$1: missing or empty in $source_name: ${missing[*]}"
+        error "$1: missing or empty in Vault ($VAULT_KV_MOUNT/$1 or its S3 identity): ${missing[*]}"
         return 1
     fi
 }
