@@ -34,6 +34,7 @@ ROOT_ENV_FILE="$REPO_DIR/docker/rustfs/override.env"
 RCLONE_IMAGE="rclone/rclone:1.75.1"
 CHECK_OBJECT=".setup-rustfs-check"
 ERROR_LENGTH=300
+HTTP_OK=200
 S3_ENDPOINT="http://127.0.0.1:9000"
 ADMIN_API_PATH="rustfs/admin/v3"
 SIGNING_SCOPE="aws:amz:us-east-1:s3"
@@ -222,10 +223,17 @@ can_list() {
     run_rclone_as "$1" "$2" lsf "RUSTFS:$3" >/dev/null 2>"$WORK_DIR/last-error.txt"
 }
 
+# head_status <access key> <secret key> <bucket>: the HTTP status of HeadBucket. rclone and restic ask it before they
+# work in a bucket, and rclone tries to create the bucket when the answer is not a plain "yes"
+head_status() {
+    printf 'user = %s
+' "$(jq -rn --arg value "$1:$2" '$value | @json')"         | curl -sS -I -o /dev/null -m "$ADMIN_TIMEOUT_SECONDS" -K - --aws-sigv4 "$SIGNING_SCOPE" -w '%{http_code}' "$S3_ENDPOINT/$3" || true
+}
+
 # can_write <access key> <secret key> <bucket>: true if the user can store an object in the bucket (it is removed again)
 can_write() {
-    run_rclone_as "$1" "$2" touch "RUSTFS:$3/$CHECK_OBJECT" >/dev/null 2>"$WORK_DIR/last-error.txt" || return 1
-    run_rclone_as "$1" "$2" deletefile "RUSTFS:$3/$CHECK_OBJECT" >/dev/null 2>&1 || true
+    run_rclone_as "$1" "$2" touch "RUSTFS:$3/$CHECK_OBJECT" --s3-no-check-bucket >/dev/null 2>"$WORK_DIR/last-error.txt" || return 1
+    run_rclone_as "$1" "$2" deletefile "RUSTFS:$3/$CHECK_OBJECT" --s3-no-check-bucket >/dev/null 2>&1 || true
 }
 
 # check_root_write: if even the root key cannot store an object, the problem is the S3 and not a policy
@@ -242,11 +250,13 @@ check_root_write() {
 # check_identity <name> <readwrite|read> <bucket>...: the user really has the rights of its policy, with its own keys:
 # it lists its buckets, writes (readwrite) or not (read) and can neither write nor list a bucket outside its list
 check_identity() {
-    local name="$1" access="$2" keys user secret bucket outside problems=()
+    local name="$1" access="$2" keys user secret bucket outside code problems=()
     keys=$(identity_keys "$name") || return 1
     user="${keys%% *}"; secret="${keys#* }"
     for bucket in "${@:3}"; do
         can_list "$user" "$secret" "$bucket" || problems+=("cannot list $bucket: $(last_error)")
+        code=$(head_status "$user" "$secret" "$bucket")
+        [[ "$code" == "$HTTP_OK" ]] || problems+=("HeadBucket $bucket answers HTTP ${code:-none}")
     done
     if [[ "$access" == "readwrite" ]]; then
         can_write "$user" "$secret" "$3" || problems+=("cannot write to $3: $(last_error)")
