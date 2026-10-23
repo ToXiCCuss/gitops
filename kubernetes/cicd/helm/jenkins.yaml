@@ -96,6 +96,9 @@ spec:
                           fullNameFieldName: "name"
                           emailFieldName: "email"
                           groupsFieldName: "roles"
+                          # Without these two lines an existing realm stays case-insensitive: "Admin" would be the same user as "admin"
+                          userIdStrategy: "caseSensitive"
+                          groupIdStrategy: "caseSensitive"
                           logoutFromOpenidProvider: true
                           postLogoutRedirectUrl: "https://jenkins.k8sdev.rjst.de/"
                           # The emergency access: the admin of the chart still gets in when Keycloak is not available
