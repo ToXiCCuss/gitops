@@ -12,7 +12,7 @@ services:
       portal.name: "Databasus"
       portal.url: "https://databasus.proxy.rjst.de"
       portal.group: "Backup"
-      portal.description: "Datenbank-Backups"
+      portal.description: "Database backups"
       portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/databasus.svg"
     volumes:
       - /root/docker/databasus:/databasus-data

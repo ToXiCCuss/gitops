@@ -77,8 +77,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "3"
     portal.rjst.de/name: Backstage
-    portal.rjst.de/group: Plattform
-    portal.rjst.de/description: Entwicklerportal
+    portal.rjst.de/group: Platform
+    portal.rjst.de/description: Developer portal
 spec:
   hosts:
     - backstage.k8sdev.rjst.de

@@ -50,8 +50,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "3"
     portal.rjst.de/name: ArgoCD
-    portal.rjst.de/group: Plattform
-    portal.rjst.de/description: GitOps-Deployments
+    portal.rjst.de/group: Platform
+    portal.rjst.de/description: GitOps deployments
     portal.rjst.de/icon: argocd
 spec:
   hosts:

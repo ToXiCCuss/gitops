@@ -26,7 +26,7 @@ services:
       portal.name: "Pelican Panel"
       portal.url: "https://webinterface.proxy.rjst.de"
       portal.group: "Docker"
-      portal.description: "Game-Server-Verwaltung"
+      portal.description: "Game server management"
       portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/pelican-panel.svg"
 
 volumes:

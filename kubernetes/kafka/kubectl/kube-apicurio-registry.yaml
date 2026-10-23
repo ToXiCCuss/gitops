@@ -92,7 +92,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "3"
     portal.rjst.de/name: Apicurio Registry
     portal.rjst.de/group: Kafka
-    portal.rjst.de/description: Schema-Registry
+    portal.rjst.de/description: Schema registry
     portal.rjst.de/icon: apachekafka
 spec:
   hosts:

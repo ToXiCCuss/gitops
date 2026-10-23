@@ -77,8 +77,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "3"
     portal.rjst.de/name: Harbor
-    portal.rjst.de/group: Plattform
-    portal.rjst.de/description: Container-Registry
+    portal.rjst.de/group: Platform
+    portal.rjst.de/description: Container registry
     portal.rjst.de/icon: harbor
 spec:
   hosts:

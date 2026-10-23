@@ -78,7 +78,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "3"
     portal.rjst.de/name: AKHQ
     portal.rjst.de/group: Kafka
-    portal.rjst.de/description: Kafka-UI
+    portal.rjst.de/description: Kafka UI
     portal.rjst.de/icon: apachekafka
 spec:
   hosts:

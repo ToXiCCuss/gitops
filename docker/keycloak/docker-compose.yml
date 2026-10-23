@@ -18,8 +18,8 @@ services:
       # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
       portal.name: "Keycloak"
       portal.url: "https://auth.proxy.rjst.de"
-      portal.group: "Plattform"
-      portal.description: "Login und Identitäten"
+      portal.group: "Platform"
+      portal.description: "Login and identities"
       portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/keycloak.svg"
     restart: unless-stopped
 

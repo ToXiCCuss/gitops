@@ -29,9 +29,9 @@ services:
     labels:
       # Link on the portal page (kubernetes/management/kubectl/portal.yaml). The NetBird reverse proxy s3-admin.proxy.rjst.de
       # points to the console (9001)
-      portal.name: "S3 Admin"
+      portal.name: "RustFS"
       portal.url: "https://s3-admin.proxy.rjst.de"
       portal.group: "Backup"
-      portal.description: "S3-Speicher"
+      portal.description: "S3 storage"
       portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/rustfs.svg"
     restart: unless-stopped

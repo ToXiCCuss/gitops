@@ -79,7 +79,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "3"
     portal.rjst.de/name: Grafana
     portal.rjst.de/group: Monitoring
-    portal.rjst.de/description: Dashboards und Metriken
+    portal.rjst.de/description: Dashboards and metrics
     portal.rjst.de/icon: grafana
 spec:
   hosts:
@@ -192,7 +192,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "3"
     portal.rjst.de/name: Prometheus
     portal.rjst.de/group: Monitoring
-    portal.rjst.de/description: Targets, Alerts und Abfragen
+    portal.rjst.de/description: Targets, alerts and queries
     portal.rjst.de/icon: prometheus
 spec:
   hosts:

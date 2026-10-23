@@ -987,7 +987,7 @@ Buckets, users and policies come from `docker/rustfs/identities.json` (names and
   (root login, not `rustfsadmin`) and `RUSTFS_IDENTITY_OPENID_CLIENT_SECRET` (the same value as `RUSTFS_CLIENT_SECRET`).
 . `sudo scripts/docker/deploy.sh rustfs`. `pre-deploy.sh` makes the data directories belong to the user `10001` of the image.
 . NetBird dashboard: the reverse proxy service `s3-admin.proxy.rjst.de` points to port `9001` of the Docker host, restricted to your peers
-  (the portal entry "S3 Admin" is a label of the container).
+  (the portal entry "RustFS" is a label of the container).
 
 * The container cannot use `https://auth.proxy.rjst.de` (the NetBird proxy only serves peers and answers `403` for a container). RustFS therefore fetches the discovery
   document, the keys and the token from the published port of Keycloak (`RUSTFS_IDENTITY_OPENID_CONFIG_URL=http://host.docker.internal:8180/realms/rjst`) and checks the
@@ -1524,7 +1524,7 @@ every minute:
   Optional: `portal.group`, `portal.description`, `portal.icon` (Devicon name). The list comes from the Git
   repository (`master`), so a service appears once it is merged, not once its container runs.
 * *Static*: services that are neither a `VirtualService` nor in `docker/` (NetBird on its own
-  host) and external links (group `Extern`: Hetzner, ZAP-Hosting, GitHub) are listed in the
+  host) and external links (group `External`: Hetzner, ZAP-Hosting, GitHub) are listed in the
   `STATIC_SERVICES` env var of the generator container, a JSON list of
   `{name, url, group, description, icon}`.
 

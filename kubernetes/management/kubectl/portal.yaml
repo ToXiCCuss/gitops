@@ -123,7 +123,7 @@ data:
              | ($a["portal.rjst.de/stage"] // (if ($st | index($ns)) != null then $ns else "" end)) as $stage
              | { name: ($a["portal.rjst.de/name"] // $l["app"] // $l["app.kubernetes.io/instance"] // ($h | split(".")[0])),
                  url: ("https://" + $h),
-                 group: ($a["portal.rjst.de/group"] // (if $stage != "" then "Anwendungen" else "Kubernetes" end)),
+                 group: ($a["portal.rjst.de/group"] // (if $stage != "" then "Applications" else "Kubernetes" end)),
                  description: ($a["portal.rjst.de/description"] // ""),
                  icon: ($a["portal.rjst.de/icon"] // (if $l["app.kubernetes.io/name"] == "spring-boot" then "spring" else "" end)),
                  stage: $stage,
@@ -191,7 +191,7 @@ data:
 
   index.html: |
     <!doctype html>
-    <html lang="de">
+    <html lang="en">
     <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -238,7 +238,7 @@ data:
     <main>
       <header>
         <h1>Portal</h1>
-        <input id="q" type="search" placeholder="Suchen  ( / )" autocomplete="off">
+        <input id="q" type="search" placeholder="Search  ( / )" autocomplete="off">
       </header>
       <div id="content"></div>
       <p class="info" id="info"></p>
@@ -288,7 +288,7 @@ data:
           groups.get(s.group).push(s);
         }
         content.replaceChildren();
-        if (!groups.size) content.append(el("p", "desc", term ? "Nichts gefunden." : "Noch keine Einträge."));
+        if (!groups.size) content.append(el("p", "desc", term ? "Nothing found." : "No entries yet."));
         for (const [group, items] of groups) {
           content.append(el("h2", "", group));
           const grid = el("div", "grid");
@@ -328,7 +328,7 @@ data:
           content.append(grid);
         }
         document.getElementById("info").textContent =
-          data.generated ? "Stand: " + new Date(data.generated).toLocaleString("de-DE") : "";
+          data.generated ? "Updated: " + new Date(data.generated).toLocaleString("en-GB") : "";
       }
 
       async function load() {
@@ -430,19 +430,20 @@ spec:
             # and external links.
             - name: STATIC_SERVICES
               value: |
-                [{"name": "NetBird", "url": "https://proxy.rjst.de", "group": "Plattform",
-                  "description": "VPN und Zugriffsverwaltung",
+                [{"name": "NetBird", "url": "https://proxy.rjst.de", "group": "Platform",
+                  "description": "VPN and access management",
                   "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/netbird.svg"},
-                 {"name": "Hetzner", "url": "https://www.hetzner.com/de/", "group": "Extern",
-                  "description": "Server und Hosting",
+                 {"name": "Hetzner", "url": "https://www.hetzner.com/de/", "group": "External",
+                  "description": "Servers and hosting",
                   "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/hetzner.svg"},
-                 {"name": "ZAP-Hosting", "url": "https://zap-hosting.com/de", "group": "Extern",
-                  "description": "Gameserver-Hosting"},
-                 {"name": "GitHub ToXiCCuss", "url": "https://github.com/ToXiCCuss?tab=repositories", "group": "Extern",
-                  "description": "Persönliche Repositories",
+                 {"name": "ZAP-Hosting", "url": "https://zap-hosting.com/de", "group": "External",
+                  "description": "Game server hosting",
+                  "icon": "https://zap-cdn.com/interface/_images/apple-touch-icon.png"},
+                 {"name": "GitHub ToXiCCuss", "url": "https://github.com/ToXiCCuss?tab=repositories", "group": "External",
+                  "description": "Personal repositories",
                   "icon": "https://cdn.simpleicons.org/github/8b95a1"},
-                 {"name": "GitHub RJST-DEVELOP", "url": "https://github.com/orgs/RJST-DEVELOP/repositories", "group": "Extern",
-                  "description": "Organisations-Repositories",
+                 {"name": "GitHub RJST-DEVELOP", "url": "https://github.com/orgs/RJST-DEVELOP/repositories", "group": "External",
+                  "description": "Organization repositories",
                   "icon": "https://cdn.simpleicons.org/github/8b95a1"}]
           securityContext:
             allowPrivilegeEscalation: false
