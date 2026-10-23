@@ -823,6 +823,7 @@ offsite sync) it runs everything on the local SeaweedFS S3 in one go, so backup,
 
 Every step leaves its result for Prometheus, see <<Backup age alerts>>. The container exits the run with an error if a step failed and posts the failed steps to Discord (optional).
 The log of a run is in `docker logs restic-backup`, a run right now: `docker exec restic-backup sh /backup.sh now`.
+All backups of the Docker host and then the offsite sync in one go: `sudo scripts/docker/backup-now.sh` (the log is also in `/var/log/backup-now.log`, with `--background` the run survives a dropped SSH session, follow it with `tail -f`; Databasus is started in its UI, the NetBird server with `netbird_backup.sh` on that host).
 
 * Secrets are in `docker/restic-backup/override.env` (`setup-backup-host.sh` writes the S3 keys of the identity `restic-backup`), `default.env` lists all variables, also
   the time of the run (`BACKUP_HOUR`, `BACKUP_MINUTE`), the retention (`KEEP_*`) and the share of data that `check` reads (`CHECK_READ_DATA_SUBSET`).
@@ -1048,7 +1049,7 @@ The self-hosted NetBird server runs as a Docker Compose project on `docker01` (d
 * `netbird_backup.sh`: stops NetBird for a moment, copies the config files, `/var/lib/netbird` (SQLite store and keys),
 CrowdSec data and certificates, starts NetBird again (also on errors), writes everything with restic to the
 repository `netbird/restic` on the local SeaweedFS S3 and applies the retention (8 weekly, 6 monthly). It has no schedule: it runs before every upgrade (`netbird_upgrade.sh`, tag `pre-upgrade`) and by hand, so everything changed since then is lost on a restore. A failed
-run is reported to Discord (`DISCORD_WEBHOOK_URL`). A PostgreSQL or MySQL store would have to be backed up separately
+run is reported to Discord (`DISCORD_WEBHOOK_URL`). Connected through NetBird, use `sudo netbird_backup.sh --background`: the run stops NetBird, which drops that SSH session, so it detaches and writes to `/var/log/netbird-backup.log` (`tail -f` after reconnecting). A PostgreSQL or MySQL store would have to be backed up separately
 * `netbird_restore.sh`, `netbird_upgrade.sh` (creates a pre-upgrade backup and a local rollback point), `netbird_rollback.sh`
 +
 `netbird_upgrade.sh` also upgrades CrowdSec and Traefik (one at a time, `--no-deps`). They are not part of the NetBird release,

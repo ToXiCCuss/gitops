@@ -15,6 +15,12 @@
 #
 # NOTE: with a PostgreSQL/MySQL store the database must be backed up separately.
 #
+# Usage:
+#   sudo netbird_backup.sh [--background]
+#   --background  detach from the terminal and write the output to /var/log/netbird-backup.log. Use it
+#                 when you are connected through NetBird itself: the backup stops NetBird for a moment,
+#                 which drops that SSH session. Reconnect and read the log: tail -f /var/log/netbird-backup.log
+#
 # Optional overrides in /etc/netbird-backup.cred:
 #   NETBIRD_DIR, RESTIC_REPOSITORY,
 #   RESTIC_PASSWORD_FILE, BACKUP_DIR, RESTIC_KEEP_DAILY/WEEKLY/MONTHLY,
@@ -59,6 +65,7 @@ RESTIC_KEEP_MONTHLY="${RESTIC_KEEP_MONTHLY:-6}"
 
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/netbird}"
 STAGING_DIR="$BACKUP_DIR/latest"
+LOG_FILE="/var/log/netbird-backup.log"
 
 CONFIG_FILES=(docker-compose.yml config.yaml dashboard.env proxy.env traefik-dynamic.yaml
               management.json turnserver.conf relay.env zitadel.env .env)
@@ -81,6 +88,12 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+if [ "${1:-}" = "--background" ]; then
+    nohup "$0" < /dev/null >> "$LOG_FILE" 2>&1 &
+    echo "[INFO] Started in the background (pid $!). Follow it with: tail -f $LOG_FILE"
+    exit 0
+fi
+
 [ -f "$NETBIRD_DIR/docker-compose.yml" ] || fail "No docker-compose.yml in $NETBIRD_DIR"
 cd "$NETBIRD_DIR" || fail "Cannot cd into $NETBIRD_DIR"
 
@@ -97,6 +110,7 @@ else
 fi
 
 START_TIME=$(date +%s)
+echo "[INFO] NetBird backup started $(date '+%Y-%m-%d %H:%M:%S')"
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
 chmod 700 "$BACKUP_DIR"
