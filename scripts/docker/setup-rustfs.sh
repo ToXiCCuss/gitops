@@ -32,6 +32,7 @@ IDENTITIES_FILE="$REPO_DIR/docker/rustfs/identities.json"
 ROOT_ENV_FILE="$REPO_DIR/docker/rustfs/override.env"
 
 RCLONE_IMAGE="rclone/rclone:1.75.1"
+CHECK_OBJECT=".setup-rustfs-check"
 S3_ENDPOINT="http://127.0.0.1:9000"
 ADMIN_API_PATH="rustfs/admin/v3"
 SIGNING_SCOPE="aws:amz:us-east-1:s3"
@@ -132,12 +133,15 @@ rustfs_admin() {
     [[ "$code" =~ ^2[0-9][0-9]$ ]] || { error "RustFS answered HTTP $code to $method $target: ${response%$'\n'*}"; return 1; }
 }
 
+# run_rclone_as <access key> <secret key> <rclone arguments>: rclone against RustFS, the keys are passed on by name
+run_rclone_as() {
+    local access="$1" secret="$2"
+    shift 2
+    RCLONE_CONFIG_RUSTFS_TYPE=s3 RCLONE_CONFIG_RUSTFS_PROVIDER=Other RCLONE_CONFIG_RUSTFS_ENDPOINT="$S3_ENDPOINT"     RCLONE_CONFIG_RUSTFS_ACCESS_KEY_ID="$access" RCLONE_CONFIG_RUSTFS_SECRET_ACCESS_KEY="$secret"         docker run --rm --network host -e RCLONE_CONFIG_RUSTFS_TYPE -e RCLONE_CONFIG_RUSTFS_PROVIDER -e RCLONE_CONFIG_RUSTFS_ENDPOINT             -e RCLONE_CONFIG_RUSTFS_ACCESS_KEY_ID -e RCLONE_CONFIG_RUSTFS_SECRET_ACCESS_KEY             "$RCLONE_IMAGE" "$@" --retries 1 --low-level-retries 1 --timeout 30s --contimeout 10s
+}
+
 run_rclone() {
-    RCLONE_CONFIG_RUSTFS_TYPE=s3 RCLONE_CONFIG_RUSTFS_PROVIDER=Other RCLONE_CONFIG_RUSTFS_ENDPOINT="$S3_ENDPOINT" \
-    RCLONE_CONFIG_RUSTFS_ACCESS_KEY_ID="$ROOT_ACCESS_KEY" RCLONE_CONFIG_RUSTFS_SECRET_ACCESS_KEY="$ROOT_SECRET_KEY" \
-        docker run --rm --network host -e RCLONE_CONFIG_RUSTFS_TYPE -e RCLONE_CONFIG_RUSTFS_PROVIDER -e RCLONE_CONFIG_RUSTFS_ENDPOINT \
-            -e RCLONE_CONFIG_RUSTFS_ACCESS_KEY_ID -e RCLONE_CONFIG_RUSTFS_SECRET_ACCESS_KEY \
-            "$RCLONE_IMAGE" "$@" --retries 1 --low-level-retries 1 --timeout 30s --contimeout 10s
+    run_rclone_as "$ROOT_ACCESS_KEY" "$ROOT_SECRET_KEY" "$@"
 }
 
 wait_for_s3() {
@@ -194,13 +198,57 @@ apply_identity() {
     success "Identity '$name' ($access on ${*:3})"
 }
 
-apply_identities() {
+# for_each_identity <function>: calls the function with name, access and buckets of every identity and reports the failed ones
+for_each_identity() {
     local entry failed=()
     while IFS= read -r entry; do
         # shellcheck disable=SC2046
-        apply_identity $(jq -r '[.name, .access] + .buckets | join(" ")' <<<"$entry") || failed+=("$(jq -r .name <<<"$entry")")
+        "$1" $(jq -r '[.name, .access] + .buckets | join(" ")' <<<"$entry") || failed+=("$(jq -r .name <<<"$entry")")
     done < <(jq -c '.identities[]' "$IDENTITIES_FILE")
     [[ ${#failed[@]} -eq 0 ]] || { error "Failed: ${failed[*]}"; return 1; }
+}
+
+apply_identities() {
+    for_each_identity apply_identity
+}
+
+can_list() {
+    run_rclone_as "$1" "$2" lsf "RUSTFS:$3" >/dev/null 2>&1
+}
+
+# can_write <access key> <secret key> <bucket>: true if the user can store an object in the bucket (it is removed again)
+can_write() {
+    run_rclone_as "$1" "$2" touch "RUSTFS:$3/$CHECK_OBJECT" >/dev/null 2>&1 || return 1
+    run_rclone_as "$1" "$2" deletefile "RUSTFS:$3/$CHECK_OBJECT" >/dev/null 2>&1 || true
+}
+
+# check_identity <name> <readwrite|read> <bucket>...: the user really has the rights of its policy, with its own keys:
+# it lists its buckets, writes (readwrite) or not (read) and can neither write nor list a bucket outside its list
+check_identity() {
+    local name="$1" access="$2" keys user secret bucket outside problems=()
+    keys=$(identity_keys "$name") || return 1
+    user="${keys%% *}"; secret="${keys#* }"
+    for bucket in "${@:3}"; do
+        can_list "$user" "$secret" "$bucket" || problems+=("cannot list $bucket")
+    done
+    if [[ "$access" == "readwrite" ]]; then
+        can_write "$user" "$secret" "$3" || problems+=("cannot write to $3")
+    elif can_write "$user" "$secret" "$3"; then
+        problems+=("can write to $3")
+    fi
+    outside=$(jq -r --arg own "${*:3}" '.buckets - ($own | split(" ")) | first // empty' "$IDENTITIES_FILE")
+    if [[ -n "$outside" ]] && can_write "$user" "$secret" "$outside"; then
+        problems+=("can write to $outside")
+    fi
+    if [[ -n "$outside" ]] && can_list "$user" "$secret" "$outside"; then
+        problems+=("can list $outside")
+    fi
+    [[ ${#problems[@]} -eq 0 ]] || { error "$name: ${problems[*]}"; return 1; }
+    success "Identity '$name': rights as intended"
+}
+
+verify_identities() {
+    for_each_identity check_identity
 }
 
 step "Reading the root key and the identities"
@@ -216,6 +264,8 @@ vault_login
 success "Logged in at $VAULT_ADDR"
 step "Policies and users"
 apply_identities
+step "Rights check with the keys of each identity"
+verify_identities
 
 echo
 success "RustFS is prepared. The keys of an identity: vault kv get $VAULT_KV_MOUNT/s3/<name>"

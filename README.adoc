@@ -1016,7 +1016,8 @@ Buckets, users and policies come from `docker/rustfs/identities.json` (names and
 . On the Docker host (after the steps below, RustFS running, the AppRole files in place, see Secrets from Vault):
   `sudo scripts/docker/setup-rustfs.sh` creates the buckets with the root key of `docker/rustfs/override.env`, then a policy and a user per identity
   through the admin API of RustFS (`add-canned-policy`, `add-user`, `set-user-or-group-policy`, signed with the root key by `curl --aws-sigv4`, so
-  `curl` 7.75 or newer). The script names the identity and prints the answer of RustFS when a step is refused.
+  `curl` 7.75 or newer). The script names the identity and prints the answer of RustFS when a step is refused. Last it tests every identity with its own keys:
+  it lists its buckets, writes (`readwrite`) or must not write (`read`), and can neither write nor list a bucket outside its list.
 . The firewall rule for port `9000` from the Docker networks is in `ansible/group_vars/all/main.yml` (run the Ansible playbook for the host).
 
 . Keycloak: set `RUSTFS_CLIENT_SECRET` in `docker/keycloak-config/override.env` (`openssl rand -base64 32`), then
