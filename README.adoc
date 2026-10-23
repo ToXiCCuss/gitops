@@ -1260,6 +1260,27 @@ Tempo turns the spans into the RED metrics and the service graph and writes them
 (`prometheusSpec.enableRemoteWriteReceiver`). Grafana reads both through the datasource `Tempo` (Explore -> Tempo -> Service Graph).
 Traces are kept 48 hours and are not backed up.
 
+===== Logs (Loki, Alloy)
+
+`kubernetes/monitoring/helm/loki.yaml` (namespace `loki`, one pod, filesystem storage, 7 days retention, no backup) stores the logs.
+`kubernetes/monitoring/helm/alloy.yaml` (namespace `alloy`, one pod) reads the logs of all pods through the Kubernetes API and pushes them
+to Loki. Labels are only `namespace`, `pod`, `container` and `app`: ids like `traceId` or `requestId` are never labels, search them
+in the line (`{app="freewar-chaos-service"} |= "<id>"`).
+
+The datasources `Loki` and `Tempo` are provisioned from one ConfigMap, `kubernetes/monitoring/kubectl/loki.yaml` (datasource sidecar of
+Grafana). It links both ways: a trace id in a log line opens the trace in Tempo (derived field, expects the Spring Boot correlation
+`[app,traceId,spanId]` or the `trace.id` of the ECS JSON logs), and a trace opens the log lines that carry its id.
+
+Loki has no login of its own. The push API is reachable for NetBird peers at `https://loki.k8sdev.rjst.de/loki/api/v1/push` (the
+manifests are in `kubernetes/monitoring/kubectl/loki.yaml`, listener port 8453). *Everyone in `loki-users` can write and read all logs*,
+so only `docker01` belongs there. By hand in the NetBird dashboard, like for every internal app:
+
+. CNAME `loki` -> `gw-loki.istio-internal.k8sdev.rjst.de` in the zone `k8sdev.rjst.de`, and `loki-users` in the zone's distribution groups.
+. Policy `loki-users` -> `k8s-loki`, TCP 443.
+. The peer of `docker01` into the group `loki-users`.
+
+Alloy on `docker01` (the Docker container logs) is a Docker project and is not part of this change.
+
 ==== 1. Bootstrap ArgoCD
 
 ----
@@ -1470,6 +1491,7 @@ folder) and create the record `gw-<app>.istio-internal.k8sdev.rjst.de`.
 |Apicurio Registry |`apicurio.k8sdev.rjst.de` |`example-apicurioregistry-mem-service.kafka:8080` |8450
 |Portal |`portal.k8sdev.rjst.de` |`portal.portal:80` |8451
 |Prometheus |`prometheus.k8sdev.rjst.de` |`prometheus-prometheus.prometheus:9090` |8452
+|Loki (push API only) |`loki.k8sdev.rjst.de` |`loki.loki:3100` |8453
 |===
 
 Each app needs the CNAME, the `<app>-users` distribution group and the policy

@@ -1,0 +1,87 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  destination:
+    namespace: loki
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    # The chart moved from grafana/helm-charts to grafana-community/helm-charts, like tempo.
+    repoURL: https://grafana-community.github.io/helm-charts
+    targetRevision: 19.1.1
+    chart: loki
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            fullnameOverride: loki
+            # One pod, filesystem storage on a local-path volume. Grafana reads it as the datasource loki
+            # (http://loki.loki:3100), the Alloy DaemonSet and Alloy on docker01 push to it
+            # (docker01 through https://loki.k8sdev.rjst.de, see kubernetes/monitoring/kubectl/loki.yaml).
+            deploymentMode: Monolithic
+            loki:
+              # No login of its own: who may reach it is decided by the NetBird policy loki-users -> k8s-loki.
+              auth_enabled: false
+              commonConfig:
+                replication_factor: 1
+              storage:
+                type: filesystem
+              schemaConfig:
+                configs:
+                  - from: "2024-04-01"
+                    store: tsdb
+                    object_store: filesystem
+                    schema: v13
+                    index:
+                      prefix: index_
+                      period: 24h
+              limits_config:
+                # Logs are short-lived diagnostics: no backup, a short retention keeps the volume small.
+                retention_period: 168h
+              compactor:
+                retention_enabled: true
+                delete_request_store: filesystem
+            singleBinary:
+              replicas: 1
+              resources:
+                requests:
+                  memory: 256Mi
+                  cpu: 50m
+                limits:
+                  memory: 1Gi
+                  cpu: 500m
+              persistence:
+                size: 10Gi
+                storageClass: local-path
+            # The chart defaults to 3 replicas of the scalable targets, they have to be off in the monolithic mode.
+            write:
+              replicas: 0
+            read:
+              replicas: 0
+            backend:
+              replicas: 0
+            # Memcached caches, the nginx gateway, the canary and the Helm test are for bigger installs.
+            chunksCache:
+              enabled: false
+            resultsCache:
+              enabled: false
+            gateway:
+              enabled: false
+            lokiCanary:
+              enabled: false
+            test:
+              enabled: false
+            monitoring:
+              serviceMonitor:
+                enabled: true
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

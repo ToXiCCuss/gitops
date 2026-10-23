@@ -1,0 +1,88 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  destination:
+    namespace: alloy
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    targetRevision: 1.14.3
+    chart: alloy
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            fullnameOverride: alloy
+            # Reads the logs of all pods through the Kubernetes API (loki.source.kubernetes), so one pod is enough
+            # and it needs no host path. The logs of docker01 are collected by Alloy there (docker/alloy).
+            # No dollar sign in this file: ArgoCD replaces $NAME in the plugin env values.
+            controller:
+              type: deployment
+              replicas: 1
+            alloy:
+              enableReporting: false
+              resources:
+                requests:
+                  memory: 128Mi
+                  cpu: 50m
+                limits:
+                  memory: 256Mi
+                  cpu: 500m
+              configMap:
+                content: |
+                  discovery.kubernetes "pods" {
+                    role = "pod"
+                  }
+
+                  // Labels stay low-cardinality: ids like traceId or requestId are never labels, they are searched in the line.
+                  discovery.relabel "pods" {
+                    targets = discovery.kubernetes.pods.targets
+
+                    rule {
+                      source_labels = ["__meta_kubernetes_namespace"]
+                      target_label  = "namespace"
+                    }
+                    rule {
+                      source_labels = ["__meta_kubernetes_pod_name"]
+                      target_label  = "pod"
+                    }
+                    rule {
+                      source_labels = ["__meta_kubernetes_pod_container_name"]
+                      target_label  = "container"
+                    }
+                    rule {
+                      source_labels = ["__meta_kubernetes_pod_container_name"]
+                      regex         = "(.+)"
+                      target_label  = "app"
+                    }
+                    rule {
+                      source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+                      regex         = "(.+)"
+                      target_label  = "app"
+                    }
+                  }
+
+                  loki.source.kubernetes "pods" {
+                    targets    = discovery.relabel.pods.output
+                    forward_to = [loki.write.default.receiver]
+                  }
+
+                  loki.write "default" {
+                    endpoint {
+                      url = "http://loki.loki:3100/loki/api/v1/push"
+                    }
+                  }
+            serviceMonitor:
+              enabled: true
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

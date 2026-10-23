@@ -1,0 +1,168 @@
+# NetBird groups exist only while this app is deployed (destination k8s-loki, users loki-users).
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: k8s-loki
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: k8s-loki
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: loki-users
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: loki-users
+
+---
+
+# loki: https://loki.k8sdev.rjst.de -> loki.loki:3100
+# For the push of Alloy on docker01 (https://loki.k8sdev.rjst.de/loki/api/v1/push), no UI. Loki has no login of its own:
+# whoever is in loki-users (NetBird policy loki-users -> k8s-loki on TCP 443) can write AND read all logs.
+# Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: loki
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: internal-gateway
+  servers:
+    - port:
+        number: 8453
+        name: https-loki
+        protocol: HTTPS
+      hosts:
+        - loki.k8sdev.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: k8sdev-wildcard-tls
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gw-loki
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  type: ClusterIP
+  selector:
+    app: internal-gateway
+    istio: internal-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8453
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: loki
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    # An API without a page: no card in the portal.
+    portal.rjst.de/hidden: "true"
+spec:
+  hosts:
+    - loki.k8sdev.rjst.de
+  gateways:
+    - loki
+  http:
+    - route:
+        - destination:
+            host: loki.loki.svc.cluster.local
+            port:
+              number: 3100
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: gw-loki
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: gw-loki
+  groups:
+    - name: k8s-loki
+    - name: kubernetes-services
+
+---
+
+# Grafana picks this up through the datasource sidecar (label grafana_datasource). It holds the tracing datasources
+# together, because the derived field and the trace-to-logs link need the escape $${...}: Grafana expands $VAR in
+# provisioning files, $$ stays a literal $. A Helm value of an ArgoCD plugin app could not carry it, ArgoCD replaces $NAME there.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources-tracing
+  namespace: prometheus
+  labels:
+    grafana_datasource: "1"
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+data:
+  tracing.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        uid: loki
+        type: loki
+        access: proxy
+        url: http://loki.loki:3100
+        jsonData:
+          # The trace id in a log line becomes a link to the trace in Tempo: the Spring Boot correlation
+          # [app,traceId,spanId] of the text logs, and trace.id of the ECS JSON logs (logging.springJson).
+          derivedFields:
+            - name: traceId
+              matcherRegex: '\[[^,\]]*,(\w{32}),'
+              url: '$${__value.raw}'
+              datasourceUid: tempo
+              urlDisplayLabel: Trace
+            - name: traceId (json)
+              matcherRegex: '"trace\.id":"(\w{32})"'
+              url: '$${__value.raw}'
+              datasourceUid: tempo
+              urlDisplayLabel: Trace
+      - name: Tempo
+        uid: tempo
+        type: tempo
+        access: proxy
+        url: http://tempo.tempo:3200
+        jsonData:
+          nodeGraph:
+            enabled: true
+          # Service graph and the "Tempo" links of the RED table come from the metrics Tempo writes to Prometheus
+          serviceMap:
+            datasourceUid: prometheus
+          tracesToMetrics:
+            datasourceUid: prometheus
+          # From a trace to the log lines that carry its id (the span names of Istio and of the apps differ, so no tag mapping)
+          tracesToLogsV2:
+            datasourceUid: loki
+            customQuery: true
+            query: '{namespace=~".+"} |= "$${__trace.traceId}"'
+            spanStartTimeShift: "-5m"
+            spanEndTimeShift: "5m"
