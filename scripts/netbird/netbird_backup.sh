@@ -55,8 +55,8 @@ format_duration() {
 
 NETBIRD_DIR="${NETBIRD_DIR:-/opt/netbird}"
 
-# Local SeaweedFS S3 of this Docker host (offsite sync copies it to pCloud)
-RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-s3:http://127.0.0.1:8333/netbird/restic}"
+# Local RustFS S3 of this Docker host (offsite sync copies it to pCloud)
+RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-s3:http://127.0.0.1:9000/netbird/restic}"
 export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/root/restic}"
 RESTIC_KEEP_DAILY="${RESTIC_KEEP_DAILY:-0}"

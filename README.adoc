@@ -1042,6 +1042,34 @@ Buckets, users and policies come from `docker/rustfs/identities.json` (names and
   If the login ends in a 404 after Keycloak, let the reverse proxy route `/rustfs/admin/` to port `9000`.
 * The RustFS data is `/root/docker/rustfs/data`. Nothing backs it up.
 
+==== Switch the clients from SeaweedFS to RustFS
+
+Prerequisites: `setup-rustfs.sh` ran through (every identity "rights as intended"), the firewall rule for port `9000` is applied on the host
+(the containers reach RustFS as `host.docker.internal:9000`), and this branch is checked out on the host.
+Deploy the projects by name (`deploy.sh <project>`), not all at once: each project switches when you deploy it.
+The nightly runs are at 02:30 (`vault-backup`), 03:00 (`restic-backup`) and 05:00 UTC (`offsite-sync`); switch between them.
+
+First copy of all buckets (online, SeaweedFS stays as it is): `sudo scripts/docker/copy-s3-to-rustfs.sh`.
+For every writer repeat "copy the bucket again, then switch", so that its last backups are in RustFS. Take the keys of an identity
+with `vault kv get docker/s3/<name>`. The order matters: writers first, `restic-backup` after the writers of the repositories it checks, `offsite-sync` last.
+
+. `vault-backup`: `sudo scripts/docker/copy-s3-to-rustfs.sh vault`; put the keys of `docker/s3/vault` into `docker/vault-backup/override.env`
+  (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`; this project stays independent of Vault); `sudo scripts/docker/deploy.sh vault-backup`;
+  `docker exec vault-backup sh /backup.sh now`. `vault_restore.sh` reads the keys from `/etc/vault-backup.cred`: change them there as well.
+. NetBird: `sudo scripts/docker/copy-s3-to-rustfs.sh netbird`; in `/etc/netbird-backup.cred` set `RESTIC_REPOSITORY="s3:http://127.0.0.1:9000/netbird/restic"`
+  and the keys of `docker/s3/netbird`; run `sudo netbird_backup.sh` once.
+. Databasus: `sudo scripts/docker/copy-s3-to-rustfs.sh databases`; in the storage settings change the endpoint to `http://host.docker.internal:9000`
+  and the keys to those of `docker/s3/databasus`; *Backup now*.
+. Pelican: `sudo scripts/docker/copy-s3-to-rustfs.sh pelican`; endpoint `http://<docker host>:9000` and the keys of `docker/s3/pelican` in its S3 settings.
+. `restic-backup`: `sudo scripts/docker/copy-s3-to-rustfs.sh backups`, then `sudo scripts/docker/deploy.sh restic-backup`. Its S3 keys come from Vault now
+  (`docker/s3/restic-backup`, written to `vault.env`; delete the old `AWS_*` lines from its `override.env`, Vault wins anyway). Then
+  `docker exec restic-backup sh /backup.sh now` and `sudo scripts/docker/restore.sh snapshots docker` (also `vault` and `netbird`).
+. `offsite-sync` last: `sudo scripts/docker/deploy.sh offsite-sync` (keys from `docker/s3/offsite-sync`, delete the old `AWS_*` lines from its `override.env`), then
+  `docker exec offsite-sync sh /sync.sh now`. It must come after all writers: it copies what is in RustFS to pCloud.
+
+Back to SeaweedFS for one client: put its `S3_ENDPOINT` (or, for NetBird, `RESTIC_REPOSITORY`) back to port `8333` and the old keys, and deploy it again.
+SeaweedFS is not removed yet: when all clients run on RustFS and a restore test passed, remove `docker/seaweedfs` and its references.
+
 === Setup Pelican S3 backups
 
 Pelican can store the backups of its servers in an S3. The bucket `pelican` and the identity `pelican` (Read, Write, List

@@ -1,13 +1,13 @@
 #!/bin/sh
-# Nightly one-way sync SeaweedFS S3 -> pCloud. Deleted or overwritten files are moved to
+# Nightly one-way sync of the local S3 (RustFS) -> pCloud. Deleted or overwritten files are moved to
 # $PCLOUD_DELETED/<date> instead of being removed, so damage in the S3 does not reach pCloud for good.
 set -u
 
-export RCLONE_CONFIG_SEAWEED_TYPE=s3
-export RCLONE_CONFIG_SEAWEED_PROVIDER=SeaweedFS
-export RCLONE_CONFIG_SEAWEED_ENDPOINT="$S3_ENDPOINT"
-export RCLONE_CONFIG_SEAWEED_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
-export RCLONE_CONFIG_SEAWEED_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+export RCLONE_CONFIG_RUSTFS_TYPE=s3
+export RCLONE_CONFIG_RUSTFS_PROVIDER=Other
+export RCLONE_CONFIG_RUSTFS_ENDPOINT="$S3_ENDPOINT"
+export RCLONE_CONFIG_RUSTFS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
+export RCLONE_CONFIG_RUSTFS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 
 # Mount of the textfile collector directory of the node_exporter, see docker-compose.yml
 METRICS_DIR=/metrics
@@ -32,12 +32,12 @@ write_metrics() {
 run_sync() {
     started=$(date +%s)
     day=$(date +%Y-%m-%d)
-    rclone sync "SEAWEED:" "$PCLOUD_REMOTE:$PCLOUD_TARGET" \
+    rclone sync "RUSTFS:" "$PCLOUD_REMOTE:$PCLOUD_TARGET" \
         --backup-dir "$PCLOUD_REMOTE:$PCLOUD_DELETED/$day" \
         --transfers 4 --checkers 4 --stats-one-line -v || return 1
     # Verify that everything in the S3 arrived in pCloud. S3 and pCloud have no hash in common,
     # so this compares the sizes (restic check on the pCloud repository verifies the content)
-    rclone check "SEAWEED:" "$PCLOUD_REMOTE:$PCLOUD_TARGET" --one-way --size-only --checkers 4 || return 1
+    rclone check "RUSTFS:" "$PCLOUD_REMOTE:$PCLOUD_TARGET" --one-way --size-only --checkers 4 || return 1
     # The folder only exists after the first file was overwritten or deleted
     rclone mkdir "$PCLOUD_REMOTE:$PCLOUD_DELETED" || return 1
     rclone delete "$PCLOUD_REMOTE:$PCLOUD_DELETED" --min-age "${RETENTION_DAYS}d" || return 1

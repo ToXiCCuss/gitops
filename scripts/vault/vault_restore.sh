@@ -38,12 +38,12 @@ fi
 export VAULT_ADDR=${VAULT_ADDR:-"http://127.0.0.1:8200"}
 export VAULT_TOKEN=${VAULT_TOKEN:-""}
 
-# S3 repository on the SeaweedFS. /etc/vault-backup.cred (sourced above) may set S3_ENDPOINT,
+# S3 repository on the RustFS. /etc/vault-backup.cred (sourced above) may set S3_ENDPOINT,
 # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (keys of the S3 identity "vault").
 # Snapshots from before the move to S3 are in rclone:pCloud:/Backups/vault_pb (set RESTIC_REPOSITORY to use it).
 export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}"
 export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}"
-RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-s3:${S3_ENDPOINT:-http://docker01.vpn.rjst.de:8333}/vault/raft}"
+RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-s3:${S3_ENDPOINT:-http://docker01.vpn.rjst.de:9000}/vault/raft}"
 # Password of the vault repository, set RESTIC_PASSWORD_FILE if it is not in /root/restic (that file is used by NetBird)
 RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/root/restic}"
 

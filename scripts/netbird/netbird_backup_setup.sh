@@ -11,7 +11,7 @@
 #
 # Usage (run from the scripts/netbird directory):
 #   sudo ./netbird_backup_setup.sh [--dir /opt/netbird]
-#                                  [--s3-endpoint http://127.0.0.1:8333] [--discord-webhook URL]
+#                                  [--s3-endpoint http://127.0.0.1:9000] [--discord-webhook URL]
 #                                  [--run]
 # The S3 keys (identity "netbird" of setup-backup-host.sh) are read from AWS_ACCESS_KEY_ID and
 # AWS_SECRET_ACCESS_KEY or asked for.
@@ -50,7 +50,7 @@ CRON_FILE="/etc/cron.d/netbird-backup"
 LOG_FILE="/var/log/netbird-backup.log"
 INSTALL_DIR="/usr/local/bin"
 
-S3_ENDPOINT="http://127.0.0.1:8333"
+S3_ENDPOINT="http://127.0.0.1:9000"
 RESTIC_PASSWORD_FILE="/root/restic"
 DISCORD_WEBHOOK_URL=""
 
@@ -146,7 +146,7 @@ check_s3() {
     local code
     code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$S3_ENDPOINT" || true)
     if [[ "$code" == "000" || -z "$code" ]]; then
-        error "S3 at $S3_ENDPOINT is not reachable. Is the seaweedfs project running?"
+        error "S3 at $S3_ENDPOINT is not reachable. Is the rustfs project running?"
         exit 1
     fi
     success "S3 answers (HTTP $code)."

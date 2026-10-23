@@ -26,7 +26,8 @@
 # /run/gitops/<project>/vault.env (tmpfs, mode 600) for the compose file and removes
 # the file again after the container was started. Required variables are checked over
 # override.env and vault.env together. If Vault cannot be reached, that project is not
-# deployed (no fallback). Needs curl and jq.
+# deployed (no fallback). Projects in S3_PROJECTS get only their S3 keys from docker/s3/<project>.
+# Needs curl and jq.
 #
 # A project can have a pre-deploy.sh: it is run with bash after the variables were
 # checked and before the container is started. If it fails, that project is not deployed.
@@ -51,6 +52,9 @@ ALL_PROJECTS=(seaweedfs rustfs restic-backup databasus keycloak keycloak-config 
 
 # Projects whose secrets come from Vault (docker/<project>), see the README
 VAULT_PROJECTS=(keycloak keycloak-config)
+# Projects whose S3 keys (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) are those of the identity of the same name,
+# docker/s3/<project> in Vault (scripts/vault/create-s3-identities.ps1)
+S3_PROJECTS=(restic-backup offsite-sync)
 VAULT_ADDR="${VAULT_ADDR:-https://vault.k8sdev.rjst.de}"
 VAULT_KV_MOUNT="docker"
 VAULT_ROLE_ID_FILE="/etc/gitops/role_id"
@@ -70,7 +74,7 @@ while [[ $# -gt 0 ]]; do
         --pull)  PULL=1; shift ;;
         --adopt) ADOPT=1; shift ;;
         --list)  LIST=1; shift ;;
-        -h|--help) sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) error "Unknown argument: $1"; exit 1 ;;
         *)  PROJECTS+=("$1"); shift ;;
     esac
@@ -94,8 +98,13 @@ if [[ -n "$PULL" ]]; then
     git -C "$REPO_DIR" pull --ff-only
 fi
 
+# is_listed <item> <list item>...
+is_listed() {
+    [[ " ${*:2} " == *" $1 "* ]]
+}
+
 is_vault_project() {
-    [[ " ${VAULT_PROJECTS[*]} " == *" $1 "* ]]
+    is_listed "$1" "${VAULT_PROJECTS[@]}" "${S3_PROJECTS[@]}"
 }
 
 # Credentials for Vault requests: -H @- reads the header from stdin, the token stays out of the process list
@@ -133,20 +142,50 @@ VAULT_ENV_PROGRAM='
   then "\(.key)=\($quote)\(.value)\($quote)"
   else error("unusable name or value for the key \(.key)") end'
 
-# write_vault_env <project>: docker/<project> from Vault to /run/gitops/<project>/vault.env
-write_vault_env() {
-    local directory="$VAULT_ENV_DIR/$1" file="$VAULT_ENV_DIR/$1/vault.env" response
-    [[ -n "$VAULT_TOKEN" ]] || vault_login || return 1
+# vault_get <path>: the answer of Vault for the KV secret docker/<path>, an error if it holds no data
+vault_get() {
+    local response
     response=$(vault_header | curl -sS -m "$VAULT_TIMEOUT_SECONDS" -H @- "$VAULT_ADDR/v1/$VAULT_KV_MOUNT/data/$1") \
-        || { error "$1: $VAULT_ADDR is not reachable"; return 1; }
+        || { error "$VAULT_ADDR is not reachable"; return 1; }
     jq -e '.data.data' >/dev/null 2>&1 <<<"$response" \
-        || { error "$1: cannot read $VAULT_KV_MOUNT/$1 from Vault (does the secret exist, does the policy allow it?) $(vault_errors "$response")"; return 1; }
+        || { error "cannot read $VAULT_KV_MOUNT/$1 from Vault (does the secret exist, does the policy allow it?) $(vault_errors "$response")"; return 1; }
+    printf '%s' "$response"
+}
+
+# append_secret_env <project> <file>: the keys of docker/<project> as NAME='value' lines
+append_secret_env() {
+    local response
+    response=$(vault_get "$1") || return 1
+    (umask 077; jq -r --arg quote "'" "$VAULT_ENV_PROGRAM" <<<"$response" >> "$2") \
+        || { error "$1: the secret $VAULT_KV_MOUNT/$1 cannot be written as an env file (see the message above)"; return 1; }
+}
+
+# append_s3_keys <project> <file>: the keys of the S3 identity docker/s3/<project> as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+append_s3_keys() {
+    local response
+    response=$(vault_get "s3/$1") || return 1
+    (umask 077; jq -er --arg quote "'" '
+        .data.data | select(.access_key and .secret_key)
+        | "AWS_ACCESS_KEY_ID=\($quote)\(.access_key)\($quote)", "AWS_SECRET_ACCESS_KEY=\($quote)\(.secret_key)\($quote)"' \
+        <<<"$response" >> "$2") \
+        || { error "$1: $VAULT_KV_MOUNT/s3/$1 holds no access_key and secret_key (scripts/vault/create-s3-identities.ps1)"; return 1; }
+}
+
+# write_vault_env <project>: the secrets of the project from Vault to /run/gitops/<project>/vault.env
+write_vault_env() {
+    local directory="$VAULT_ENV_DIR/$1" file="$VAULT_ENV_DIR/$1/vault.env"
+    [[ -n "$VAULT_TOKEN" ]] || vault_login || return 1
     install -d -m 700 "$VAULT_ENV_DIR" "$directory"
     VAULT_ENV_FILES+=("$file")
-    (umask 077; jq -r --arg quote "'" "$VAULT_ENV_PROGRAM" <<<"$response" > "$file") \
-        || { error "$1: the secret $VAULT_KV_MOUNT/$1 cannot be written as an env file (see the message above)"; rm -f "$file"; return 1; }
-    [[ -s "$file" ]] || { error "$1: the secret $VAULT_KV_MOUNT/$1 holds no keys"; rm -f "$file"; return 1; }
-    info "$1: $(wc -l < "$file") keys from Vault ($VAULT_KV_MOUNT/$1)"
+    (umask 077; : > "$file")
+    if is_listed "$1" "${VAULT_PROJECTS[@]}"; then
+        append_secret_env "$1" "$file" || { rm -f "$file"; return 1; }
+    fi
+    if is_listed "$1" "${S3_PROJECTS[@]}"; then
+        append_s3_keys "$1" "$file" || { rm -f "$file"; return 1; }
+    fi
+    [[ -s "$file" ]] || { error "$1: Vault holds no keys for this project"; rm -f "$file"; return 1; }
+    info "$1: $(wc -l < "$file") keys from Vault"
 }
 
 remove_vault_env() {

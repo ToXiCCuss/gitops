@@ -3,14 +3,18 @@ services:
     image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
     container_name: restic-backup
     hostname: restic-backup-docker
+    # The S3 keys come from Vault (docker/s3/restic-backup, written to vault.env by scripts/docker/deploy.sh), the passwords stay in override.env
     env_file:
       - "default.env"
-      - "override.env"
+      - path: "override.env"
+        required: false
+      - path: "/run/gitops/restic-backup/vault.env"
+        required: false
     # The host DNS is the NetBird resolver (100.x), which containers cannot reach (needed for pCloud restores)
     dns:
       - 1.1.1.1
       - 9.9.9.9
-    # host.docker.internal points to the Docker host, where the SeaweedFS S3 listens
+    # host.docker.internal points to the Docker host, where the RustFS S3 listens
     extra_hosts:
       - "host.docker.internal:host-gateway"
     entrypoint: ["/bin/sh", "/backup.sh"]
