@@ -1014,8 +1014,9 @@ Buckets, users and policies come from `docker/rustfs/identities.json` (names and
 . On Windows: `.\scripts\vault\create-s3-identities.ps1 -VaultToken <token>` creates the missing keys. It never changes an existing one.
   Read a key with `vault kv get docker/s3/<name>` (for Databasus, Pelican and NetBird).
 . On the Docker host (after the steps below, RustFS running, the AppRole files in place, see Secrets from Vault):
-  `sudo scripts/docker/setup-rustfs.sh` creates the buckets with the root key of `docker/rustfs/override.env`, then a policy and a user per identity with `mc`.
-  RustFS serves the `mc admin` API, but this is not verified for 1.0.x: if a step is refused, the script names it.
+  `sudo scripts/docker/setup-rustfs.sh` creates the buckets with the root key of `docker/rustfs/override.env`, then a policy and a user per identity
+  through the admin API of RustFS (`add-canned-policy`, `add-user`, `set-user-or-group-policy`, signed with the root key by `curl --aws-sigv4`, so
+  `curl` 7.75 or newer). The script names the identity and prints the answer of RustFS when a step is refused.
 . The firewall rule for port `9000` from the Docker networks is in `ansible/group_vars/all/main.yml` (run the Ansible playbook for the host).
 
 . Keycloak: set `RUSTFS_CLIENT_SECRET` in `docker/keycloak-config/override.env` (`openssl rand -base64 32`), then

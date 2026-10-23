@@ -8,8 +8,8 @@
 #
 #   sudo scripts/docker/setup-rustfs.sh [--endpoint http://127.0.0.1:9000]
 #
-# Buckets are created with rclone, users and policies with the MinIO client mc (RustFS serves the
-# mc admin API, check the output of the first run). The policy of an identity is built from its entry:
+# Buckets are created with rclone, users and policies through the admin API of RustFS (/rustfs/admin/v3,
+# signed with the root key, curl needs --aws-sigv4: 7.75 or newer). The policy of an identity is built from its entry:
 #   readwrite  read, write and delete objects in the buckets
 #   read       read and list the buckets and list all buckets (for the offsite sync)
 # A user has the policy of the same name. The Docker host logs in to Vault with the AppRole of
@@ -31,10 +31,11 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IDENTITIES_FILE="$REPO_DIR/docker/rustfs/identities.json"
 ROOT_ENV_FILE="$REPO_DIR/docker/rustfs/override.env"
 
-# Not pinned yet: pin the tag (and the digest) after the first successful run, like the other images
-MC_IMAGE="minio/mc:latest"
 RCLONE_IMAGE="rclone/rclone:1.75.1"
 S3_ENDPOINT="http://127.0.0.1:9000"
+ADMIN_API_PATH="rustfs/admin/v3"
+SIGNING_SCOPE="aws:amz:us-east-1:s3"
+ADMIN_TIMEOUT_SECONDS=30
 WAIT_ATTEMPTS=30
 WAIT_SECONDS=2
 
@@ -44,7 +45,7 @@ VAULT_ROLE_ID_FILE="/etc/gitops/role_id"
 VAULT_SECRET_ID_FILE="/etc/gitops/secret_id"
 VAULT_TIMEOUT_SECONDS=15
 VAULT_TOKEN=""
-POLICY_DIR=""
+WORK_DIR=""
 ROOT_ACCESS_KEY=""
 ROOT_SECRET_KEY=""
 
@@ -65,7 +66,7 @@ for tool in docker jq curl; do
 done
 
 cleanup() {
-    [[ -z "$POLICY_DIR" ]] || rm -rf "$POLICY_DIR"
+    [[ -z "$WORK_DIR" ]] || rm -rf "$WORK_DIR"
     if [[ -n "$VAULT_TOKEN" ]]; then
         vault_header | curl -fsS -m "$VAULT_TIMEOUT_SECONDS" -X POST -H @- "$VAULT_ADDR/v1/auth/token/revoke-self" >/dev/null 2>&1 || true
     fi
@@ -118,14 +119,17 @@ read_root_key() {
         || { error "RUSTFS_ACCESS_KEY / RUSTFS_SECRET_KEY are missing in $ROOT_ENV_FILE"; return 1; }
 }
 
-# run_mc <mc arguments>: mc against RustFS as root. The credentials are in MC_HOST_rustfs (URL encoded), passed
-# on by name, so they are not in the arguments of docker. The policy files are mounted read-only
-run_mc() {
-    local access secret scheme="${S3_ENDPOINT%%://*}" address="${S3_ENDPOINT#*://}"
-    access=$(jq -rn --arg value "$ROOT_ACCESS_KEY" '$value | @uri')
-    secret=$(jq -rn --arg value "$ROOT_SECRET_KEY" '$value | @uri')
-    MC_HOST_rustfs="$scheme://$access:$secret@$address" \
-        docker run --rm --network host -e MC_HOST_rustfs -v "$POLICY_DIR:/policies:ro" "$MC_IMAGE" "$@"
+# rustfs_admin <PUT|POST> <path and query> [body file]: a request to the admin API as root. The root key goes to curl
+# as a config on stdin, so it is not in the process list. A status other than 2xx is an error with the answer of RustFS
+rustfs_admin() {
+    local method="$1" target="$2" body_file="${3:-}" response code
+    local arguments=(--aws-sigv4 "$SIGNING_SCOPE" -X "$method")
+    [[ -z "$body_file" ]] || arguments+=(-H 'Content-Type: application/json' --data-binary "@$body_file")
+    response=$(printf 'user = %s\n' "$(jq -rn --arg value "$ROOT_ACCESS_KEY:$ROOT_SECRET_KEY" '$value | @json')" \
+        | curl -sS -m "$ADMIN_TIMEOUT_SECONDS" -K - -w '\n%{http_code}' "${arguments[@]}" "$S3_ENDPOINT/$ADMIN_API_PATH/$target") \
+        || return 1
+    code="${response##*$'\n'}"
+    [[ "$code" =~ ^2[0-9][0-9]$ ]] || { error "RustFS answered HTTP $code to $method $target: ${response%$'\n'*}"; return 1; }
 }
 
 run_rclone() {
@@ -181,13 +185,12 @@ apply_identity() {
     local name="$1" access="$2" keys user secret
     keys=$(identity_keys "$name") || return 1
     user="${keys%% *}"; secret="${keys#* }"
-    policy_document "$access" "${@:3}" > "$POLICY_DIR/$name.json"
-    run_mc admin policy create rustfs "$name" "/policies/$name.json" >/dev/null \
-        || { error "$name: RustFS did not accept 'mc admin policy create' (see the message above)"; return 1; }
-    run_mc admin user add rustfs "$user" "$secret" >/dev/null \
-        || { error "$name: RustFS did not accept 'mc admin user add' (see the message above)"; return 1; }
-    run_mc admin policy attach rustfs "$name" --user "$user" >/dev/null \
-        || { error "$name: RustFS did not accept 'mc admin policy attach' (see the message above)"; return 1; }
+    policy_document "$access" "${@:3}" > "$WORK_DIR/$name.policy.json"
+    jq -n --arg secret "$secret" '{secretKey: $secret, status: "enabled"}' > "$WORK_DIR/$name.user.json"
+    rustfs_admin PUT "add-canned-policy?name=$name" "$WORK_DIR/$name.policy.json" \
+        && rustfs_admin PUT "add-user?accessKey=$user" "$WORK_DIR/$name.user.json" \
+        && rustfs_admin PUT "set-user-or-group-policy?policyName=$name&userOrGroup=$user&isGroup=false" \
+        || { error "$name: RustFS refused a step of the setup (see the message above)"; return 1; }
     success "Identity '$name' ($access on ${*:3})"
 }
 
@@ -203,8 +206,7 @@ apply_identities() {
 step "Reading the root key and the identities"
 [[ -f "$IDENTITIES_FILE" ]] || { error "$IDENTITIES_FILE not found"; exit 1; }
 read_root_key
-POLICY_DIR=$(mktemp -d)
-chmod 755 "$POLICY_DIR"
+WORK_DIR=$(mktemp -d)
 step "RustFS"
 wait_for_s3
 step "Buckets"
