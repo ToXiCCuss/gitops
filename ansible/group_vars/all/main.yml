@@ -55,7 +55,6 @@ host_config:
       - { port: 2458,  proto: udp, comment: "Game server (Pelican)" }
       - { port: 5432,  proto: tcp, from_ip: 172.16.0.0/12, comment: "PostgreSQL from the Docker networks" }
       - { port: 3306,  proto: tcp, from_ip: 172.16.0.0/12, comment: "MariaDB from the Docker networks" }
-      - { port: 8333,  proto: tcp, from_ip: 172.16.0.0/12, comment: "SeaweedFS S3 from the Docker networks" }
       - { port: 9000,  proto: tcp, from_ip: 172.16.0.0/12, comment: "RustFS S3 from the Docker networks" }
   k8sdev01:
     # Only reached through NetBird, but UFW also filters what the pods send to the host

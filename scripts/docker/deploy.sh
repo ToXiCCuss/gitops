@@ -48,7 +48,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DOCKER_DIR="$REPO_DIR/docker"
 
 # Order: the S3 first, the services that write to it afterwards
-ALL_PROJECTS=(seaweedfs rustfs restic-backup databasus keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
+ALL_PROJECTS=(rustfs restic-backup databasus keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
 
 # Projects whose secrets come from Vault (docker/<project>), see the README
 VAULT_PROJECTS=(keycloak keycloak-config)
@@ -250,11 +250,6 @@ for project in "${PROJECTS[@]}"; do
     dir="$DOCKER_DIR/$project"
     if [[ ! -f "$dir/docker-compose.yml" ]]; then
         error "$project: $dir/docker-compose.yml not found (projects: ${ALL_PROJECTS[*]})"
-        FAILED+=("$project")
-        continue
-    fi
-    if [[ "$project" == "seaweedfs" && ! -f /root/docker/seaweedfs-s3.json ]]; then
-        error "seaweedfs: /root/docker/seaweedfs-s3.json is missing. Run scripts/docker/setup-backup-host.sh first"
         FAILED+=("$project")
         continue
     fi

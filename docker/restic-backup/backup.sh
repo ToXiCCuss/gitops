@@ -1,5 +1,5 @@
 #!/bin/sh
-# Nightly restic run on the local SeaweedFS S3. All steps run one after the other in one run, so they
+# Nightly restic run on the local RustFS S3. All steps run one after the other in one run, so they
 # never fight over the repository lock:
 #   repository docker:        backup of the key files, forget, prune, check
 #   repositories vault, netbird: check only (vault-backup and netbird_backup.sh write and prune them)
@@ -12,7 +12,7 @@ apk add --no-cache restic rclone curl >/dev/null || { echo "apk add failed" >&2;
 
 # Static files only: the data directories of running services are not consistent when copied (see the README).
 # /userdata/docker and /userdata/gitops are mounted read-only by the compose file
-KEY_FILES="/userdata/gitops /userdata/docker/databasus/secret.key /userdata/docker/offsite-sync/rclone/rclone.conf /userdata/docker/seaweedfs-s3.json"
+KEY_FILES="/userdata/gitops /userdata/docker/databasus/secret.key /userdata/docker/offsite-sync/rclone/rclone.conf"
 GITOPS_GIT_DIRECTORY=/userdata/gitops/.git
 MAX_UNUSED=10%
 

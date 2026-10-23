@@ -10,7 +10,7 @@
 #
 #   repository  docker (key files), vault (Raft snapshots) or netbird
 #   snapshot    an id from "snapshots", default latest
-#   --from      s3 (default, the local SeaweedFS) or pcloud (the copy of the offsite sync, for a lost S3)
+#   --from      s3 (default, the local RustFS) or pcloud (the copy of the offsite sync, for a lost S3)
 #   --include   restores only this path of the snapshot (as in "files"), repeatable
 #
 # "restore" writes into a new folder /root/docker/restic-backup/restore/<repository>-<snapshot>-<time>,

@@ -2,8 +2,8 @@ services:
   rustfs:
     image: rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
     container_name: rustfs
-    # S3 for the backups, replacing SeaweedFS: it runs next to it on port 9000 (SeaweedFS keeps 8333) until all clients were
-    # switched. Buckets, users and policies: scripts/docker/setup-rustfs.sh. The console logs in with Keycloak (RUSTFS_IDENTITY_OPENID_*).
+    # The local S3 of all backups. Buckets, users and policies: scripts/docker/setup-rustfs.sh. The console logs in with Keycloak
+    # (RUSTFS_IDENTITY_OPENID_*).
     env_file:
       - "default.env"
       - "override.env"
@@ -23,4 +23,12 @@ services:
       # Owned by 10001:10001, the runtime user of the image (pre-deploy.sh)
       - /root/docker/rustfs/data:/data
       - /root/docker/rustfs/logs:/app/logs
+    labels:
+      # Link on the portal page (kubernetes/management/kubectl/portal.yaml). The NetBird reverse proxy s3-admin.proxy.rjst.de
+      # points to the console (9001)
+      portal.name: "S3 Admin"
+      portal.url: "https://s3-admin.proxy.rjst.de"
+      portal.group: "Backup"
+      portal.description: "S3-Speicher"
+      portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/rustfs.svg"
     restart: unless-stopped

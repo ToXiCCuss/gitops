@@ -1,5 +1,5 @@
 #!/bin/sh
-# Nightly Raft snapshot of Vault -> restic repository vault/raft on the SeaweedFS S3.
+# Nightly Raft snapshot of Vault -> restic repository vault/raft on the RustFS S3.
 # Logs in with a periodic token that is only allowed to read the snapshot (policy vault_snapshot)
 # and renews it on every run, so it never expires while the backup runs.
 set -u

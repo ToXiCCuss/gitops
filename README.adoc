@@ -12,7 +12,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 |Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter. Secrets in an ansible-vault file.
 
 |`docker/`
-|One Docker Compose project per service on the Docker host (restic-backup, Databasus, SeaweedFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate.
+|One Docker Compose project per service on the Docker host (restic-backup, Databasus, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate.
 
 |`istio/`
 |`IstioOperator` file for the manual `istioctl install` (outside ArgoCD).
@@ -78,7 +78,7 @@ The role `firewall` runs on the hosts in `firewall_hosts` (`group_vars/all/main.
 host_config:
   docker01:
     firewall_rules:
-      - { port: 8333, proto: tcp, from_ip: 172.16.0.0/12, comment: "SeaweedFS S3 from the Docker networks" }
+      - { port: 9000, proto: tcp, from_ip: 172.16.0.0/12, comment: "RustFS S3 from the Docker networks" }
 ----
 
 * UFW only filters traffic to host processes (sshd, PostgreSQL, node_exporter, the NetBird client). Ports published by Docker
@@ -451,7 +451,7 @@ recreated when its compose file or its environment changed.
 ----
 sudo scripts/docker/deploy.sh                       # all projects, in a fixed order
 sudo scripts/docker/deploy.sh restic-backup vault-backup # only these
-sudo scripts/docker/deploy.sh --pull seaweedfs      # git pull --ff-only first
+sudo scripts/docker/deploy.sh --pull rustfs      # git pull --ff-only first
 sudo scripts/docker/deploy.sh --list
 ----
 
@@ -489,15 +489,15 @@ restarts the containers in `docker_socket_containers` after every start of `dock
 The secrets of a project are in `docker/<project>/override.env`. The file is *not* in Git (`.gitignore`), the variables a project needs are
 named in `docker/<project>/override.env.example` (`NAME=` is required, `#NAME=` is optional). `default.env` lists all variables of
 a project and the compose file reads `default.env` first and `override.env` second. `deploy.sh` checks the required variables before it
-touches a container and lists what is missing. Projects with secrets: `restic-backup`, `offsite-sync`, `seaweedfs`, `vault-backup`.
+touches a container and lists what is missing. Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `vault-backup`.
 
 New or changed secret:
 
 . Edit `docker/<project>/override.env` on the server (a new variable in the example file after a `git pull` is reported the same way).
 . `sudo scripts/docker/deploy.sh <project>`: Compose sees the changed environment and recreates the container within seconds.
   The data lives in folders on the host and stays.
-. The S3 keys of `restic-backup`, `offsite-sync` and `vault-backup` do not need to be copied: `setup-backup-host.sh` writes them into the
-  `override.env` files (`s3.json` is the source of truth). After new keys run it and deploy these projects again.
+. The S3 keys of `restic-backup` and `offsite-sync` are not in their `override.env`: `deploy.sh` reads them from Vault (`docker/s3/<project>`,
+  see Setup RustFS). `vault-backup` keeps the keys of the identity `vault` in its `override.env`, because it must run without Vault.
 
 NetBird is not part of this: it runs from its own folder (`/root/netbird`, created by the NetBird installer, with secrets), see Setup NetBird backup.
 
@@ -526,13 +526,13 @@ Set up once (on Windows, with the root token):
   container without the secrets.
 * After a total loss of Vault restore it first (see Restore), then deploy these projects.
 
-Move from the old management UI (once): `git pull`, run `setup-backup-host.sh` (it writes the S3 keys), fill the rest of the `override.env`
+Move from the old management UI (once): `git pull`, run `setup-backup-host.sh` (data directories, `rclone.conf`), fill the rest of the `override.env`
 files, then deploy project by project with `--adopt`. That removes the existing container of the same name that belongs to another
 Compose project (a short interruption, the data stays) and creates it again. Finally stop and remove the old UI container.
 
 === Backups
 
-All backups of the Docker host go to a local SeaweedFS S3 first and from there once a night to pCloud.
+All backups of the Docker host go to a local RustFS S3 first and from there once a night to pCloud.
 Every service is its own Compose project (deployed by `scripts/docker/deploy.sh`), the details are in the
 `Setup ...` sections below.
 
@@ -544,7 +544,7 @@ flowchart LR
     vault -->|"snapshot API, periodic token"| vaultbackup["vault-backup (restic)"]
     keys["Key files"] -->|read-only| resticbackup["restic-backup (restic)"]
     pg[("PostgreSQL")] --> databasus["Databasus (pg_dump)"]
-    resticbackup -->|bucket backups| s3[("SeaweedFS S3")]
+    resticbackup -->|bucket backups| s3[("RustFS S3")]
     databasus -->|bucket databases| s3
     vaultbackup -->|bucket vault| s3
     netbird["NetBird server (netbird_backup.sh, restic)"] -->|bucket netbird| s3
@@ -557,7 +557,7 @@ flowchart LR
 |===
 |Service |Task |Notes
 
-|SeaweedFS |Local S3 staging |One identity per service, the offsite sync can only read
+|RustFS |Local S3 staging |One identity per service (`docker/rustfs/identities.json`, keys in Vault), the offsite sync can only read
 |restic-backup |One nightly run: backs up a few static key files, thins out and prunes the repository and checks it, then checks the Vault and NetBird repositories |restic, repository `backups/docker`. Reports every step to Prometheus. Restore with `scripts/docker/restore.sh`
 |Databasus |Logical PostgreSQL backups (`pg_dump`), MariaDB the same way once it is installed (login from `scripts/mariadb/backup_user_create.sh`) |bucket `databases`
 |vault-backup |Daily Raft snapshot of Vault |Periodic token that may only read the snapshot, bucket `vault`, repository `vault/raft`, keeps its own retention
@@ -659,17 +659,14 @@ After the first deploy check the metric: `curl -s localhost:9100/metrics | grep 
   `rclone authorize "pcloud"` and keep the printed token JSON. The setup script asks for it and
   creates the remote `pCloud` in `/root/.config/rclone/rclone.conf`. An existing remote is reused.
 . Create a Discord webhook for the alerts, see <<Discord alerts>>.
-. Prepare the host. It creates the data directories, installs `rclone.conf`, checks pCloud and
-  generates the S3 identities and keys (`/root/backup-credentials.env`). The bucket step reports
-  that S3 is not reachable yet, that is expected:
+. Prepare the host. It creates the data directories, installs `rclone.conf` and checks pCloud:
 +
 ----
 sudo scripts/docker/setup-backup-host.sh
 ----
-. Deploy the `seaweedfs` project: `sudo scripts/docker/deploy.sh seaweedfs`.
-. Run the script again, now it creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird`. SeaweedFS is restarted by the
-  script when identities changed. The script also writes the S3 keys into `docker/restic-backup/override.env`,
-  `docker/offsite-sync/override.env` and `docker/vault-backup/override.env`.
+. Set up RustFS (section Setup RustFS): create the keys of the identities in Vault, deploy `rustfs`, then `sudo scripts/docker/setup-rustfs.sh`
+  creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird`, the users and the policies. `restic-backup` and `offsite-sync` read
+  their keys from Vault; put the keys of the identity `vault` (`vault kv get docker/s3/vault`) into `docker/vault-backup/override.env`.
 . Fill in what is still missing in these files (`deploy.sh` stops and lists it):
 +
 [cols="1,3"]
@@ -700,10 +697,10 @@ group `vault-users` (the policy `vault-users` -> `k8s-vault` exists, see NetBird
 . Configure Databasus in its UI (see the section below): S3 storage with the `databasus` keys, databases, schedule.
   Databasus is the only place that needs the `databasus` keys. `restic-backup` has no UI, run it once to test it:
   `docker exec restic-backup sh /backup.sh now`.
-. Delete `/root/backup-credentials.env` and store the restic password and `rclone.conf` in your
+. Store the restic password and `rclone.conf` in your
   password manager. Without them the pCloud backups cannot be read after a total loss.
 
-Databasus (`4005`), Keycloak (`8180`) and the S3 port (`8333`) are published on all interfaces
+Databasus (`4005`), Keycloak (`8180`) and the S3 port (`9000`) are published on all interfaces
 of the host. Restrict them to NetBird with a host firewall and allow them for your peers with
 NetBird policies. The backups should run before the sync, so schedule them between 01:00 and 03:00.
 
@@ -725,7 +722,7 @@ Keep these in the password manager, nothing can be read without them and they ar
 |===
 |Data |Restore with
 
-|Secrets and key files (the `override.env` files, `rclone.conf`, `seaweedfs-s3.json`, `secret.key`) |`scripts/docker/restore.sh`, repository `docker` (below)
+|Secrets and key files (the `override.env` files, `rclone.conf`, `secret.key`) |`scripts/docker/restore.sh`, repository `docker` (below)
 |PostgreSQL |Databasus (below)
 |Vault |`scripts/vault/vault_restore.sh` (below)
 |NetBird server |`netbird_restore.sh` (below)
@@ -745,20 +742,20 @@ sudo scripts/docker/restore.sh files docker <snapshot>
 +
 ----
 sudo scripts/docker/restore.sh restore docker
-sudo scripts/docker/restore.sh restore docker <snapshot> --include /userdata/docker/seaweedfs-s3.json
+sudo scripts/docker/restore.sh restore docker <snapshot> --include /userdata/docker/databasus/secret.key
 ----
 +
 The script restores into a *new* folder `/root/docker/restic-backup/restore/<repository>-<snapshot>-<time>` (the only writable place of the
 container, it never overwrites anything) and prints it. The files hold secrets in plain text, delete the folder afterwards.
 `/userdata/docker` in the snapshot is `/root/docker` on the host, `/userdata/gitops` is `/root/gitops`.
-. Copy the file back to its place (`/root/gitops/docker/<project>/override.env`, `/root/docker/seaweedfs-s3.json`,
+. Copy the file back to its place (`/root/gitops/docker/<project>/override.env`,
   `/root/docker/offsite-sync/rclone/rclone.conf`, `/root/docker/databasus/secret.key`),
   check the owner and mode (`override.env` `600`) and deploy the project with `deploy.sh`.
 
 `restore.sh` takes the repositories `docker`, `vault` and `netbird` (the Vault and NetBird snapshots can also be browsed this way, they
 are restored with their own scripts below). It needs the running container `restic-backup`. With the S3 gone use `--from pcloud`.
 
-After a total loss restore `seaweedfs-s3.json` first or create the identities again with `setup-backup-host.sh`.
+After a total loss of RustFS deploy it and run `setup-rustfs.sh` again (the keys are in Vault), then fill it from pCloud (below).
 The key files are also in the repository `docker` on pCloud, see the last section.
 
 ==== PostgreSQL
@@ -810,7 +807,7 @@ After a failed upgrade `netbird_rollback.sh` goes back to the rollback point mad
 
 ==== Pelican game servers
 
-Panel -> server -> Backups -> Restore. Pelican fetches the backup from the bucket `pelican`, the Wings must reach port 8333 of the S3.
+Panel -> server -> Backups -> Restore. Pelican fetches the backup from the bucket `pelican`, the Wings must reach port 9000 of the S3.
 The Panel and the Wings configuration are not backed up on purpose (see Setup Pelican). Without the Panel unpack the `.tar.gz` of the server by hand.
 
 ==== The S3 is lost (restore from pCloud)
@@ -825,13 +822,13 @@ restic -r rclone:pCloud:/Backups/s3/netbird/restic restore latest --target /rest
 ----
 
 With the container `restic-backup` running, `sudo scripts/docker/restore.sh --from pcloud restore docker` does the same for the key files
-(it reads the `rclone.conf` of the offsite sync, the S3 is not needed). To fill a new SeaweedFS again, run the nightly sync the other way
-round: `rclone sync pCloud:/Backups/s3 SEAWEED:` (with an S3 remote named `SEAWEED` and the admin key).
+(it reads the `rclone.conf` of the offsite sync, the S3 is not needed). To fill a new RustFS again, run the nightly sync the other way
+round: `rclone sync pCloud:/Backups/s3 RUSTFS:` (with an S3 remote named `RUSTFS` and the root key of `docker/rustfs/override.env`).
 
 === Setup restic-backup
 
 `restic-backup` is one container with a shell script (`docker/restic-backup/backup.sh`, no UI). Once a night (03:00 UTC, after `vault-backup`, before the
-offsite sync) it runs everything on the local SeaweedFS S3 in one go, so backup, forget, prune and check never fight over the repository lock:
+offsite sync) it runs everything on the local RustFS S3 in one go, so backup, forget, prune and check never fight over the repository lock:
 
 [cols="1,1,3"]
 |===
@@ -850,7 +847,7 @@ Every step leaves its result for Prometheus, see <<Backup age alerts>>. The cont
 The log of a run is in `docker logs restic-backup`, a run right now: `docker exec restic-backup sh /backup.sh now`.
 All backups of the Docker host and then the offsite sync in one go: `sudo scripts/docker/backup-now.sh` (the log is also in `/var/log/backup-now.log`, with `--background` the run survives a dropped SSH session, follow it with `tail -f`; Databasus is started in its UI, the NetBird server with `netbird_backup.sh` on that host).
 
-* Secrets are in `docker/restic-backup/override.env` (`setup-backup-host.sh` writes the S3 keys of the identity `restic-backup`), `default.env` lists all variables, also
+* Secrets are in `docker/restic-backup/override.env` (the S3 keys of the identity `restic-backup` come from Vault, `docker/s3/restic-backup`), `default.env` lists all variables, also
   the time of the run (`BACKUP_HOUR`, `BACKUP_MINUTE`), the retention (`KEEP_*`) and the share of data that `check` reads (`CHECK_READ_DATA_SUBSET`).
   Besides the S3 keys it holds the restic passwords of the repositories (`RESTIC_PASSWORD_DOCKER`, `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD`) and
   optionally `DISCORD_WEBHOOK_URL`. `sudo scripts/docker/setup-restic-backup.sh` fills them in: the vault password from `docker/vault-backup/override.env`, the
@@ -865,8 +862,8 @@ All backups of the Docker host and then the offsite sync in one go: `sudo script
 ==== Move from Backrest (once)
 
 . `sudo scripts/docker/undeploy.sh --yes backrest` (the data stays in `/root/docker/backrest`).
-. `git pull`, then `sudo scripts/docker/setup-backup-host.sh`: it renames the S3 identity `backrest` to `restic-backup` (same keys), creates
-  `/root/docker/restic-backup` and writes the keys into `docker/restic-backup/override.env`.
+. `git pull`, then `sudo scripts/docker/setup-backup-host.sh`: it creates
+  `/root/docker/restic-backup`. The S3 keys come from Vault (`docker/s3/restic-backup`).
 . `sudo scripts/docker/setup-restic-backup.sh`. Use the *same* password for `docker` as Backrest had (the repository `docker` already exists).
 . `sudo scripts/docker/deploy.sh restic-backup`, then `docker exec restic-backup sh /backup.sh now` and check the result: the log must end with `Run finished`
   and `backup_last_success_timestamp_seconds{backup="restic-backup"}` must show up in Prometheus.
@@ -884,7 +881,6 @@ a copy of a live database is not consistent. PostgreSQL is backed up by Databasu
 |Paths a|
 * `/userdata/gitops` (the repository checkout `/root/gitops` with the `override.env` files, they hold the secrets and are not in Git)
 * `/userdata/docker/databasus/secret.key`
-* `/userdata/docker/seaweedfs-s3.json`
 * `/userdata/docker/offsite-sync/rclone/rclone.conf`
 |Excludes |`/userdata/gitops/.git` (the history is on GitHub)
 |Schedule |daily 03:00 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`)
@@ -896,7 +892,7 @@ Test it: `docker exec restic-backup sh /backup.sh now`, then restore a file with
 === Setup Databasus
 
 Databasus makes the logical backups (`pg_dump`) of the PostgreSQL databases and writes them to the bucket
-`databases` of the local SeaweedFS S3. PostgreSQL 18 runs directly on the Docker host (Ansible role `postgresql`),
+`databases` of the local RustFS S3. PostgreSQL 18 runs directly on the Docker host (Ansible role `postgresql`),
 Databasus reaches it as `host.docker.internal`, which the compose file points to the host.
 
 ==== On the Docker host
@@ -912,13 +908,13 @@ sudo scripts/postgresql/backup_user_create.sh
 . `CONNECT` is needed because `db_create.sh` revokes it from `PUBLIC` and `pg_read_all_data` does not include it.
   `db_create.sh` grants it on every new database. Run the script above again for databases created in another way
   (the error otherwise is `permission denied for database`).
-. The containers of the Docker network must reach PostgreSQL (5432) and the S3 (8333) of the host. The firewall blocks
+. The containers of the Docker network must reach PostgreSQL (5432) and the S3 (9000) of the host. The firewall blocks
   that by default (the test below times out). The Ansible role `firewall` allows both from `172.16.0.0/12`, see
   <<Firewall>>. Test it from a container, `open` is the right answer:
 +
 ----
 docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 5432
-docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 8333
+docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 9000
 ----
 . Deploy the project with `sudo scripts/docker/deploy.sh databasus` (the container is recreated for the host entry).
 
@@ -931,11 +927,11 @@ The first account becomes the administrator.
 |Setting |Value
 
 |Storage: type |S3
-|Storage: endpoint |`http://host.docker.internal:8333` (http, SeaweedFS has no TLS; not `localhost`, that is the container itself)
+|Storage: endpoint |`http://host.docker.internal:9000` (http, RustFS here has no TLS; not `localhost`, that is the container itself)
 |Storage: bucket |`databases`
-|Storage: region |any, e.g. `us-east-1` (SeaweedFS ignores it)
-|Storage: path-style |on (SeaweedFS needs `endpoint/bucket`)
-|Storage: access key and secret |`DATABASUS_ACCESS_KEY_ID` and `DATABASUS_SECRET_ACCESS_KEY` of `/root/backup-credentials.env`. The identity `databasus` may only read, write and list the bucket `databases`
+|Storage: region |any, e.g. `us-east-1`
+|Storage: path-style |on (`endpoint/bucket`)
+|Storage: access key and secret |`access_key` and `secret_key` of `vault kv get docker/s3/databasus`. The identity `databasus` may only read, write and list the bucket `databases`
 |Database: host |`host.docker.internal`
 |Database: port |`5432`
 |Database: user |`databasus` (password of the script above)
@@ -958,56 +954,19 @@ firewall (the rules above allow only the Docker network for these ports).
 
 === Setup Offsite Sync
 
-Nightly `rclone sync` of the SeaweedFS S3 to pCloud (05:00 UTC, `SYNC_HOUR`), followed by an
+Nightly `rclone sync` of the RustFS S3 to pCloud (05:00 UTC, `SYNC_HOUR`), followed by an
 `rclone check` of the copy. Deleted or overwritten files are moved to
 `Backups-deleted/<date>` and kept for `RETENTION_DAYS`. This is the only container that holds the
 pCloud credentials.
 
 * The `rclone.conf` with the pCloud remote is installed to `/root/docker/offsite-sync/rclone/rclone.conf` by `setup-backup-host.sh`
-* Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (keys of the read-only `offsite-sync` identity) and optionally `DISCORD_WEBHOOK_URL` in `docker/offsite-sync/override.env` (the keys are written by `setup-backup-host.sh`)
+* The S3 keys (read-only identity `offsite-sync`) come from Vault (`docker/s3/offsite-sync`); optionally set `DISCORD_WEBHOOK_URL` in `docker/offsite-sync/override.env`
 * `docker compose up -d` in the offsite-sync folder
-
-=== Setup SeaweedFS
-
-SeaweedFS is the local S3 staging for all backups. Access is controlled by separate identities in
-`/root/docker/seaweedfs-s3.json` (mounted read-only, contains secrets, never in git):
-
-[cols="1,1,1"]
-|===
-|Identity |Bucket |Rights
-
-|`admin` |all |Admin (only for you, not used by containers)
-|`restic-backup` |`backups`, `vault`, `netbird` |Read, Write, List
-|`databasus` |`databases` |Read, Write, List
-|`vault` |`vault` |Read, Write, List
-|`pelican` |`pelican` |Read, Write, List (for the S3 backups of Pelican)
-|`netbird` |`netbird` |Read, Write, List (for `netbird_backup.sh`)
-|`offsite-sync` |all |Read, List (cannot change anything)
-|===
-
-* Run `scripts/docker/setup-backup-host.sh` *before* deploying: it prepares the host and creates the identities
-(`/root/backup-credentials.env`). It is idempotent: existing identities and their keys are never changed, only
-missing identities and buckets are added (needs `jq`). To add a service later, add an `ensure_identity` line and the bucket
-in the script and in the `-bucket=` flag of the compose file, run the script (it restarts SeaweedFS when identities or rights changed, `--no-restart` skips that). `--regenerate-s3`
-replaces all keys
-* Deploy the seaweedfs project with `deploy.sh seaweedfs`, then run the script again to create the buckets
-* The keys of `restic-backup`, `offsite-sync` and `vault` are written into the `override.env` files by the script. Copy the keys of `databasus`, `pelican` and `netbird` from `/root/backup-credentials.env` into their settings, then delete the file
-* `Write` includes deleting objects in SeaweedFS, so a leaked `restic-backup` key can delete the local backups. pCloud keeps deleted files (`Backups-deleted`)
-* The project runs `weed mini` (the default command of the image, all components in one process) and creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird` on start (`-bucket=`)
-* The S3 port `8333` and the admin UI (`23646`) are published, the filer (`8888`) is not. Like the other published ports they go around
-  UFW (Docker), so restrict `23646` outside the host (router, NetBird policy) and open it only for your peers
-* The admin UI asks for a login. Set `WEED_ADMIN_PASSWORD` and `WEED_ADMIN_READONLY_PASSWORD` in `docker/seaweedfs/override.env`
-  (for example `openssl rand -base64 24`) *before* the first deploy, `deploy.sh` stops without them. Sign in with the user `viewer`
-  (`WEED_ADMIN_READONLY_USER` in `default.env`) to browse buckets and objects. Do not create users in the UI: the identities live in
-  `s3.json` (source of truth) and could be replaced. OIDC with Keycloak is an Enterprise feature of SeaweedFS
-* After the first deploy open `http://<docker-host>:23646`. If it shows no login page, stop the project and do not publish the port:
-  then the environment variables are not read by `weed mini`
 
 === Setup RustFS
 
-`docker/rustfs` is the S3 server that replaces SeaweedFS. It runs next to it (RustFS on `9000`, console `9001`; SeaweedFS stays on `8333`) while the
-clients are switched one after the other: copy the repository, put the client on `:9000` and the keys of its identity, run it once, check it.
-SeaweedFS goes away when all clients are switched. RustFS is young (1.0.x), so check every repository after the switch (`restore.sh snapshots`).
+`docker/rustfs` is the local S3 of all backups (it replaced SeaweedFS). Ports: `9000` S3 API, `9001` console. RustFS is young (1.0.x), so test
+a restore now and then (`scripts/docker/restore.sh`, also `--from pcloud`).
 
 Buckets, users and policies come from `docker/rustfs/identities.json` (names and buckets, no keys). The keys are in Vault (`docker/s3/<name>`):
 
@@ -1027,8 +986,8 @@ Buckets, users and policies come from `docker/rustfs/identities.json` (names and
 . `docker/rustfs/override.env` from `override.env.example`: `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY` (root login, not `rustfsadmin`) and
   `RUSTFS_IDENTITY_OPENID_CLIENT_SECRET` (the same value as `RUSTFS_CLIENT_SECRET`).
 . `sudo scripts/docker/deploy.sh rustfs`. `pre-deploy.sh` makes the data directories belong to the user `10001` of the image.
-. NetBird dashboard: the reverse proxy service `s3-admin.proxy.rjst.de` (the one of the SeaweedFS admin UI) points to port `9001` of the Docker host,
-  restricted to your peers. To compare, switch its target between `23646` (SeaweedFS) and `9001` (RustFS).
+. NetBird dashboard: the reverse proxy service `s3-admin.proxy.rjst.de` points to port `9001` of the Docker host, restricted to your peers
+  (the portal entry "S3 Admin" is a label of the container).
 
 * The container cannot use `https://auth.proxy.rjst.de` (the NetBird proxy only serves peers and answers `403` for a container). RustFS therefore fetches the discovery
   document, the keys and the token from the published port of Keycloak (`RUSTFS_IDENTITY_OPENID_CONFIG_URL=http://host.docker.internal:8180/realms/rjst`) and checks the
@@ -1036,58 +995,30 @@ Buckets, users and policies come from `docker/rustfs/identities.json` (names and
   port 8180 then gets the token and key endpoints of the address it used, while issuer and login page stay public. Deploy it first: `sudo scripts/docker/deploy.sh keycloak`
   (a short restart of Keycloak, the apps keep their local logins). Check it before the first login, the token endpoint must be `http://host.docker.internal:8180/...` and the issuer public:
   `docker run --rm --add-host host.docker.internal:host-gateway curlimages/curl -s http://host.docker.internal:8180/realms/rjst/.well-known/openid-configuration`.
-  If that call hangs, the firewall blocks the Docker network (`ufw allow from 172.16.0.0/12 to any port 8180 proto tcp`, as an entry in `firewall_rules` like the one for `8333`).
+  If that call hangs, the firewall blocks the Docker network (`ufw allow from 172.16.0.0/12 to any port 8180 proto tcp`, as an entry in `firewall_rules` like the one for `9000`).
 * The user of a login gets the RustFS policies named in the claim `roles`. The root login (`RUSTFS_ACCESS_KEY`) stays as the emergency login.
 * Not verified: whether the callback `/rustfs/admin/v3/oidc/callback/default` is served on the console port `9001` or on the API port `9000`.
   If the login ends in a 404 after Keycloak, let the reverse proxy route `/rustfs/admin/` to port `9000`.
 * The RustFS data is `/root/docker/rustfs/data`. Nothing backs it up.
-
-==== Switch the clients from SeaweedFS to RustFS
-
-Prerequisites: `setup-rustfs.sh` ran through (every identity "rights as intended"), the firewall rule for port `9000` is applied on the host
-(the containers reach RustFS as `host.docker.internal:9000`), and this branch is checked out on the host.
-Deploy the projects by name (`deploy.sh <project>`), not all at once: each project switches when you deploy it.
-The nightly runs are at 02:30 (`vault-backup`), 03:00 (`restic-backup`) and 05:00 UTC (`offsite-sync`); switch between them.
-
-First copy of all buckets (online, SeaweedFS stays as it is): `sudo scripts/docker/copy-s3-to-rustfs.sh`.
-For every writer repeat "copy the bucket again, then switch", so that its last backups are in RustFS. Take the keys of an identity
-with `vault kv get docker/s3/<name>`. The order matters: writers first, `restic-backup` after the writers of the repositories it checks, `offsite-sync` last.
-
-. `vault-backup`: `sudo scripts/docker/copy-s3-to-rustfs.sh vault`; put the keys of `docker/s3/vault` into `docker/vault-backup/override.env`
-  (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`; this project stays independent of Vault); `sudo scripts/docker/deploy.sh vault-backup`;
-  `docker exec vault-backup sh /backup.sh now`. `vault_restore.sh` reads the keys from `/etc/vault-backup.cred`: change them there as well.
-. NetBird: `sudo scripts/docker/copy-s3-to-rustfs.sh netbird`; in `/etc/netbird-backup.cred` set `RESTIC_REPOSITORY="s3:http://127.0.0.1:9000/netbird/restic"`
-  and the keys of `docker/s3/netbird`; run `sudo netbird_backup.sh` once.
-. Databasus: `sudo scripts/docker/copy-s3-to-rustfs.sh databases`; in the storage settings change the endpoint to `http://host.docker.internal:9000`
-  and the keys to those of `docker/s3/databasus`; *Backup now*.
-. Pelican: `sudo scripts/docker/copy-s3-to-rustfs.sh pelican`; endpoint `http://<docker host>:9000` and the keys of `docker/s3/pelican` in its S3 settings.
-. `restic-backup`: `sudo scripts/docker/copy-s3-to-rustfs.sh backups`, then `sudo scripts/docker/deploy.sh restic-backup`. Its S3 keys come from Vault now
-  (`docker/s3/restic-backup`, written to `vault.env`; delete the old `AWS_*` lines from its `override.env`, Vault wins anyway). Then
-  `docker exec restic-backup sh /backup.sh now` and `sudo scripts/docker/restore.sh snapshots docker` (also `vault` and `netbird`).
-. `offsite-sync` last: `sudo scripts/docker/deploy.sh offsite-sync` (keys from `docker/s3/offsite-sync`, delete the old `AWS_*` lines from its `override.env`), then
-  `docker exec offsite-sync sh /sync.sh now`. It must come after all writers: it copies what is in RustFS to pCloud.
-
-Back to SeaweedFS for one client: put its `S3_ENDPOINT` (or, for NetBird, `RESTIC_REPOSITORY`) back to port `8333` and the old keys, and deploy it again.
-SeaweedFS is not removed yet: when all clients run on RustFS and a restore test passed, remove `docker/seaweedfs` and its references.
 
 === Setup Pelican S3 backups
 
 Pelican can store the backups of its servers in an S3. The bucket `pelican` and the identity `pelican` (Read, Write, List
 on this bucket only) are created by the setup script. Settings for Pelican, the names of the fields may differ in your version:
 
-* Backup driver S3 in the admin settings (Backups), endpoint `http://100.67.0.1:8333` (the NetBird address of `docker01`), bucket `pelican`,
+* Backup driver S3 in the admin settings (Backups), endpoint `http://100.67.0.1:9000` (the NetBird address of `docker01`), bucket `pelican`,
 path-style on, any region (e.g. `us-east-1`)
 * Access key and secret of the identity `pelican`, without spaces or quotes (the password manager of the browser may fill them into a wrong field):
-`jq -r '.identities[] | select(.name=="pelican") | .credentials[0]' /root/docker/seaweedfs-s3.json`
+`vault kv get docker/s3/pelican`
 * Why the IP: the endpoint must be reachable from the Panel and the Wings (containers in Docker networks), and for downloads from the browser (the
 Panel hands out presigned URLs). Containers do not know `host.docker.internal` there and cannot resolve `docker01.vpn.rjst.de` (the host DNS is the
 NetBird resolver), an IP works for both. The browser must be in the NetBird network.
-* The firewall must let the Docker networks reach port 8333 (the rule of the Ansible role `firewall` for `172.16.0.0/12` covers the
+* The firewall must let the Docker networks reach port 9000 (the rule of the Ansible role `firewall` for `172.16.0.0/12` covers the
 destination `100.67.0.1`, see <<Firewall>>). Test it from the networks of the Wings and the Panel, `open` is the right answer:
 +
 ----
-docker run --rm --network wings0 alpine nc -zv -w 5 100.67.0.1 8333
-docker run --rm --network pelicanpanel_default alpine nc -zv -w 5 100.67.0.1 8333
+docker run --rm --network wings0 alpine nc -zv -w 5 100.67.0.1 9000
+docker run --rm --network pelicanpanel_default alpine nc -zv -w 5 100.67.0.1 9000
 ----
 * Test a backup of a server, the download and a restore on a test server. Set the number of backups per server in Pelican, every backup is a
 full archive
@@ -1112,7 +1043,7 @@ The self-hosted NetBird server runs as a Docker Compose project on `docker01` (d
 
 * `netbird_backup.sh`: stops NetBird for a moment, copies the config files, `/var/lib/netbird` (SQLite store and keys),
 CrowdSec data and certificates, starts NetBird again (also on errors), writes everything with restic to the
-repository `netbird/restic` on the local SeaweedFS S3 and applies the retention (8 weekly, 6 monthly). It has no schedule: it runs before every upgrade (`netbird_upgrade.sh`, tag `pre-upgrade`) and by hand, so everything changed since then is lost on a restore. A failed
+repository `netbird/restic` on the local RustFS S3 and applies the retention (8 weekly, 6 monthly). It has no schedule: it runs before every upgrade (`netbird_upgrade.sh`, tag `pre-upgrade`) and by hand, so everything changed since then is lost on a restore. A failed
 run is reported to Discord (`DISCORD_WEBHOOK_URL`). Connected through NetBird, use `sudo netbird_backup.sh --background`: the run stops NetBird, which drops that SSH session, so it detaches and writes to `/var/log/netbird-backup.log` (`tail -f` after reconnecting). A PostgreSQL or MySQL store would have to be backed up separately
 * `netbird_restore.sh`, `netbird_upgrade.sh` (creates a pre-upgrade backup and a local rollback point), `netbird_rollback.sh`
 +
@@ -1131,10 +1062,9 @@ header-alias spoofing does nothing without it). If `--providers.docker.network` 
 when that has exactly one
 * `netbird_backup_setup.sh` installs them to `/usr/local/bin`, writes `/etc/netbird-backup.cred` and removes the cron job of earlier versions
 
-Set it up on `docker01`, the S3 is reached on `127.0.0.1:8333`, no NetBird is involved:
+Set it up on `docker01`, the S3 is reached on `127.0.0.1:9000`, no NetBird is involved:
 
-. Add the identity and bucket `netbird`: run `scripts/docker/setup-backup-host.sh` (it restarts SeaweedFS itself and creates the bucket). The keys
-  `NETBIRD_ACCESS_KEY_ID` and `NETBIRD_SECRET_ACCESS_KEY` are in `/root/backup-credentials.env`
+. The identity and bucket `netbird` come from `docker/rustfs/identities.json` (`setup-rustfs.sh`). The keys: `vault kv get docker/s3/netbird`
 . Create a Discord webhook for the alerts, see <<Discord alerts>>
 . Run the setup (installs restic if missing, asks for the S3 keys and the restic password, initialises the repository):
 +
@@ -1149,7 +1079,7 @@ sudo ./netbird_backup_setup.sh --discord-webhook <webhook url> --run
 === Setup Vault backup
 
 Daily at 02:30 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`) the container fetches the Raft snapshot of Vault
-(`sys/storage/raft/snapshot`), writes it with restic to the repository `vault/raft` on the SeaweedFS S3,
+(`sys/storage/raft/snapshot`), writes it with restic to the repository `vault/raft` on the RustFS S3,
 applies the retention (`KEEP_*`, default 14 daily, 8 weekly, 12 monthly) and reports a failed run to Discord. It runs in the
 host network, so that it uses the NetBird DNS of the host to reach Vault and the S3 on `127.0.0.1`.
 
