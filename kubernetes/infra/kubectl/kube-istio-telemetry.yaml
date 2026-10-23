@@ -11,4 +11,4 @@ spec:
   tracing:
     - providers:
         - name: tempo
-      randomSamplingPercentage: 10
+      randomSamplingPercentage: 100

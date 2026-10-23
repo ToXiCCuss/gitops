@@ -1250,8 +1250,8 @@ ClusterIP only). Two parts have to match:
 * `meshConfig.extensionProviders` in `istio/istio-operator.yaml` defines the provider `tempo`. Run `istioctl install` **before** the
   `Telemetry` resource (`kubernetes/infra/kubectl/kube-istio-telemetry.yaml`) syncs, otherwise istiod rejects the unknown provider.
   Restart the workloads in the `istio-injection: enabled` namespaces afterwards so the sidecars pick up the provider.
-* The `Telemetry` resource samples 10 % of the requests mesh-wide. Raise `randomSamplingPercentage` while debugging, or add a
-  `Telemetry` in a single namespace to override it there.
+* The `Telemetry` resource samples 100 % of the requests mesh-wide, the traffic is low. Lower `randomSamplingPercentage` if the
+  volume of Tempo grows, or add a `Telemetry` in a single namespace to override it there.
 
 The apps still have to pass the trace headers on (Spring Boot: Micrometer Tracing with the OpenTelemetry bridge, W3C `traceparent`),
 otherwise every hop is a trace of its own. Put `traceId` into the log pattern to find the logs of a trace later.
