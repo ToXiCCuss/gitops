@@ -164,9 +164,7 @@ spec:
                     url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/e4faf59e017a18e1b06fa64f11623bef15ce7507/dashboards/k8s-views-pods.json
                     token: ''
                 dbs:
-                  postgresql:
-                    gnetId: 9628
-                    revision: 8
+                  # The PostgreSQL dashboard (9628) is in kubernetes/monitoring/kubectl/dashboard-postgresql.yaml
                   mysql-quickstart:
                     gnetId: 14057
                     revision: 1
