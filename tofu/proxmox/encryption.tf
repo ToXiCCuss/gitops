@@ -1,5 +1,5 @@
 # The passphrase must not be committed. It is supplied through the environment variable
-# TF_ENCRYPTION, which OpenTofu merges with this block (see README.adoc).
+# TF_ENCRYPTION, which OpenTofu merges with this block (see README.md).
 terraform {
   encryption {
     method "aes_gcm" "state" {

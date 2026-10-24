@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Generates/collects the app secrets listed in README.adoc and
+    Generates/collects the app secrets listed in README.md and
     writes them into Vault (KV v2), so ArgoCD's AVP plugin can render them.
 
 .DESCRIPTION
