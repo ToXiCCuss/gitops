@@ -58,7 +58,7 @@ configs:
 controller:
   resources:
     limits:
-      cpu: 500m
+      cpu: 2000m
       memory: 2Gi
     requests:
       cpu: 0
