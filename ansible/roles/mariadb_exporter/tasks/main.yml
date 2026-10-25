@@ -53,8 +53,8 @@
 
 # PROCESS (SHOW PROCESSLIST, InnoDB status), BINLOG MONITOR (= REPLICATION CLIENT, binary log
 # status) and REPLICA MONITOR (SHOW REPLICA STATUS) on all databases, SELECT only on
-# performance_schema. 4 = all of them are granted. If this never reaches 4, the task below
-# just runs on every play (GRANT is idempotent).
+# performance_schema. 4 = all of them are granted. information_schema lists REPLICA MONITOR
+# under its old name SLAVE MONITOR.
 - name: Check the privileges of the monitoring user
   command:
     argv:
@@ -66,7 +66,7 @@
         SELECT
         (SELECT COUNT(*) FROM information_schema.USER_PRIVILEGES
          WHERE GRANTEE = "'{{ mariadb_exporter_database_user }}'@'localhost'"
-         AND PRIVILEGE_TYPE IN ('PROCESS', 'BINLOG MONITOR', 'REPLICA MONITOR'))
+         AND PRIVILEGE_TYPE IN ('PROCESS', 'BINLOG MONITOR', 'SLAVE MONITOR'))
         + (SELECT COUNT(*) FROM information_schema.SCHEMA_PRIVILEGES
          WHERE GRANTEE = "'{{ mariadb_exporter_database_user }}'@'localhost'"
          AND TABLE_SCHEMA = 'performance_schema' AND PRIVILEGE_TYPE = 'SELECT')
