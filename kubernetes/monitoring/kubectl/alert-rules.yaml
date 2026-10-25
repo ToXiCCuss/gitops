@@ -41,6 +41,28 @@ spec:
 
 ---
 
+# Same for the mysqld_exporter: it keeps answering when MariaDB is down.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mariadb
+  namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  groups:
+    - name: mariadb
+      rules:
+        - alert: MariaDBDown
+          expr: mysql_up == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "MariaDB on {{ $labels.instance }} is not reachable by the exporter"
+
+---
+
 # The probes of probes.yaml. The wildcard certificate is shared, so only the soonest expiry is reported.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule

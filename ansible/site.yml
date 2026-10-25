@@ -22,6 +22,7 @@
         - node_exporter
         - docker
         - mariadb
+        - mariadb_exporter
         - postgresql
         - postgres_exporter
         - mongodb
@@ -60,6 +61,12 @@
   become: true
   roles:
     - mariadb
+
+- name: Install mysqld_exporter
+  hosts: has_mariadb_exporter
+  become: true
+  roles:
+    - mariadb_exporter
 
 - name: Install PostgreSQL
   hosts: has_postgresql

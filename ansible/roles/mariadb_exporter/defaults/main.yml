@@ -1,0 +1,18 @@
+---
+# Name of the package and service (Debian "prometheus-mysqld-exporter", listens on :9104)
+mariadb_exporter_package_name: prometheus-mysqld-exporter
+mariadb_exporter_service_name: prometheus-mysqld-exporter
+mariadb_exporter_environment_file: /etc/default/prometheus-mysqld-exporter
+
+# Login file of the exporter (client section with user and socket). It is passed with
+# --config.my-cnf; the package no longer reads a connection string from the environment file.
+mariadb_exporter_client_file: /var/lib/prometheus/.my.cnf
+mariadb_exporter_socket: /run/mysqld/mysqld.sock
+
+# The package runs the exporter as the system user "prometheus". A database user of the same
+# name logs in through the Unix socket (unix_socket authentication), so no password is needed.
+mariadb_exporter_database_user: prometheus
+
+# Upper limit of parallel connections of the monitoring user, so a stuck scrape cannot use up
+# the connections of the applications
+mariadb_exporter_max_user_connections: 3

@@ -1,0 +1,7 @@
+---
+- name: restart mariadb_exporter
+  ansible.builtin.systemd:
+    name: "{{ mariadb_exporter_service_name }}"
+    state: restarted
+  # Same as the service task: no unit yet when check mode "installs" the package
+  when: not (ansible_check_mode and mariadb_exporter_package is changed)

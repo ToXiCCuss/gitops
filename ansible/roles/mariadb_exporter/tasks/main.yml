@@ -1,0 +1,102 @@
+---
+- name: Install mysqld_exporter via apt
+  apt:
+    name: "{{ mariadb_exporter_package_name }}"
+    state: present
+    update_cache: yes
+  register: mariadb_exporter_package
+
+# Owner and mode as set by the package's postinst for the environment file
+- name: Configure the command line
+  template:
+    src: prometheus-mysqld-exporter.j2
+    dest: "{{ mariadb_exporter_environment_file }}"
+    owner: prometheus
+    group: prometheus
+    mode: "0640"
+  notify: restart mariadb_exporter
+
+- name: Configure the login (user and socket, no password)
+  template:
+    src: mysqld-exporter.cnf.j2
+    dest: "{{ mariadb_exporter_client_file }}"
+    owner: prometheus
+    group: prometheus
+    mode: "0640"
+  notify: restart mariadb_exporter
+
+# 0 = user missing, 1 = user exists
+- name: Check the monitoring user
+  command:
+    argv:
+      - mariadb
+      - -N
+      - -B
+      - -e
+      - >-
+        SELECT COUNT(*) FROM mysql.user
+        WHERE User = '{{ mariadb_exporter_database_user }}' AND Host = 'localhost'
+  register: mariadb_exporter_user_state
+  changed_when: false
+  check_mode: false
+
+- name: Create the monitoring user (login only through the local socket)
+  command:
+    argv:
+      - mariadb
+      - -e
+      - >-
+        CREATE USER '{{ mariadb_exporter_database_user }}'@'localhost'
+        IDENTIFIED VIA unix_socket
+        WITH MAX_USER_CONNECTIONS {{ mariadb_exporter_max_user_connections }}
+  when: mariadb_exporter_user_state.stdout == '0'
+
+# PROCESS (SHOW PROCESSLIST, InnoDB status), BINLOG MONITOR (= REPLICATION CLIENT, binary log
+# status) and REPLICA MONITOR (SHOW REPLICA STATUS) on all databases, SELECT only on
+# performance_schema. 4 = all of them are granted. If this never reaches 4, the task below
+# just runs on every play (GRANT is idempotent).
+- name: Check the privileges of the monitoring user
+  command:
+    argv:
+      - mariadb
+      - -N
+      - -B
+      - -e
+      - >-
+        SELECT
+        (SELECT COUNT(*) FROM information_schema.USER_PRIVILEGES
+         WHERE GRANTEE = "'{{ mariadb_exporter_database_user }}'@'localhost'"
+         AND PRIVILEGE_TYPE IN ('PROCESS', 'BINLOG MONITOR', 'REPLICA MONITOR'))
+        + (SELECT COUNT(*) FROM information_schema.SCHEMA_PRIVILEGES
+         WHERE GRANTEE = "'{{ mariadb_exporter_database_user }}'@'localhost'"
+         AND TABLE_SCHEMA = 'performance_schema' AND PRIVILEGE_TYPE = 'SELECT')
+  register: mariadb_exporter_privilege_state
+  changed_when: false
+  check_mode: false
+
+- name: Grant the monitoring privileges
+  command:
+    argv:
+      - mariadb
+      - -e
+      - >-
+        GRANT PROCESS, BINLOG MONITOR, REPLICA MONITOR
+        ON *.* TO '{{ mariadb_exporter_database_user }}'@'localhost';
+        GRANT SELECT ON performance_schema.*
+        TO '{{ mariadb_exporter_database_user }}'@'localhost'
+  when: mariadb_exporter_privilege_state.stdout != '4'
+
+# Right after the apt run systemd may not know the new unit yet, so retry with a daemon
+# reload (as in the node_exporter role). In check mode the package is not really
+# installed on the first run, so there is no unit to check yet.
+- name: Ensure mysqld_exporter service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ mariadb_exporter_service_name }}"
+    state: started
+    enabled: true
+    daemon_reload: yes
+  register: mariadb_exporter_service
+  retries: 3
+  delay: 3
+  until: mariadb_exporter_service is succeeded
+  when: not (ansible_check_mode and mariadb_exporter_package is changed)

@@ -350,6 +350,15 @@ spec:
                     relabel_configs:
                       - target_label: job
                         replacement: postgres-exporter
+                  - job_name: mysqld-exporter
+                    scrape_interval: 30s
+                    metrics_path: /metrics
+                    static_configs:
+                      - targets:
+                          - docker01.server.lan:9104
+                    relabel_configs:
+                      - target_label: job
+                        replacement: mysqld-exporter
             thanosRuler:
               enabled: false
   syncPolicy:

@@ -4,7 +4,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 
 | Folder | Content |
 |---|---|
-| `ansible/` | Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter. Secrets in an ansible-vault file. |
+| `ansible/` | Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter, mysqld exporter. Secrets in an ansible-vault file. |
 | `docker/` | One Docker Compose project per service on the Docker host (restic-backup, Databasus, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate. |
 | `istio/` | `IstioOperator` file for the manual `istioctl install` (outside ArgoCD). |
 | `tofu/` | OpenTofu: VMs on the Proxmox host (`tofu/proxmox/`), state in PostgreSQL. Cloud-init installs Ansible and checks out this repository on each VM. |
@@ -107,6 +107,7 @@ The role `mariadb` sets `bind-address` and `event_scheduler = ON` (`/etc/mysql/m
 - The audit log lives in the database, so `db_delete.sh` takes it along. It holds personal data in clear text. The roles of `db_create.sh` can change it, their grants cover the whole database.
 - An audited write costs one more INSERT with all columns as JSON, so switch it on only for the tables where you need the history. A database without `audit_setup.sh` has no triggers and no cost.
 - The partition `p_future` (`VALUES LESS THAN MAXVALUE`) catches every row without a monthly partition. A stopped event scheduler only leaves the partitions unmaintained, audited writes never fail.
+- Monitoring: the role `mariadb_exporter` installs `prometheus-mysqld-exporter` (port 9104, scraped by the job `mysqld-exporter` in `kubernetes/monitoring/helm/prometheus.yaml`, alert `MariaDBDown` on `mysql_up`). It logs in as the MariaDB user `prometheus@localhost` through the socket (`unix_socket`, no password, `MAX_USER_CONNECTIONS 3`) with `PROCESS`, `BINLOG MONITOR`, `REPLICA MONITOR` and `SELECT` on `performance_schema.*`. The role creates the user, there is no script for it. The dashboard is `mysql-quickstart` (14057).
 - Backups: Databasus (logical, MariaDB 11 is supported) once the database exists, see [Backups](#backups). The grants of the backup user are what `mariadb-dump` needs; the Databasus documentation does not name them, adjust them if "Test connection" or a run complains. `mariabackup` (physical) is for later, when the dump gets too slow or too large.
 
 ### PostgreSQL (audit log)

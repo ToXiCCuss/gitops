@@ -5,6 +5,10 @@ docker_hosts:
 mariadb_hosts:
    - docker01
 
+# Needs MariaDB on the same host (local socket), so only hosts from mariadb_hosts
+mariadb_exporter_hosts:
+   - docker01
+
 postgresql_hosts:
    - docker01
 
