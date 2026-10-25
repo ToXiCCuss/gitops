@@ -112,7 +112,7 @@ spec:
                         path: /var/lib/grafana/dashboards/docker
                     - name: grafana-dashboards-kubernetes
                       orgId: 1
-                      folder: "Kubernete"
+                      folder: "Kubernetes"
                       type: file
                       disableDeletion: true
                       editable: true
