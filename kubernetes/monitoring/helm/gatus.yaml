@@ -76,13 +76,22 @@ spec:
                   ui: *hide-details
                 # PostgreSQL is not reachable from the cluster (UFW lets port 5432 in from the Docker networks only).
                 # The postgres_exporter keeps answering when the database is down, so the body is checked for pg_up.
-                - name: Database01
+                - name: PostgreSQL
                   group: Database
                   url: http://docker01.server.lan:9187/metrics
                   interval: 1m
                   conditions:
                     - "[STATUS] == 200"
                     - "[BODY] == pat(*pg_up 1*)"
+                  ui: *hide-details
+                # MariaDB is the same case: the mysqld_exporter keeps answering when the database is down, mysql_up tells.
+                - name: MariaDB
+                  group: Database
+                  url: http://docker01.server.lan:9104/metrics
+                  interval: 1m
+                  conditions:
+                    - "[STATUS] == 200"
+                    - "[BODY] == pat(*mysql_up 1*)"
                   ui: *hide-details
   syncPolicy:
     automated:
