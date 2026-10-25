@@ -163,12 +163,8 @@ spec:
                   k8s-views-pods:
                     url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/e4faf59e017a18e1b06fa64f11623bef15ce7507/dashboards/k8s-views-pods.json
                     token: ''
-                dbs:
-                  # The PostgreSQL dashboard (9628) is in kubernetes/monitoring/kubectl/dashboard-postgresql.yaml
-                  mysql-quickstart:
-                    gnetId: 14057
-                    revision: 1
-                    datasource: prometheus
+                # The PostgreSQL (9628) and MariaDB (14057) dashboards are in kubernetes/monitoring/kubectl/dashboard-postgresql.yaml
+                # and dashboard-mariadb.yaml, patched copies of the originals.
                 sb:
                   cache:
                     gnetId: 21303
