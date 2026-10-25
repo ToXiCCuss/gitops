@@ -11,7 +11,6 @@ metadata:
   labels:
     grafana_dashboard: "1"
   annotations:
-    grafana_folder: "Data"
     argocd.argoproj.io/sync-wave: "4"
 data:
   mariadb.json: |
