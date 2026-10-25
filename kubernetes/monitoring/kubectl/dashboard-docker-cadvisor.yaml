@@ -847,7 +847,7 @@ data:
             "type": "datasource"
           },
           {
-            "allValue": ".*",
+            "allValue": "docker.*",
             "current": {},
             "datasource": {
               "type": "prometheus",
@@ -865,7 +865,7 @@ data:
               "refId": "Prometheus-host-Variable-Query"
             },
             "refresh": 1,
-            "regex": "",
+            "regex": "/^(?<value>(?<text>docker[^.:]*).*)$/",
             "skipUrlSync": false,
             "sort": 5,
             "tagsQuery": "",
@@ -909,7 +909,7 @@ data:
       "timepicker": {},
       "timeRangeUpdatedDuringEditOrView": false,
       "timezone": "",
-      "title": "Docker - cAdvisor Compute Resources",
+      "title": "Docker Containers",
       "uid": "tLHmjJ4H8",
       "version": 1,
       "weekStart": ""
