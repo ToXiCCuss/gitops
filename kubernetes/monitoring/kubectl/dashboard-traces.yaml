@@ -1,0 +1,383 @@
+# Grafana picks this up through the dashboard sidecar (label grafana_dashboard, all namespaces).
+# Search and read single traces (TraceQL against the tempo datasource) plus the health of Tempo itself.
+# The rates, errors and latencies per service are in the dashboard "Tracing" (dashboard-tracing.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-traces
+  namespace: prometheus
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+data:
+  traces.json: |
+    {
+      "uid": "traces",
+      "title": "Traces",
+      "tags": [
+        "tracing",
+        "tempo"
+      ],
+      "timezone": "Europe/Berlin",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "editable": true,
+      "templating": {
+        "list": [
+          {
+            "type": "custom",
+            "name": "stage",
+            "label": "Stage",
+            "query": "dev : .*[.]dev, prod : .*[.]prod, all : .*",
+            "current": {
+              "text": "dev",
+              "value": ".*[.]dev"
+            },
+            "options": [
+              {
+                "selected": true,
+                "text": "dev",
+                "value": ".*[.]dev"
+              },
+              {
+                "selected": false,
+                "text": "prod",
+                "value": ".*[.]prod"
+              },
+              {
+                "selected": false,
+                "text": "all",
+                "value": ".*"
+              }
+            ]
+          },
+          {
+            "type": "textbox",
+            "name": "exclude",
+            "label": "Exclude services (regex)",
+            "query": ".*sba-service.*",
+            "current": {
+              "text": ".*sba-service.*",
+              "value": ".*sba-service.*"
+            },
+            "options": [
+              {
+                "selected": true,
+                "text": ".*sba-service.*",
+                "value": ".*sba-service.*"
+              }
+            ]
+          },
+          {
+            "type": "custom",
+            "name": "minDuration",
+            "label": "Slow from",
+            "query": "100ms, 500ms, 1s, 5s",
+            "current": {
+              "text": "500ms",
+              "value": "500ms"
+            },
+            "options": [
+              {
+                "selected": false,
+                "text": "100ms",
+                "value": "100ms"
+              },
+              {
+                "selected": true,
+                "text": "500ms",
+                "value": "500ms"
+              },
+              {
+                "selected": false,
+                "text": "1s",
+                "value": "1s"
+              },
+              {
+                "selected": false,
+                "text": "5s",
+                "value": "5s"
+              }
+            ]
+          },
+          {
+            "type": "textbox",
+            "name": "traceId",
+            "label": "Trace id",
+            "query": "",
+            "current": {
+              "text": "",
+              "value": ""
+            },
+            "options": [
+              {
+                "selected": true,
+                "text": "",
+                "value": ""
+              }
+            ]
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "table",
+          "title": "Recent traces",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 9
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "queryType": "traceql",
+              "query": "{ resource.service.name =~ \"$stage\" && resource.service.name !~ \"$exclude\" }",
+              "limit": 50,
+              "tableType": "traces",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true
+          }
+        },
+        {
+          "id": 2,
+          "type": "table",
+          "title": "Slow traces (duration above the selected minimum)",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 9,
+            "w": 12,
+            "h": 9
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "queryType": "traceql",
+              "query": "{ resource.service.name =~ \"$stage\" && resource.service.name !~ \"$exclude\" && duration > $minDuration }",
+              "limit": 50,
+              "tableType": "traces",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true
+          }
+        },
+        {
+          "id": 3,
+          "type": "table",
+          "title": "Traces with errors",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 9,
+            "w": 12,
+            "h": 9
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "queryType": "traceql",
+              "query": "{ resource.service.name =~ \"$stage\" && resource.service.name !~ \"$exclude\" && status = error }",
+              "limit": 50,
+              "tableType": "traces",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true
+          }
+        },
+        {
+          "id": 4,
+          "type": "table",
+          "title": "Traces digmap to chaos-service",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 18,
+            "w": 24,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "queryType": "traceql",
+              "query": "{ resource.service.name =~ \"freewar-digmap.*\" } && { resource.service.name =~ \"freewar-chaos.*\" }",
+              "limit": 50,
+              "tableType": "traces",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true
+          }
+        },
+        {
+          "id": 5,
+          "type": "traces",
+          "title": "Trace by id",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 26,
+            "w": 24,
+            "h": 14
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "queryType": "traceql",
+              "query": "$traceId",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {}
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Tempo: spans received per second",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 40,
+            "w": 12,
+            "h": 7
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(rate(tempo_distributor_spans_received_total[$__rate_interval]))",
+              "legendFormat": "received",
+              "instant": false,
+              "range": true,
+              "format": "time_series",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          }
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Tempo: discarded spans per second",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 40,
+            "w": 12,
+            "h": 7
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (reason) (rate(tempo_discarded_spans_total[$__rate_interval]))",
+              "legendFormat": "{{reason}}",
+              "instant": false,
+              "range": true,
+              "format": "time_series",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          }
+        }
+      ]
+    }
