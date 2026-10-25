@@ -1,6 +1,6 @@
 # Grafana picks this up through the dashboard sidecar (label grafana_dashboard, all namespaces).
 # Health of Prometheus itself: size against the limit (retentionSize), series, scrape cost per job, rules and Alertmanager.
-# The memory panels read the cAdvisor series of the Prometheus container in the namespace prometheus.
+# The memory panels read the working set from cAdvisor and the limit from kube-state-metrics, both for the Prometheus container.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -391,7 +391,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max(container_memory_working_set_bytes{namespace=\"prometheus\", container=\"prometheus\"} / on (pod) container_spec_memory_limit_bytes{namespace=\"prometheus\", container=\"prometheus\"})",
+              "expr": "max(container_memory_working_set_bytes{namespace=\"prometheus\", container=\"prometheus\"} / on (pod) kube_pod_container_resource_limits{namespace=\"prometheus\", container=\"prometheus\", resource=\"memory\"})",
               "legendFormat": "",
               "refId": "A"
             }
@@ -577,7 +577,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "container_spec_memory_limit_bytes{namespace=\"prometheus\", container=\"prometheus\"}",
+              "expr": "kube_pod_container_resource_limits{namespace=\"prometheus\", container=\"prometheus\", resource=\"memory\"}",
               "legendFormat": "{{pod}} limit",
               "refId": "B"
             }
@@ -1379,7 +1379,7 @@ data:
               },
               "expr": "prometheus_engine_queries_concurrent_max{job=~\"$job\"}",
               "legendFormat": "limit",
-              "refId": "A"
+              "refId": "B"
             }
           ],
           "fieldConfig": {
