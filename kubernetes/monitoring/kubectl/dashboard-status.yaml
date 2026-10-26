@@ -1,5 +1,5 @@
 # Grafana picks this up through the dashboard sidecar (label grafana_dashboard, all namespaces).
-# Overview of the targets, PostgreSQL, the web UI probes, the firing alerts and the backups, see alert-rules.yaml.
+# Overview of the targets, PostgreSQL, the web UI probes, the firing alerts, the backups and the disk usage, see alert-rules.yaml.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -685,6 +685,69 @@ data:
               }
             }
           ]
+        },
+        {
+          "id": 10,
+          "type": "bargauge",
+          "title": "Disk usage (alert above 90 %)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 32,
+            "w": 24,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "(1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|ramfs|vfat|fuse.*|overlay|squashfs|nsfs\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|ramfs|vfat|fuse.*|overlay|squashfs|nsfs\"}) * 100",
+              "legendFormat": "{{instance}} {{mountpoint}}",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 80
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          }
         }
       ]
     }

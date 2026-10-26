@@ -63,6 +63,29 @@ spec:
 
 ---
 
+# The node_exporter runs on the hosts and in the cluster. RAM-backed and boot filesystems are left out, they
+# fill up or sit at 100 % without being a problem. The same selector feeds the disk panel of the Status dashboard.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: disk
+  namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  groups:
+    - name: disk
+      rules:
+        - alert: DiskAlmostFull
+          expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|vfat|fuse.*|overlay|squashfs|nsfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|ramfs|vfat|fuse.*|overlay|squashfs|nsfs"}) * 100 > 90
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.mountpoint }} on {{ $labels.instance }} is {{ $value | printf \"%.0f\" }} % full"
+
+---
+
 # The probes of probes.yaml. The wildcard certificate is shared, so only the soonest expiry is reported.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
