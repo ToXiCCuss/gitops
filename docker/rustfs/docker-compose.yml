@@ -34,4 +34,7 @@ services:
       portal.group: "Backup"
       portal.description: "S3 storage"
       portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/rustfs.svg"
+    # A process in the container cannot gain more privileges than it started with (setuid binaries, file capabilities)
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
