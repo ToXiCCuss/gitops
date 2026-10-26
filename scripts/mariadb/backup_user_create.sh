@@ -27,7 +27,6 @@ readonly MAX_NAME_LENGTH=80
 readonly USER_HOST="%"
 readonly BACKUP_PRIVILEGES="SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES"
 
-DRY_RUN=false
 RESET=false
 USER_NAME="$DEFAULT_USER_NAME"
 
@@ -37,20 +36,12 @@ usage() {
 }
 
 parse_arguments() {
-  local positional=()
-  while (($# > 0)); do
-    case $1 in
-    --dry-run) DRY_RUN=true ;;
-    -*) usage ;;
-    *) positional+=("$1") ;;
-    esac
-    shift
-  done
-  ((${#positional[@]} <= 2)) || usage
+  parse_options "$@"
+  ((${#POSITIONAL[@]} <= 2)) || usage
 
-  USER_NAME=${positional[0]:-$DEFAULT_USER_NAME}
-  if ((${#positional[@]} == 2)); then
-    [[ ${positional[1]} == reset ]] || usage
+  USER_NAME=${POSITIONAL[0]:-$DEFAULT_USER_NAME}
+  if ((${#POSITIONAL[@]} == 2)); then
+    [[ ${POSITIONAL[1]} == reset ]] || usage
     RESET=true
   fi
   validate_name "username" "$USER_NAME" "$MAX_NAME_LENGTH"
@@ -72,7 +63,7 @@ apply_new_password() {
   if [[ $DRY_RUN == true ]]; then
     log "[dry-run] $outcome: backup user $USER_NAME (not executed)"
   else
-    vault_store_password mariadb "$USER_NAME" "$password"
+    vault_store_password "mariadb/$USER_NAME" "$USER_NAME" "$password"
     mariadb_admin <<<"$statement USER '$USER_NAME'@'$USER_HOST' IDENTIFIED BY '$password';"
     log "$outcome: backup user $USER_NAME"
   fi

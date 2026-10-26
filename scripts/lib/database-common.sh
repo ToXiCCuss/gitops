@@ -7,10 +7,25 @@ readonly EXIT_USAGE=2
 readonly NAME_PATTERN='^[a-z][a-z0-9_]*$'
 readonly PASSWORD_BYTES=15
 
+DRY_RUN=false
+POSITIONAL=()
+
 log() { echo "$*" >&2; }
 die() {
   log "Error: $*"
   exit 1
+}
+
+# parse_options "$@": --dry-run sets DRY_RUN, any other option calls usage() of the script, the rest is POSITIONAL
+parse_options() {
+  while (($# > 0)); do
+    case $1 in
+    --dry-run) DRY_RUN=true ;;
+    -*) usage ;;
+    *) POSITIONAL+=("$1") ;;
+    esac
+    shift
+  done
 }
 
 # require_commands <command>...: stops at the start if a tool is missing
@@ -21,10 +36,15 @@ require_commands() {
   done
 }
 
-# validate_name <description> <value> <maximum length>: the names reach the SQL, so only simple ones are allowed
+# validate_pattern <description> <value> <maximum length> <pattern>: the names reach the SQL, so only simple ones are allowed
+validate_pattern() {
+  [[ $2 =~ $4 && ${#2} -le $3 ]] ||
+    die "the $1 must match $4 and have at most $3 characters"
+}
+
+# validate_name <description> <value> <maximum length>: the names of the scripts that create databases and logins
 validate_name() {
-  [[ $2 =~ $NAME_PATTERN && ${#2} -le $3 ]] ||
-    die "the $1 must match $NAME_PATTERN and have at most $3 characters"
+  validate_pattern "$1" "$2" "$3" "$NAME_PATTERN"
 }
 
 generate_password() {

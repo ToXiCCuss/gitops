@@ -19,7 +19,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 readonly MAX_NAME_LENGTH=80
 readonly USER_HOST="%"
 
-DRY_RUN=false
 LOGIN_NAME=""
 
 usage() {
@@ -28,19 +27,11 @@ usage() {
 }
 
 parse_arguments() {
-  local positional=()
-  while (($# > 0)); do
-    case $1 in
-    --dry-run) DRY_RUN=true ;;
-    -*) usage ;;
-    *) positional+=("$1") ;;
-    esac
-    shift
-  done
+  parse_options "$@"
 
-  case ${#positional[@]} in
-  1) LOGIN_NAME=${positional[0]} ;;
-  2) LOGIN_NAME="${positional[0]}_${positional[1]}" ;;
+  case ${#POSITIONAL[@]} in
+  1) LOGIN_NAME=${POSITIONAL[0]} ;;
+  2) LOGIN_NAME="${POSITIONAL[0]}_${POSITIONAL[1]}" ;;
   *) usage ;;
   esac
   validate_name "login name" "$LOGIN_NAME" "$MAX_NAME_LENGTH"
@@ -62,7 +53,7 @@ rotate_password() {
   if [[ $DRY_RUN == true ]]; then
     log "[dry-run] updated: password of $LOGIN_NAME (not executed)"
   else
-    vault_store_password mariadb "$LOGIN_NAME" "$password"
+    vault_store_password "mariadb/$LOGIN_NAME" "$LOGIN_NAME" "$password"
     mariadb_admin <<<"ALTER USER '$LOGIN_NAME'@'$USER_HOST' IDENTIFIED BY '$password';"
     log "updated: password of $LOGIN_NAME"
   fi

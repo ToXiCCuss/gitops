@@ -41,17 +41,18 @@ vault_login() {
   echo "$token"
 }
 
-# vault_store_password <dbms> <username> <password>
+# vault_store_password <secret name> <username> <password>
+# The secret name is the path below the engine, e.g. postgresql/shop_app or mongodb/shop/app.
 # The password reaches jq through the environment and curl through stdin, the token curl through a
 # file descriptor, so none of them shows up in the process list
 vault_store_password() {
-  local dbms=$1 username=$2 password=$3 token response secret_path
-  secret_path="$VAULT_DATABASES_MOUNT/$dbms/$username"
+  local secret_name=$1 username=$2 password=$3 token response secret_path
+  secret_path="$VAULT_DATABASES_MOUNT/$secret_name"
   token=$(vault_login)
   response=$(VAULT_PASSWORD=$password jq -n --arg username "$username" \
     '{data: {username: $username, password: env.VAULT_PASSWORD}}' |
     curl -sS -m "$VAULT_TIMEOUT_SECONDS" -H @<(printf 'X-Vault-Token: %s\n' "$token") \
-      -H 'Content-Type: application/json' -d @- "$VAULT_ADDR/v1/$VAULT_DATABASES_MOUNT/data/$dbms/$username") ||
+      -H 'Content-Type: application/json' -d @- "$VAULT_ADDR/v1/$VAULT_DATABASES_MOUNT/data/$secret_name") ||
     die "Vault: $VAULT_ADDR is not reachable"
   jq -e '.data.version' <<<"$response" >/dev/null 2>&1 ||
     die "Vault refused to store $secret_path: $(vault_errors "$response")"

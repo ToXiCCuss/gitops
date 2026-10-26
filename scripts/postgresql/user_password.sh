@@ -17,7 +17,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 
 readonly MAX_NAME_LENGTH=63
 
-DRY_RUN=false
 LOGIN_NAME=""
 
 usage() {
@@ -26,19 +25,11 @@ usage() {
 }
 
 parse_arguments() {
-  local positional=()
-  while (($# > 0)); do
-    case $1 in
-    --dry-run) DRY_RUN=true ;;
-    -*) usage ;;
-    *) positional+=("$1") ;;
-    esac
-    shift
-  done
+  parse_options "$@"
 
-  case ${#positional[@]} in
-  1) LOGIN_NAME=${positional[0]} ;;
-  2) LOGIN_NAME="${positional[0]}_${positional[1]}" ;;
+  case ${#POSITIONAL[@]} in
+  1) LOGIN_NAME=${POSITIONAL[0]} ;;
+  2) LOGIN_NAME="${POSITIONAL[0]}_${POSITIONAL[1]}" ;;
   *) usage ;;
   esac
   validate_name "login name" "$LOGIN_NAME" "$MAX_NAME_LENGTH"
@@ -60,7 +51,7 @@ rotate_password() {
   if [[ $DRY_RUN == true ]]; then
     log "[dry-run] updated: password of $LOGIN_NAME (not executed)"
   else
-    vault_store_password postgresql "$LOGIN_NAME" "$password"
+    vault_store_password "postgresql/$LOGIN_NAME" "$LOGIN_NAME" "$password"
     psql_admin <<SQL
 \\set new_password '$password'
 ALTER ROLE :"login_name" WITH PASSWORD :'new_password';

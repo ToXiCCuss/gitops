@@ -98,9 +98,9 @@ The role `mariadb` sets `bind-address` and `event_scheduler = ON` (`/etc/mysql/m
 
 | Script | Purpose |
 |---|---|
-| `audit_setup.sh <db> [months]` | Creates `audit_log` (partitioned by month) and the helper procedures in the database, and a daily event that adds the next months and drops the partitions older than the retention (default 6 months). Run it again to change the retention (`audit_setup.sh shop 12`); without months the current value stays. The data of `audit_log` is kept. |
-| `audit_enable.sh <db> <table> ...` | Triggers write the old and new values of every INSERT, UPDATE and DELETE of the tables to `audit_log`. Run it again after a column changed. The record id is the primary key (several columns joined by `-`), `NULL` without one. An UPDATE that changes nothing is not logged. |
-| `audit_disable.sh <db> <table> ...` | Removes the triggers. Rows already logged stay until the retention drops them. |
+| `audit_setup.sh [--dry-run] <db> [months]` | Creates `audit_log` (partitioned by month) and the helper procedures in the database, and a daily event that adds the next months and drops the partitions older than the retention (default 6 months). Run it again to change the retention (`audit_setup.sh shop 12`); without months the current value stays. The data of `audit_log` is kept. |
+| `audit_enable.sh [--dry-run] <db> <table> ...` | Triggers write the old and new values of every INSERT, UPDATE and DELETE of the tables to `audit_log`. Run it again after a column changed. The record id is the primary key (several columns joined by `-`), `NULL` without one. An UPDATE that changes nothing is not logged. |
+| `audit_disable.sh [--dry-run] <db> <table> ...` | Removes the triggers (a table without them is `unchanged`). Rows already logged stay until the retention drops them. |
 | `audit_list.sh <db>` | Audited tables, retention, partitions with their row counts. |
 | `backup_user_create.sh [user] [reset]` | Read-only login for Databasus (default `databasus`, host `%`, so keep port 3306 closed except for the Docker networks): `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, `LOCK TABLES` on all databases. The password goes to Vault (`databases/mariadb/databasus`) and is not printed, `reset` sets a new one. |
 
@@ -116,9 +116,9 @@ The scripts in `scripts/postgresql/` (run them on the host with `sudo`) add the 
 
 | Script | Purpose |
 |---|---|
-| `audit_setup.sh <db> [months]` | Creates the schema `audit` with `audit.audit_log` (monthly partitions by `pg_partman`, plus a default partition) and the trigger function in the database, and a daily `pg_cron` job (03:00) that runs `partman.run_maintenance()`: it adds the next months and drops the partitions older than the retention (default 6 months). Run it again to change the retention (`audit_setup.sh shop 12`), without months the current value stays. The data is kept. |
-| `audit_enable.sh <db> <table> ...` | Triggers write the old and new row of every INSERT, UPDATE and DELETE as JSON. Tables are `name` (schema `public`) or `schema.name`. The record id is the primary key (several columns joined by `-`), `NULL` without one. An UPDATE that changes nothing is not logged. Run it again after the primary key changed. |
-| `audit_disable.sh <db> <table> ...` | Removes the triggers. Rows already logged stay until the retention drops them. |
+| `audit_setup.sh [--dry-run] <db> [months]` | Creates the schema `audit` with `audit.audit_log` (monthly partitions by `pg_partman`, plus a default partition) and the trigger function in the database, and a daily `pg_cron` job (03:00) that runs `partman.run_maintenance()`: it adds the next months and drops the partitions older than the retention (default 6 months). Run it again to change the retention (`audit_setup.sh shop 12`), without months the current value stays. The data is kept. |
+| `audit_enable.sh [--dry-run] <db> <table> ...` | Triggers write the old and new row of every INSERT, UPDATE and DELETE as JSON. Tables are `name` (schema `public`) or `schema.name`. The record id is the primary key (several columns joined by `-`), `NULL` without one. An UPDATE that changes nothing is not logged. Run it again after the primary key changed. |
+| `audit_disable.sh [--dry-run] <db> <table> ...` | Removes the triggers (a table without them is `unchanged`). Rows already logged stay until the retention drops them. |
 | `audit_list.sh <db>` | Audited tables, retention, the `pg_cron` job and the partitions with their size and row count. |
 
 - The application roles of `db_create.sh` cannot read or change `audit.audit_log` (no access to the schema). The trigger function runs with the rights of its owner, so they can still write through it. `postgres` and the Databasus backup role (`pg_read_all_data`) can read it.
@@ -140,7 +140,9 @@ Set up once (on Windows, with the root token):
 - The host can write passwords but not read one back, so a leaked `secret_id` exposes no existing password. It can overwrite one, though: a new `-NewSecretId` cuts a leaked file off. With `-DatabaseHost` the older `secret_id`s are destroyed only after both files are on the host, so a failed SSH login leaves the working one valid. Run the script again with `-NewSecretId` to rotate.
 - `user_password.sh <login>` (or `<database> <username>`) rotates a password: it sets a new random one in Vault and in the database, every run again, the older ones stay as versions in Vault. `backup_user_create.sh` stores the password of the Databasus login the same way. Both support `--dry-run` and never print a password.
 - Logins that existed before the scripts used Vault (including `databasus`) are not in Vault yet. Their first `user_password.sh` run puts them there. For `databasus` enter the new password in the Databasus UI afterwards, it keeps its own copy.
-- Still printing a password or not idempotent: the MongoDB scripts, and `user_delete.sh`, `db_delete.sh`, `schema_create.sh` and `copy_db.sh` (they do not create passwords, but have the old `$?` checks).
+- All scripts for PostgreSQL, MariaDB and MongoDB follow the same rules: an error stops the script, a second run reports what is `unchanged`, and everything that changes something has `--dry-run` (the read-only `list_user_roles.sh` and `audit_list.sh` have none). Tools: `sudo`, the client of the DBMS, `openssl`; the scripts that store a password also `curl` and `jq`.
+- `db_delete.sh`, `user_delete.sh`, `cleanup_db_user.sh` and `copy_db.sh` delete data for good, so run them with `--dry-run` first. `db_delete.sh` finds the logins of a database by their membership in its three roles, not by their name: a database `shop` and a database `shop_dev` do not take each other's logins along. They refuse system databases and, for MariaDB, `root`. The Vault entries of deleted logins stay (the host cannot delete); remove them as admin with `vault kv metadata delete databases/<dbms>/<login>`.
+- Other scripts of the same family: `schema_create.sh <db> <schema>` (PostgreSQL schema with the privileges of the three roles), `copy_db.sh [source target]` (MariaDB: the target gets the tables of the source, default `fivem` to `fivem_dev`) and `list_user_roles.sh` (read only).
 
 ### MongoDB (scripts)
 
@@ -153,14 +155,14 @@ ADMIN_USER="admin"
 ADMIN_PASS="..."
 ```
 
-with `chown root:root` and `chmod 600`.
+with `chown root:root` and `chmod 600`. The scripts log in through a statement on stdin of `mongosh`, so the admin password never shows up in the process list. All scripts need `jq`, `curl` and, for the Vault access, the files from [Database passwords in Vault](#database-passwords-in-vault); usernames must match `^[a-z][a-z0-9_]*$`.
 
 | Script | Purpose |
 |---|---|
-| `create_db_user.sh <db>` | Creates the database and its owner `<db>_owner` with the role `dbOwner`, prints the password. |
-| `create_user.sh <db> <user> [role ...]` | Adds a user to the database. Roles: `ro` (`read`), `rw` (`readWrite`), `owner` (`dbOwner`) or any MongoDB role such as `dbAdmin`. Without roles it asks interactively, without a terminal it takes `readWrite`. Example: `create_user.sh shop app rw dbAdmin`. |
-| `reset_password.sh <db> <user>` | Sets and prints a new random password. |
-| `cleanup_db_user.sh <db>` | Drops the users of the database and the database. Refuses `admin`, `local` and `config`. |
+| `create_db_user.sh <db>` | Ensures the owner `<db>_owner` with the role `dbOwner`; the database itself appears with its first data. The password goes to Vault (`databases/mongodb/<db>/<db>_owner`), an existing login keeps its password. |
+| `create_user.sh <db> <user> [role ...]` | Ensures a user with exactly these roles in the database; the password goes to Vault (`databases/mongodb/<db>/<user>`). Roles: `ro` (`read`), `rw` (`readWrite`), `owner` (`dbOwner`) or any MongoDB role such as `dbAdmin`. Without roles it asks interactively, without a terminal it takes `readWrite`. Example: `create_user.sh shop app rw dbAdmin`. |
+| `reset_password.sh <db> <user>` | Sets a new random password and stores it in Vault (`databases/mongodb/<db>/<user>`), never printed. |
+| `cleanup_db_user.sh <db>` | Drops the users of the database and the database (`--dry-run` first). Refuses `admin`, `local` and `config`. |
 
 ### Secrets (ansible-vault)
 

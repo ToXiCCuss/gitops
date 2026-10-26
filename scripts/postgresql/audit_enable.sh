@@ -1,5 +1,4 @@
-#!/bin/bash
-
+#!/usr/bin/env bash
 # Switches the audit on for tables of a database: AFTER INSERT/UPDATE/DELETE triggers write the old
 # and new row to audit.audit_log. Existing audit triggers of a table are replaced, so run it again
 # after the primary key changed. Run audit_setup.sh for the database first.
@@ -7,61 +6,95 @@
 # A table is given as name (schema public) or as schema.name. The record id is the primary key,
 # a table without one is audited with record_id NULL.
 #
-# Usage: audit_enable.sh <database_name> <table> [table ...]
+# Idempotent: a second run builds the same triggers again. All tables are tried; if one fails, the
+# script says which and ends with an error.
+#
+# Usage: audit_enable.sh [--dry-run] <database_name> <table> [table ...]
+#        --dry-run  only report what would be changed
+set -euo pipefail
 
-if [ -z "$1" ] || [ -z "$2" ]; then
-  echo "Usage: $0 <database_name> <table> [table ...]"
-  exit 1
-fi
+# shellcheck source=../lib/database-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 
-DB_NAME="$1"
-shift
+readonly IDENTIFIER_PATTERN='^[A-Za-z0-9_]+$'
+readonly TABLE_PATTERN='^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)?$'
+readonly MAX_IDENTIFIER_LENGTH=63
+readonly DEFAULT_SCHEMA="public"
 
-DEFAULT_SCHEMA="public"
+DB_NAME=""
+TABLES=()
 
-if [[ ! "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
-  echo "Error: the database name may only contain letters, digits and underscores."
-  exit 1
-fi
-
-psql_cmd() {
-  sudo -u postgres psql "$@"
+usage() {
+  log "Usage: $0 [--dry-run] <database_name> <table> [table ...]"
+  exit "$EXIT_USAGE"
 }
 
-FUNCTION_FOUND=$(psql_cmd -d "$DB_NAME" -tAc "SELECT to_regprocedure('audit.enable_table(regclass)') IS NOT NULL" 2>/dev/null)
-if [ "$FUNCTION_FOUND" != "t" ]; then
-  echo "Error: no audit log in $DB_NAME. Run audit_setup.sh $DB_NAME first."
-  exit 1
-fi
+parse_arguments() {
+  parse_options "$@"
+  ((${#POSITIONAL[@]} >= 2)) || usage
 
-echo "------------------------------------------"
-echo "Audit on in database: $DB_NAME"
+  DB_NAME=${POSITIONAL[0]}
+  TABLES=("${POSITIONAL[@]:1}")
+  validate_pattern "database name" "$DB_NAME" "$MAX_IDENTIFIER_LENGTH" "$IDENTIFIER_PATTERN"
+}
 
-for TABLE in "$@"; do
-  if [[ ! "$TABLE" =~ ^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)?$ ]]; then
-    echo "  - $TABLE: skipped, use name or schema.name with letters, digits and underscores."
-    continue
+# The names reach the SQL as psql variables (:"x" is an identifier, :'x' a literal), never by string concatenation
+psql_admin() {
+  sudo -u postgres psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 -d "$DB_NAME" "$@"
+}
+
+require_audit_log() {
+  [[ $(psql_admin --no-align --tuples-only <<<"SELECT to_regprocedure('audit.enable_table(regclass)') IS NOT NULL") == t ]] ||
+    die "no audit log in $DB_NAME. Run audit_setup.sh $DB_NAME first"
+}
+
+# enable_table <table>: succeeds if the triggers are in place (or would be, with --dry-run)
+enable_table() {
+  local table=$1 schema_name table_name outcome=created result
+  if ! [[ $table =~ $TABLE_PATTERN ]]; then
+    log "failed: $table: use name or schema.name with letters, digits and underscores"
+    return 1
+  fi
+  schema_name=$DEFAULT_SCHEMA
+  table_name=$table
+  if [[ $table == *.* ]]; then
+    schema_name=${table%%.*}
+    table_name=${table#*.}
   fi
 
-  if [[ "$TABLE" == *.* ]]; then
-    SCHEMA_NAME="${TABLE%%.*}"
-    TABLE_NAME="${TABLE#*.}"
+  local variables=(-v "schema_name=$schema_name" -v "table_name=$table_name")
+  if [[ $(psql_admin --no-align --tuples-only "${variables[@]}" <<<"SELECT to_regclass(format('%I.%I', :'schema_name', :'table_name')) IS NOT NULL") != t ]]; then
+    log "failed: $schema_name.$table_name does not exist"
+    return 1
+  fi
+  if [[ $(psql_admin --no-align --tuples-only "${variables[@]}" <<<"SELECT count(*) FROM pg_trigger WHERE tgrelid = format('%I.%I', :'schema_name', :'table_name')::regclass AND tgfoid = to_regprocedure('audit.log_change()') AND NOT tgisinternal") != 0 ]]; then
+    outcome=updated
+  fi
+
+  if [[ $DRY_RUN == true ]]; then
+    log "[dry-run] $outcome: audit triggers of $schema_name.$table_name (not executed)"
   else
-    SCHEMA_NAME="$DEFAULT_SCHEMA"
-    TABLE_NAME="$TABLE"
-  fi
-
-  RESULT=$(psql_cmd -d "$DB_NAME" -v ON_ERROR_STOP=1 -v schema_name="$SCHEMA_NAME" -v table_name="$TABLE_NAME" -tA \
-    <<< "SELECT audit.enable_table(format('%I.%I', :'schema_name', :'table_name')::regclass)")
-
-  if [ $? -eq 0 ] && [ -n "$RESULT" ]; then
-    echo "  - $SCHEMA_NAME.$TABLE_NAME: audit on"
-    if [ "$RESULT" = "no primary key" ]; then
-      echo "    Note: no primary key, record_id stays NULL."
+    result=$(psql_admin --no-align --tuples-only "${variables[@]}" <<<"SELECT audit.enable_table(format('%I.%I', :'schema_name', :'table_name')::regclass)") || {
+      log "failed: $schema_name.$table_name (see the message above)"
+      return 1
+    }
+    log "$outcome: audit triggers of $schema_name.$table_name"
+    if [[ $result == "no primary key" ]]; then
+      log "note: $schema_name.$table_name has no primary key, record_id stays NULL"
     fi
-  else
-    echo "  - $SCHEMA_NAME.$TABLE_NAME: failed (see the message above)"
   fi
-done
+}
 
-echo "------------------------------------------"
+main() {
+  local table failed_tables=()
+  parse_arguments "$@"
+  require_commands sudo psql
+  require_audit_log
+
+  for table in "${TABLES[@]}"; do
+    enable_table "$table" || failed_tables+=("$table")
+  done
+  ((${#failed_tables[@]} == 0)) || die "audit not switched on for: ${failed_tables[*]}"
+}
+
+main "$@"

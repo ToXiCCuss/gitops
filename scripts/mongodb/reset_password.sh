@@ -1,37 +1,67 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Sets a new random password for a MongoDB login and stores it in Vault (databases/mongodb/<database_name>/<username>);
+# the password is never printed.
+#
+# This is a rotation, so every run sets a new password (the older ones stay as versions in Vault). Vault is
+# written first. If changing the password fails afterwards, Vault holds one the login does not have yet:
+# run the script again, it sets both to the same new password. Logins that were created before the scripts
+# used Vault are put into Vault by their first run.
+#
+# Usage: reset_password.sh [--dry-run] <database_name> <username>
+#        --dry-run  only report what would be changed
+set -euo pipefail
 
-if [ -z "$1" ] || [ -z "$2" ]; then
-  echo "Usage: $0 <database_name> <username>"
-  exit 1
-fi
+# shellcheck source=../lib/database-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
+# shellcheck source=../lib/mongodb-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/mongodb-common.sh"
 
-DB_NAME=$1
-DB_USER=$2
+readonly MAX_DATABASE_NAME_LENGTH=52
+readonly MAX_USER_NAME_LENGTH=64
 
-DB_PASS=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 30)
+DB_NAME=""
+DB_USER=""
 
-echo "------------------------------------------"
-echo "Database:  $DB_NAME"
-echo "Username:  $DB_USER"
-echo "New Password:  $DB_PASS"
+usage() {
+  log "Usage: $0 [--dry-run] <database_name> <username>"
+  exit "$EXIT_USAGE"
+}
 
-CONFIG_FILE="/etc/mongodb-admin.cred"
-AUTH_ARGS=""
-if [ -f "$CONFIG_FILE" ]; then
-    source "$CONFIG_FILE"
-    if [ -n "$ADMIN_USER" ] && [ -n "$ADMIN_PASS" ]; then
-        AUTH_ARGS="-u $ADMIN_USER -p $ADMIN_PASS --authenticationDatabase admin"
-    fi
-fi
+parse_arguments() {
+  parse_options "$@"
+  ((${#POSITIONAL[@]} == 2)) || usage
 
-mongosh $AUTH_ARGS --quiet <<EOF
-use $DB_NAME
-db.changeUserPassword("$DB_USER", "$DB_PASS")
-EOF
+  DB_NAME=${POSITIONAL[0]}
+  DB_USER=${POSITIONAL[1]}
+  validate_name "database name" "$DB_NAME" "$MAX_DATABASE_NAME_LENGTH"
+  validate_name "username" "$DB_USER" "$MAX_USER_NAME_LENGTH"
+  reject_system_database "$DB_NAME"
+}
 
-if [ $? -eq 0 ]; then
-  echo "Password for $DB_USER in database $DB_NAME updated successfully."
-else
-  echo "Error resetting password."
-  exit 1
-fi
+require_user() {
+  [[ $(mongo_script <<<"print(db.getSiblingDB(\"$DB_NAME\").getUser(\"$DB_USER\") === null ? \"absent\" : \"present\")") == present ]] ||
+    die "user $DB_USER does not exist in $DB_NAME"
+}
+
+rotate_password() {
+  local password
+  password=$(generate_password)
+  if [[ $DRY_RUN == true ]]; then
+    log "[dry-run] updated: password of $DB_USER on $DB_NAME (not executed)"
+  else
+    vault_store_password "mongodb/$DB_NAME/$DB_USER" "$DB_USER" "$password"
+    mongo_script <<<"db.getSiblingDB(\"$DB_NAME\").changeUserPassword(\"$DB_USER\", \"$password\");"
+    log "updated: password of $DB_USER on $DB_NAME"
+  fi
+}
+
+main() {
+  parse_arguments "$@"
+  require_commands mongosh jq curl openssl
+  require_vault_access
+  require_user
+
+  rotate_password
+}
+
+main "$@"

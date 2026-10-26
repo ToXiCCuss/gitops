@@ -24,7 +24,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 readonly DEFAULT_USER_NAME="databasus"
 readonly MAX_NAME_LENGTH=63
 
-DRY_RUN=false
 RESET=false
 USER_NAME="$DEFAULT_USER_NAME"
 
@@ -34,20 +33,12 @@ usage() {
 }
 
 parse_arguments() {
-  local positional=()
-  while (($# > 0)); do
-    case $1 in
-    --dry-run) DRY_RUN=true ;;
-    -*) usage ;;
-    *) positional+=("$1") ;;
-    esac
-    shift
-  done
-  ((${#positional[@]} <= 2)) || usage
+  parse_options "$@"
+  ((${#POSITIONAL[@]} <= 2)) || usage
 
-  USER_NAME=${positional[0]:-$DEFAULT_USER_NAME}
-  if ((${#positional[@]} == 2)); then
-    [[ ${positional[1]} == reset ]] || usage
+  USER_NAME=${POSITIONAL[0]:-$DEFAULT_USER_NAME}
+  if ((${#POSITIONAL[@]} == 2)); then
+    [[ ${POSITIONAL[1]} == reset ]] || usage
     RESET=true
   fi
   validate_name "username" "$USER_NAME" "$MAX_NAME_LENGTH"
@@ -69,7 +60,7 @@ apply_new_password() {
   if [[ $DRY_RUN == true ]]; then
     log "[dry-run] $outcome: login role $USER_NAME (not executed)"
   else
-    vault_store_password postgresql "$USER_NAME" "$password"
+    vault_store_password "postgresql/$USER_NAME" "$USER_NAME" "$password"
     psql_admin <<SQL
 \\set user_password '$password'
 $statement ROLE :"user_name" LOGIN PASSWORD :'user_password';

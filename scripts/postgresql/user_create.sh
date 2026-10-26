@@ -16,7 +16,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 # PostgreSQL identifiers have 63 bytes, "<db>_<username>" and "<db>_role_owner" have to fit
 readonly MAX_NAME_LENGTH=52
 
-DRY_RUN=false
 DB_NAME=""
 FULL_USER=""
 TARGET_ROLE=""
@@ -30,30 +29,22 @@ usage() {
 }
 
 parse_arguments() {
-  local positional=()
-  while (($# > 0)); do
-    case $1 in
-    --dry-run) DRY_RUN=true ;;
-    -*) usage ;;
-    *) positional+=("$1") ;;
-    esac
-    shift
-  done
-  ((${#positional[@]} == 3)) || usage
+  parse_options "$@"
+  ((${#POSITIONAL[@]} == 3)) || usage
 
-  DB_NAME=${positional[0]}
+  DB_NAME=${POSITIONAL[0]}
   validate_name "database name" "$DB_NAME" "$MAX_NAME_LENGTH"
-  validate_name "username" "${positional[1]}" "$MAX_NAME_LENGTH"
-  FULL_USER="${DB_NAME}_${positional[1]}"
+  validate_name "username" "${POSITIONAL[1]}" "$MAX_NAME_LENGTH"
+  FULL_USER="${DB_NAME}_${POSITIONAL[1]}"
   ROLE_RO="${DB_NAME}_role_ro"
   ROLE_RW="${DB_NAME}_role_rw"
   ROLE_OWNER="${DB_NAME}_role_owner"
 
-  case ${positional[2]} in
+  case ${POSITIONAL[2]} in
   ro) TARGET_ROLE=$ROLE_RO ;;
   rw) TARGET_ROLE=$ROLE_RW ;;
   owner) TARGET_ROLE=$ROLE_OWNER ;;
-  *) die "invalid role type '${positional[2]}', use 'ro', 'rw' or 'owner'" ;;
+  *) die "invalid role type '${POSITIONAL[2]}', use 'ro', 'rw' or 'owner'" ;;
   esac
 }
 
@@ -94,7 +85,7 @@ ensure_user() {
     local password
     password=$(generate_password)
     # Into Vault first: if that fails nothing was created, and a rerun after a later failure just generates a new one
-    [[ $DRY_RUN == true ]] || vault_store_password postgresql "$FULL_USER" "$password"
+    [[ $DRY_RUN == true ]] || vault_store_password "postgresql/$FULL_USER" "$FULL_USER" "$password"
     apply_sql "$DB_NAME" created "user $FULL_USER" <<SQL
 \\set user_password '$password'
 CREATE USER :"full_user" WITH PASSWORD :'user_password';

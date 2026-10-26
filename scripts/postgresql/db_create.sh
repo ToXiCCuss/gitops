@@ -17,7 +17,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 readonly MAX_NAME_LENGTH=52
 readonly BACKUP_ROLE="databasus"
 
-DRY_RUN=false
 DB_NAME=""
 DB_USER=""
 ROLE_RO=""
@@ -30,18 +29,10 @@ usage() {
 }
 
 parse_arguments() {
-  local positional=()
-  while (($# > 0)); do
-    case $1 in
-    --dry-run) DRY_RUN=true ;;
-    -*) usage ;;
-    *) positional+=("$1") ;;
-    esac
-    shift
-  done
-  ((${#positional[@]} == 1)) || usage
+  parse_options "$@"
+  ((${#POSITIONAL[@]} == 1)) || usage
 
-  DB_NAME=${positional[0]}
+  DB_NAME=${POSITIONAL[0]}
   validate_name "database name" "$DB_NAME" "$MAX_NAME_LENGTH"
   DB_USER="${DB_NAME}_owner"
   ROLE_RO="${DB_NAME}_role_ro"
@@ -136,7 +127,7 @@ ensure_owner_user() {
     local password
     password=$(generate_password)
     # Into Vault first: if that fails nothing was created, and a rerun after a later failure just generates a new one
-    [[ $DRY_RUN == true ]] || vault_store_password postgresql "$DB_USER" "$password"
+    [[ $DRY_RUN == true ]] || vault_store_password "postgresql/$DB_USER" "$DB_USER" "$password"
     apply_sql "$DB_NAME" created "user $DB_USER" <<SQL
 \\set user_password '$password'
 BEGIN;

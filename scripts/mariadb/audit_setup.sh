@@ -1,5 +1,4 @@
-#!/bin/bash
-
+#!/usr/bin/env bash
 # Sets up the audit log of one database, or updates it if it exists. Run it once per database,
 # then switch the audit on for single tables with audit_enable.sh.
 #
@@ -14,55 +13,82 @@
 # new values of every audited row in clear text (also personal data). The roles of db_create.sh can
 # change it, because their grants cover the whole database.
 #
-# Running it again keeps the data of audit_log. The retention is replaced by the given months,
-# without months the current value is kept (first run: 6). It counts full months before the
-# current one, a retention of 6 keeps the current month and the 6 before it.
+# Idempotent: running it again keeps the data of audit_log and reports what it created or changed.
+# The retention is replaced by the given months, without months the current value is kept (first run: 6).
+# It counts full months before the current one, a retention of 6 keeps the current month and the 6 before it.
 #
 # p_future (VALUES LESS THAN MAXVALUE) catches every row without a monthly partition, so an
 # audited write never fails, even when the event scheduler is off and the partitions are not added.
 #
-# Usage: audit_setup.sh <database_name> [retention_months]
+# Usage: audit_setup.sh [--dry-run] <database_name> [retention_months]
+#        --dry-run  only report what would be changed
+set -euo pipefail
 
-DEFAULT_RETENTION_MONTHS=6
-MAXIMUM_RETENTION_MONTHS=600
-EVENT_NAME="audit_maintain_partitions"
+# shellcheck source=../lib/database-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 
-DB_NAME="$1"
-RETENTION_MONTHS="$2"
+readonly IDENTIFIER_PATTERN='^[A-Za-z0-9_]+$'
+readonly MAX_IDENTIFIER_LENGTH=64
+readonly DEFAULT_RETENTION_MONTHS=6
+readonly MAXIMUM_RETENTION_MONTHS=600
+readonly EVENT_NAME="audit_maintain_partitions"
 
-if [ -z "$DB_NAME" ]; then
-  echo "Usage: $0 <database_name> [retention_months]"
-  exit 1
-fi
+DB_NAME=""
+RETENTION_MONTHS=""
+CURRENT_RETENTION_MONTHS=""
 
-if [[ ! "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
-  echo "Error: the database name may only contain letters, digits and underscores."
-  exit 1
-fi
-
-if [ -n "$RETENTION_MONTHS" ] && { [[ ! "$RETENTION_MONTHS" =~ ^[0-9]+$ ]] || [ "$RETENTION_MONTHS" -lt 1 ] || [ "$RETENTION_MONTHS" -gt "$MAXIMUM_RETENTION_MONTHS" ]; }; then
-  echo "Error: the retention must be a number of months between 1 and $MAXIMUM_RETENTION_MONTHS."
-  exit 1
-fi
-
-mariadb_cmd() {
-  sudo mariadb "$@"
+usage() {
+  log "Usage: $0 [--dry-run] <database_name> [retention_months]"
+  exit "$EXIT_USAGE"
 }
 
-DATABASE_FOUND=$(mariadb_cmd -N -B -e "SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$DB_NAME'")
-if [ -z "$DATABASE_FOUND" ]; then
-  echo "Error: database $DB_NAME does not exist."
-  exit 1
-fi
+parse_arguments() {
+  parse_options "$@"
+  ((${#POSITIONAL[@]} >= 1 && ${#POSITIONAL[@]} <= 2)) || usage
 
-CURRENT_RETENTION_MONTHS=$(mariadb_cmd -N -B -e "SELECT EVENT_COMMENT FROM information_schema.EVENTS WHERE EVENT_SCHEMA = '$DB_NAME' AND EVENT_NAME = '$EVENT_NAME'" | grep -oE '[0-9]+')
-RETENTION_MONTHS="${RETENTION_MONTHS:-${CURRENT_RETENTION_MONTHS:-$DEFAULT_RETENTION_MONTHS}}"
+  DB_NAME=${POSITIONAL[0]}
+  validate_pattern "database name" "$DB_NAME" "$MAX_IDENTIFIER_LENGTH" "$IDENTIFIER_PATTERN"
+  if ((${#POSITIONAL[@]} == 2)); then
+    [[ ${POSITIONAL[1]} =~ ^[0-9]+$ ]] || die "the retention must be a number of months between 1 and $MAXIMUM_RETENTION_MONTHS"
+    RETENTION_MONTHS=$((10#${POSITIONAL[1]}))
+    ((RETENTION_MONTHS >= 1 && RETENTION_MONTHS <= MAXIMUM_RETENTION_MONTHS)) ||
+      die "the retention must be a number of months between 1 and $MAXIMUM_RETENTION_MONTHS"
+  fi
+}
 
-echo "------------------------------------------"
-echo "Audit log of database: $DB_NAME"
-echo "Retention:             $RETENTION_MONTHS months"
+# The names are validated against IDENTIFIER_PATTERN, so they can be put into the SQL directly
+mariadb_admin() {
+  sudo mariadb --batch --skip-column-names "$@"
+}
 
-mariadb_cmd "$DB_NAME" <<'SQL' || { echo "Error creating the audit log."; exit 1; }
+# apply_sql <outcome> <resource>: runs the SQL from stdin in the database, or only reports it with --dry-run
+apply_sql() {
+  local outcome=$1 resource=$2
+  if [[ $DRY_RUN == true ]]; then
+    log "[dry-run] $outcome: $resource (not executed)"
+  else
+    mariadb_admin "$DB_NAME"
+    log "$outcome: $resource"
+  fi
+}
+
+require_database() {
+  [[ -n "$(mariadb_admin -e "SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$DB_NAME'")" ]] ||
+    die "database $DB_NAME does not exist"
+}
+
+# The retention is kept in the comment of the event; no event yet is no retention (grep finds nothing)
+resolve_retention() {
+  CURRENT_RETENTION_MONTHS=$(mariadb_admin -e "SELECT EVENT_COMMENT FROM information_schema.EVENTS WHERE EVENT_SCHEMA = '$DB_NAME' AND EVENT_NAME = '$EVENT_NAME'" | grep -oE '[0-9]+' || true)
+  RETENTION_MONTHS=${RETENTION_MONTHS:-${CURRENT_RETENTION_MONTHS:-$DEFAULT_RETENTION_MONTHS}}
+  log "retention: $RETENTION_MONTHS months"
+}
+
+ensure_audit_log_table() {
+  if [[ -n "$(mariadb_admin -e "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = '$DB_NAME' AND TABLE_NAME = 'audit_log'")" ]]; then
+    log "unchanged: table audit_log"
+  else
+    apply_sql created "table audit_log" <<'SQL'
 CREATE TABLE IF NOT EXISTS audit_log (
     id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     table_name     VARCHAR(64)     NOT NULL,
@@ -79,7 +105,13 @@ CREATE TABLE IF NOT EXISTS audit_log (
 PARTITION BY RANGE (UNIX_TIMESTAMP(timestamp)) (
     PARTITION p_future VALUES LESS THAN MAXVALUE
 );
+SQL
+  fi
+}
 
+# The procedures are replaced on every run, so a changed script reaches existing databases
+apply_audit_procedures() {
+  apply_sql applied "procedures audit_maintain_partitions, audit_create_triggers, audit_drop_triggers" <<'SQL'
 DROP PROCEDURE IF EXISTS audit_maintain_partitions;
 DROP PROCEDURE IF EXISTS audit_create_triggers;
 DROP PROCEDURE IF EXISTS audit_drop_triggers;
@@ -209,21 +241,50 @@ END //
 
 DELIMITER ;
 SQL
+}
 
-mariadb_cmd "$DB_NAME" <<SQL || { echo "Error creating the maintenance event."; exit 1; }
+# The event is only replaced when it is missing or the retention changed, so its schedule is not restarted
+ensure_maintenance_event() {
+  local outcome=updated
+  [[ -n $CURRENT_RETENTION_MONTHS ]] || outcome=created
+  if [[ $CURRENT_RETENTION_MONTHS == "$RETENTION_MONTHS" ]]; then
+    log "unchanged: event $EVENT_NAME (retention $RETENTION_MONTHS months)"
+  else
+    apply_sql "$outcome" "event $EVENT_NAME (retention $RETENTION_MONTHS months)" <<SQL
 CREATE OR REPLACE EVENT $EVENT_NAME
 ON SCHEDULE EVERY 1 DAY STARTS CURRENT_TIMESTAMP + INTERVAL 1 DAY
 COMMENT 'audit retention months: $RETENTION_MONTHS'
 DO CALL audit_maintain_partitions($RETENTION_MONTHS);
-
-CALL audit_maintain_partitions($RETENTION_MONTHS);
 SQL
+  fi
+}
 
-SCHEDULER_STATE=$(mariadb_cmd -N -B -e "SELECT @@event_scheduler")
-if [ "$SCHEDULER_STATE" != "ON" ]; then
-  echo "Warning: the event scheduler is $SCHEDULER_STATE. The partitions are not added or dropped until it is ON"
-  echo "         (event_scheduler = ON in the MariaDB config, set by the Ansible role mariadb)."
-fi
+# Adds the missing partitions and drops the ones past the retention; nothing to do when it is all in place
+maintain_partitions() {
+  apply_sql applied "partitions of audit_log" <<<"CALL audit_maintain_partitions($RETENTION_MONTHS);"
+}
 
-echo "Audit log ready. Switch it on per table: audit_enable.sh $DB_NAME <table> [table ...]"
-echo "------------------------------------------"
+warn_if_scheduler_is_off() {
+  local scheduler_state
+  scheduler_state=$(mariadb_admin -e "SELECT @@event_scheduler")
+  if [[ $scheduler_state != ON ]]; then
+    log "Warning: the event scheduler is $scheduler_state. The partitions are not added or dropped until it is ON"
+    log "         (event_scheduler = ON in the MariaDB config, set by the Ansible role mariadb)."
+  fi
+}
+
+main() {
+  parse_arguments "$@"
+  require_commands sudo mariadb
+  require_database
+
+  resolve_retention
+  ensure_audit_log_table
+  apply_audit_procedures
+  ensure_maintenance_event
+  maintain_partitions
+  warn_if_scheduler_is_off
+  log "Audit log ready. Switch it on per table: audit_enable.sh $DB_NAME <table> [table ...]"
+}
+
+main "$@"
