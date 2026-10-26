@@ -3,9 +3,9 @@
 # database, the logins that have one of its three roles and the roles (<db>_role_ro, _rw, _owner).
 #
 # Idempotent: parts that are already gone are reported as unchanged, so an aborted run can be repeated.
-# The data is deleted for good; use --dry-run first. The passwords in Vault stay, because the host may only
-# write there: delete them as admin with
-#   vault kv metadata delete databases/mariadb/<login>
+# The data is deleted for good; use --dry-run first. The password of every login is deleted from Vault
+# (databases/mariadb/<login>) before the login is dropped, so a refused delete stops the script while the
+# login still exists. It needs the current policy of scripts/vault/configure-vault-databases.ps1.
 #
 # A login belongs to the database if it has one of its roles (not by its name, so the logins of a
 # database called <db>_dev are not touched).
@@ -73,20 +73,22 @@ ensure_database_absent() {
 # CREATE ROLE gives the creating account (root) the role WITH ADMIN OPTION, which is also a row in
 # roles_mapping: only plain assignments (Admin_option = 'N') make a login belong to the database, and the system
 # logins are never dropped. QUOTE() makes the statement safe for any user and host name found in the system table.
+# One line per login: the user name, a tab and the DROP USER statement (--batch separates the columns with tabs).
 ensure_logins_absent() {
-  local statements statement
+  local statements login statement
   statements=$(mariadb_admin -e "
-    SELECT DISTINCT CONCAT('DROP USER ', QUOTE(u.User), '@', QUOTE(u.Host), ';')
+    SELECT DISTINCT u.User, CONCAT('DROP USER ', QUOTE(u.User), '@', QUOTE(u.Host), ';')
     FROM mysql.roles_mapping m
     JOIN mysql.user u ON u.User = m.User AND u.Host = m.Host
     WHERE m.Role IN ('$ROLE_RO', '$ROLE_RW', '$ROLE_OWNER') AND m.Admin_option = 'N'
       AND u.is_role = 'N' AND u.User NOT IN ('root', 'mysql', 'mariadb.sys')
-    ORDER BY 1")
+    ORDER BY 1, 2")
   if [[ -z $statements ]]; then
     log "unchanged: no logins of $DB_NAME"
   else
-    while read -r statement; do
-      apply_sql dropped "${statement%;} (its Vault entry stays)" <<<"$statement"
+    while IFS=$'\t' read -r login statement; do
+      ensure_vault_entry_absent "mariadb/$login"
+      apply_sql dropped "${statement%;}" <<<"$statement"
     done <<<"$statements"
   fi
 }
@@ -102,6 +104,7 @@ ensure_role_absent() {
 main() {
   parse_arguments "$@"
   require_commands sudo mariadb
+  require_vault_access
 
   ensure_database_absent
   ensure_logins_absent
