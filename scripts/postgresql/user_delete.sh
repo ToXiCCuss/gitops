@@ -2,9 +2,9 @@
 # Ensures the login <database_name>_<username> does not exist: its sessions are terminated, its objects
 # in the database go to <db>_role_owner, its privileges are removed and the login is dropped.
 #
-# Idempotent: a missing login is reported as unchanged. The password in Vault stays, because the host may
-# only write there: delete it as admin with
-#   vault kv metadata delete databases/postgresql/<database_name>_<username>
+# Idempotent: a missing login is reported as unchanged. The password in Vault (databases/postgresql/<login>) is
+# deleted first, whether the login still exists or not, so a repeated run also cleans up an old leftover.
+# The delete needs the current policy of scripts/vault/configure-vault-databases.ps1.
 #
 # Usage: user_delete.sh [--dry-run] <database_name> <username>
 #        --dry-run  only report what would be changed
@@ -75,7 +75,7 @@ ensure_user_absent() {
 SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = :'full_user' AND pid <> pg_backend_pid();
 SQL
     release_objects_of_user
-    apply_sql postgres dropped "login $FULL_USER (its Vault entry stays)" <<<'DROP ROLE :"full_user";'
+    apply_sql postgres dropped "login $FULL_USER" <<<'DROP ROLE :"full_user";'
   else
     log "unchanged: login $FULL_USER does not exist"
   fi
@@ -84,7 +84,9 @@ SQL
 main() {
   parse_arguments "$@"
   require_commands sudo psql
+  require_vault_access
 
+  ensure_vault_entry_absent "postgresql/$FULL_USER"
   ensure_user_absent
 }
 

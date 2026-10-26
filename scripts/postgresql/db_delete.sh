@@ -3,9 +3,9 @@
 # partition job of audit_setup.sh, the database, the logins that belong to its three roles and the roles.
 #
 # Idempotent: parts that are already gone are reported as unchanged, so an aborted run can be repeated.
-# The data is deleted for good; use --dry-run first. The passwords in Vault stay, because the host may only
-# write there: delete them as admin with
-#   vault kv metadata delete databases/postgresql/<login>
+# The data is deleted for good; use --dry-run first. The password of every login is deleted from Vault
+# (databases/postgresql/<login>) before the login is dropped, so a refused delete stops the script while the
+# login still exists. It needs the current policy of scripts/vault/configure-vault-databases.ps1.
 #
 # A login belongs to the database if it is a member of <db>_role_ro, _rw or _owner (not by its name, so
 # the logins of a database called <db>_dev are not touched).
@@ -107,7 +107,8 @@ ensure_logins_absent() {
     log "unchanged: no logins of $DB_NAME"
   else
     while read -r login; do
-      apply_sql postgres dropped "login $login (its Vault entry stays)" -v drop_login="$login" <<<'DROP ROLE :"drop_login";'
+      ensure_vault_entry_absent "postgresql/$login"
+      apply_sql postgres dropped "login $login" -v drop_login="$login" <<<'DROP ROLE :"drop_login";'
     done <<<"$logins"
   fi
 }
@@ -123,6 +124,7 @@ ensure_role_absent() {
 main() {
   parse_arguments "$@"
   require_commands sudo psql
+  require_vault_access
 
   ensure_audit_job_absent
   ensure_database_absent

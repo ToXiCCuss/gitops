@@ -1,13 +1,14 @@
 <#
 .SYNOPSIS
     Vault-side preparation for the passwords of the database users that the scripts in
-    scripts/postgresql and scripts/mariadb create: KV v2 engine `databases`, the write-only policy
-    `databases-write` and the AppRole `dbadmin`.
+    scripts/postgresql and scripts/mariadb create: KV v2 engine `databases`, the policy
+    `databases-write` (write and delete, no read) and the AppRole `dbadmin`.
 
 .DESCRIPTION
     db_create.sh and user_create.sh log in with the AppRole and store the password of a new user as
-    databases/<dbms>/<username>. The policy only allows create and update on databases/data/*:
-    the database host can put passwords into Vault but cannot read one back or delete one.
+    databases/<dbms>/<username>. The policy allows create and update on databases/data/* and delete on
+    databases/metadata/*: the database host can put passwords into Vault and remove the entry of a login
+    that the delete scripts drop, but it cannot read a password back.
 
     The script is idempotent and reports per resource whether it was Created, Updated or Unchanged.
     It never creates a secret_id on its own: that needs -NewSecretId. With -NewSecretId it creates one,
@@ -74,6 +75,10 @@ $tokenMaxTtlSeconds = 600
 $policyText = @"
 path "$engineName/data/*" {
   capabilities = ["create", "update"]
+}
+# The delete scripts remove the entry of a dropped login with all its versions (KV v2 metadata delete)
+path "$engineName/metadata/*" {
+  capabilities = ["delete"]
 }
 "@
 

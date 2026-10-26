@@ -4,7 +4,7 @@
 #
 # The secret is databases/<dbms>/<username> (KV v2 engine "databases", keys username and password). The host
 # logs in with the AppRole "dbadmin" (/etc/gitops/databases_role_id and _secret_id, mode 600), whose policy can
-# only create and update secrets of this engine: it cannot read a password back or delete one.
+# create, update and delete secrets of this engine: it cannot read a password back.
 # Setup: scripts/vault/configure-vault-databases.ps1, README section "Database passwords in Vault".
 
 readonly VAULT_ADDR="${VAULT_ADDR:-https://vault.k8sdev.rjst.de}"
@@ -57,4 +57,31 @@ vault_store_password() {
   jq -e '.data.version' <<<"$response" >/dev/null 2>&1 ||
     die "Vault refused to store $secret_path: $(vault_errors "$response")"
   log "stored: password of $username in Vault ($secret_path)"
+}
+
+# vault_delete_password <secret name>: removes the secret with all its versions (KV v2 metadata delete).
+# Vault answers 204 for a secret that does not exist, so repeating the call is safe.
+vault_delete_password() {
+  local secret_name=$1 token response status secret_path
+  secret_path="$VAULT_DATABASES_MOUNT/$secret_name"
+  token=$(vault_login)
+  response=$(curl -sS -m "$VAULT_TIMEOUT_SECONDS" -X DELETE -H @<(printf 'X-Vault-Token: %s\n' "$token") \
+    -w '\n%{http_code}' "$VAULT_ADDR/v1/$VAULT_DATABASES_MOUNT/metadata/$secret_name") ||
+    die "Vault: $VAULT_ADDR is not reachable"
+  status=${response##*$'\n'}
+  case $status in
+  200 | 204 | 404) log "deleted: Vault entry $secret_path (an absent entry is fine)" ;;
+  *) die "Vault refused to delete $secret_path (HTTP $status): $(vault_errors "${response%$'\n'*}"). The policy databases-write needs delete on $VAULT_DATABASES_MOUNT/metadata/*: run scripts/vault/configure-vault-databases.ps1" ;;
+  esac
+}
+
+# ensure_vault_entry_absent <secret name>: vault_delete_password, or only a report with --dry-run (DRY_RUN is set by
+# database-common.sh). The delete scripts call it before they drop the login, so a refused delete stops them while the
+# login still exists and the run can simply be repeated.
+ensure_vault_entry_absent() {
+  if [[ $DRY_RUN == true ]]; then
+    log "[dry-run] deleted: Vault entry $VAULT_DATABASES_MOUNT/$1 (not executed)"
+  else
+    vault_delete_password "$1"
+  fi
 }

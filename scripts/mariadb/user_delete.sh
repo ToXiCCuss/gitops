@@ -2,8 +2,8 @@
 # Ensures the MariaDB login (host '%') does not exist.
 #
 # Idempotent: a missing login is reported as unchanged. Open connections of the login stay until they end.
-# The password in Vault stays, because the host may only write there: delete it as admin with
-#   vault kv metadata delete databases/mariadb/<login>
+# The password in Vault (databases/mariadb/<login>) is deleted first, whether the login still exists or not, so a
+# repeated run also cleans up an old leftover. It needs the current policy of scripts/vault/configure-vault-databases.ps1.
 #
 # Usage: user_delete.sh [--dry-run] <login>
 #        user_delete.sh [--dry-run] <database_name> <username>     (login = <database_name>_<username>)
@@ -50,7 +50,7 @@ ensure_login_absent() {
       log "[dry-run] dropped: login $LOGIN_NAME (not executed)"
     else
       mariadb_admin <<<"DROP USER '$LOGIN_NAME'@'$USER_HOST';"
-      log "dropped: login $LOGIN_NAME (its Vault entry stays)"
+      log "dropped: login $LOGIN_NAME"
     fi
   else
     log "unchanged: login $LOGIN_NAME@$USER_HOST does not exist"
@@ -60,7 +60,9 @@ ensure_login_absent() {
 main() {
   parse_arguments "$@"
   require_commands sudo mariadb
+  require_vault_access
 
+  ensure_vault_entry_absent "mariadb/$LOGIN_NAME"
   ensure_login_absent
 }
 
