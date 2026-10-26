@@ -14,7 +14,7 @@ spec:
     # the NetBird routing peer. istiod is 1.31.x, the gateway chart is only
     # published up to 1.30.x - fine, the proxy image is filled in by istiod's injector.
     repoURL: https://istio-release.storage.googleapis.com/charts
-    targetRevision: 1.30.6
+    targetRevision: 1.30.7
     chart: gateway
     plugin:
       env:
