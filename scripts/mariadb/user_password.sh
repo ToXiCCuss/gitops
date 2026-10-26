@@ -1,22 +1,80 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Sets a new random password for a MariaDB login (host '%') and stores it in Vault
+# (databases/mariadb/<login>); the password is never printed.
+#
+# This is a rotation, so every run sets a new password (the older ones stay as versions in Vault). Vault is
+# written first. If the ALTER USER fails afterwards, Vault holds a password the login does not have yet:
+# run the script again, it sets both to the same new password. Logins that were created before the
+# scripts used Vault are put into Vault by their first run.
+#
+# Usage: user_password.sh [--dry-run] <login>
+#        user_password.sh [--dry-run] <database_name> <username>     (login = <database_name>_<username>)
+#        --dry-run  only report what would be changed
+set -euo pipefail
 
-if [ -z "$1" ] || [ -z "$2" ]; then
-  echo "Usage: $0 <database_name> <username>"
-  exit 1
-fi
+# shellcheck source=../lib/database-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 
-DB_NAME=$1
-USER_NAME="${DB_NAME}_$2"
-NEW_PASS=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 30)
+# the 80 characters of a MariaDB user name
+readonly MAX_NAME_LENGTH=80
+readonly USER_HOST="%"
 
-echo "------------------------------------------"
-echo "Resetting password for MariaDB user: $USER_NAME"
-echo "New Password: $NEW_PASS"
+DRY_RUN=false
+LOGIN_NAME=""
 
-sudo mariadb -e "ALTER USER '$USER_NAME'@'%' IDENTIFIED BY '$NEW_PASS'; FLUSH PRIVILEGES;"
+usage() {
+  log "Usage: $0 [--dry-run] <login> | <database_name> <username>"
+  exit "$EXIT_USAGE"
+}
 
-if [ $? -eq 0 ]; then
-  echo "Password updated successfully."
-else
-  echo "Error updating password."
-fi
+parse_arguments() {
+  local positional=()
+  while (($# > 0)); do
+    case $1 in
+    --dry-run) DRY_RUN=true ;;
+    -*) usage ;;
+    *) positional+=("$1") ;;
+    esac
+    shift
+  done
+
+  case ${#positional[@]} in
+  1) LOGIN_NAME=${positional[0]} ;;
+  2) LOGIN_NAME="${positional[0]}_${positional[1]}" ;;
+  *) usage ;;
+  esac
+  validate_name "login name" "$LOGIN_NAME" "$MAX_NAME_LENGTH"
+}
+
+# The name is validated against NAME_PATTERN, so it can be put into the SQL directly
+mariadb_admin() {
+  sudo mariadb --batch --skip-column-names "$@"
+}
+
+require_login() {
+  [[ -n "$(mariadb_admin -e "SELECT 1 FROM mysql.user WHERE User = '$LOGIN_NAME' AND Host = '$USER_HOST' AND is_role = 'N'")" ]] ||
+    die "login $LOGIN_NAME@$USER_HOST does not exist"
+}
+
+rotate_password() {
+  local password
+  password=$(generate_password)
+  if [[ $DRY_RUN == true ]]; then
+    log "[dry-run] updated: password of $LOGIN_NAME (not executed)"
+  else
+    vault_store_password mariadb "$LOGIN_NAME" "$password"
+    mariadb_admin <<<"ALTER USER '$LOGIN_NAME'@'$USER_HOST' IDENTIFIED BY '$password';"
+    log "updated: password of $LOGIN_NAME"
+  fi
+}
+
+main() {
+  parse_arguments "$@"
+  require_commands sudo mariadb openssl
+  require_vault_access
+  require_login
+
+  rotate_password
+}
+
+main "$@"

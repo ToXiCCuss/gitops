@@ -1,28 +1,81 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Sets a new random password for a PostgreSQL login and stores it in Vault
+# (databases/postgresql/<login>); the password is never printed.
+#
+# This is a rotation, so every run sets a new password (the older ones stay as versions in Vault). Vault is
+# written first. If the ALTER ROLE fails afterwards, Vault holds a password the login does not have yet:
+# run the script again, it sets both to the same new password. Logins that were created before the
+# scripts used Vault are put into Vault by their first run.
+#
+# Usage: user_password.sh [--dry-run] <login>
+#        user_password.sh [--dry-run] <database_name> <username>     (login = <database_name>_<username>)
+#        --dry-run  only report what would be changed
+set -euo pipefail
 
-if [ -z "$1" ]; then
-  echo "Usage: $0 <full_username> OR $0 <database_name> <username_suffix>"
-  exit 1
-fi
+# shellcheck source=../lib/database-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 
-if [ -z "$2" ]; then
-  USER_NAME=$1
-else
-  USER_NAME="${1}_$2"
-fi
+readonly MAX_NAME_LENGTH=63
 
-USER_PASS=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 30)
+DRY_RUN=false
+LOGIN_NAME=""
 
-echo "------------------------------------------"
-echo "Updating Password for User: $USER_NAME"
-echo "New Password:              $USER_PASS"
+usage() {
+  log "Usage: $0 [--dry-run] <login> | <database_name> <username>"
+  exit "$EXIT_USAGE"
+}
 
-sudo -u postgres psql -c "ALTER USER \"$USER_NAME\" WITH PASSWORD '$USER_PASS';"
+parse_arguments() {
+  local positional=()
+  while (($# > 0)); do
+    case $1 in
+    --dry-run) DRY_RUN=true ;;
+    -*) usage ;;
+    *) positional+=("$1") ;;
+    esac
+    shift
+  done
 
-if [ $? -eq 0 ]; then
-  echo "Password for user '$USER_NAME' has been updated successfully."
-  echo "MAKE SURE TO SAVE THE NEW PASSWORD: $USER_PASS"
-else
-  echo "Error: Failed to update password for user '$USER_NAME'."
-  exit 1
-fi
+  case ${#positional[@]} in
+  1) LOGIN_NAME=${positional[0]} ;;
+  2) LOGIN_NAME="${positional[0]}_${positional[1]}" ;;
+  *) usage ;;
+  esac
+  validate_name "login name" "$LOGIN_NAME" "$MAX_NAME_LENGTH"
+}
+
+# The name reaches the SQL as a psql variable (:"x" is an identifier, :'x' a literal), never by string concatenation
+psql_admin() {
+  sudo -u postgres psql --no-psqlrc --quiet -v ON_ERROR_STOP=1 -v login_name="$LOGIN_NAME" "$@"
+}
+
+require_login() {
+  [[ -n "$(psql_admin --no-align --tuples-only <<<"SELECT 1 FROM pg_roles WHERE rolname = :'login_name' AND rolcanlogin")" ]] ||
+    die "login $LOGIN_NAME does not exist"
+}
+
+rotate_password() {
+  local password
+  password=$(generate_password)
+  if [[ $DRY_RUN == true ]]; then
+    log "[dry-run] updated: password of $LOGIN_NAME (not executed)"
+  else
+    vault_store_password postgresql "$LOGIN_NAME" "$password"
+    psql_admin <<SQL
+\\set new_password '$password'
+ALTER ROLE :"login_name" WITH PASSWORD :'new_password';
+SQL
+    log "updated: password of $LOGIN_NAME"
+  fi
+}
+
+main() {
+  parse_arguments "$@"
+  require_commands sudo psql openssl
+  require_vault_access
+  require_login
+
+  rotate_password
+}
+
+main "$@"

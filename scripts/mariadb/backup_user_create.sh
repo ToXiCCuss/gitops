@@ -1,6 +1,5 @@
-#!/bin/bash
-
-# Creates the login Databasus uses for the logical backups, or only repeats the grants if it exists.
+#!/usr/bin/env bash
+# Ensures the login Databasus uses for the logical backups.
 #
 # The user may read everything a dump needs and write nothing: SELECT (also the routines),
 # SHOW VIEW, TRIGGER, EVENT and LOCK TABLES on all databases, also on the ones created later.
@@ -11,43 +10,102 @@
 # firewall (the rule for port 3306 only lets the Docker networks in, like the one for PostgreSQL),
 # so do not open that port further.
 #
-# Usage: backup_user_create.sh [username] [reset]     (default username: databasus)
-#        An existing user keeps its password, "reset" sets a new one.
+# Idempotent: an existing user keeps its password and only gets the grants it is missing. The password of a
+# new user goes to Vault (databases/mariadb/<username>) and is never printed; "reset" sets a new one.
+# Vault is written first, so an unreachable Vault stops the script before anything is changed.
+#
+# Usage: backup_user_create.sh [--dry-run] [username] [reset]     (default username: databasus)
+#        --dry-run  only report what would be changed
+set -euo pipefail
 
-USER_HOST="%"
+# shellcheck source=../lib/database-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 
-USER_NAME="${1:-databasus}"
-RESET="$2"
+readonly DEFAULT_USER_NAME="databasus"
+# the 80 characters of a MariaDB user name
+readonly MAX_NAME_LENGTH=80
+readonly USER_HOST="%"
+readonly BACKUP_PRIVILEGES="SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES"
 
-if [[ ! "$USER_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
-  echo "Error: the user name may only contain letters, digits and underscores."
-  exit 1
-fi
+DRY_RUN=false
+RESET=false
+USER_NAME="$DEFAULT_USER_NAME"
 
-mariadb_cmd() {
-  sudo mariadb "$@"
+usage() {
+  log "Usage: $0 [--dry-run] [username] [reset]"
+  exit "$EXIT_USAGE"
 }
 
-echo "------------------------------------------"
-echo "Backup User: $USER_NAME@$USER_HOST"
+parse_arguments() {
+  local positional=()
+  while (($# > 0)); do
+    case $1 in
+    --dry-run) DRY_RUN=true ;;
+    -*) usage ;;
+    *) positional+=("$1") ;;
+    esac
+    shift
+  done
+  ((${#positional[@]} <= 2)) || usage
 
-USER_EXISTS=$(mariadb_cmd -N -B -e "SELECT 1 FROM mysql.user WHERE User = '$USER_NAME' AND Host = '$USER_HOST'")
-
-if [ -z "$USER_EXISTS" ] || [ "$RESET" = "reset" ]; then
-  USER_PASS=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 30)
-
-  if [ -z "$USER_EXISTS" ]; then
-    mariadb_cmd -e "CREATE USER '$USER_NAME'@'$USER_HOST' IDENTIFIED BY '$USER_PASS';" || { echo "Error creating the backup user."; exit 1; }
-  else
-    mariadb_cmd -e "ALTER USER '$USER_NAME'@'$USER_HOST' IDENTIFIED BY '$USER_PASS';" || { echo "Error resetting the password."; exit 1; }
+  USER_NAME=${positional[0]:-$DEFAULT_USER_NAME}
+  if ((${#positional[@]} == 2)); then
+    [[ ${positional[1]} == reset ]] || usage
+    RESET=true
   fi
-  echo "Password:    $USER_PASS"
-else
-  echo "User exists, password unchanged (use 'reset' to set a new one)."
-fi
+  validate_name "username" "$USER_NAME" "$MAX_NAME_LENGTH"
+}
 
-mariadb_cmd -e "GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES ON *.* TO '$USER_NAME'@'$USER_HOST'; FLUSH PRIVILEGES;" || { echo "Error granting the privileges."; exit 1; }
+# The name is validated against NAME_PATTERN, so it can be put into the SQL directly
+mariadb_admin() {
+  sudo mariadb --batch --skip-column-names "$@"
+}
 
-echo "Privileges:  SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES on *.*"
-echo "In Databasus: add the database with this user, host = this server, port 3306, and use 'Test connection'."
-echo "------------------------------------------"
+user_exists() {
+  [[ -n "$(mariadb_admin -e "SELECT 1 FROM mysql.user WHERE User = '$USER_NAME' AND Host = '$USER_HOST'")" ]]
+}
+
+# apply_new_password <CREATE|ALTER> <outcome>: Vault first, then the user gets the same password
+apply_new_password() {
+  local statement=$1 outcome=$2 password
+  password=$(generate_password)
+  if [[ $DRY_RUN == true ]]; then
+    log "[dry-run] $outcome: backup user $USER_NAME (not executed)"
+  else
+    vault_store_password mariadb "$USER_NAME" "$password"
+    mariadb_admin <<<"$statement USER '$USER_NAME'@'$USER_HOST' IDENTIFIED BY '$password';"
+    log "$outcome: backup user $USER_NAME"
+  fi
+}
+
+ensure_backup_user() {
+  if ! user_exists; then
+    apply_new_password CREATE created
+  elif [[ $RESET == true ]]; then
+    apply_new_password ALTER updated
+  else
+    log "unchanged: backup user $USER_NAME (password kept, 'reset' sets a new one)"
+  fi
+}
+
+# Grants can be repeated without effect, so they are applied on every run
+apply_backup_privileges() {
+  if [[ $DRY_RUN == true ]]; then
+    log "[dry-run] applied: $BACKUP_PRIVILEGES on *.* for $USER_NAME (not executed)"
+  else
+    mariadb_admin <<<"GRANT $BACKUP_PRIVILEGES ON *.* TO '$USER_NAME'@'$USER_HOST';"
+    log "applied: $BACKUP_PRIVILEGES on *.* for $USER_NAME"
+  fi
+}
+
+main() {
+  parse_arguments "$@"
+  require_commands sudo mariadb openssl
+  require_vault_access
+
+  ensure_backup_user
+  apply_backup_privileges
+  log "In Databasus: add the database with this user, host = this server, port 3306, and use 'Test connection'."
+}
+
+main "$@"

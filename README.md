@@ -102,7 +102,7 @@ The role `mariadb` sets `bind-address` and `event_scheduler = ON` (`/etc/mysql/m
 | `audit_enable.sh <db> <table> ...` | Triggers write the old and new values of every INSERT, UPDATE and DELETE of the tables to `audit_log`. Run it again after a column changed. The record id is the primary key (several columns joined by `-`), `NULL` without one. An UPDATE that changes nothing is not logged. |
 | `audit_disable.sh <db> <table> ...` | Removes the triggers. Rows already logged stay until the retention drops them. |
 | `audit_list.sh <db>` | Audited tables, retention, partitions with their row counts. |
-| `backup_user_create.sh [user] [reset]` | Read-only login for Databasus (default `databasus`, host `%`, so keep port 3306 closed except for the Docker networks): `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, `LOCK TABLES` on all databases. The password is printed once, `reset` sets a new one. |
+| `backup_user_create.sh [user] [reset]` | Read-only login for Databasus (default `databasus`, host `%`, so keep port 3306 closed except for the Docker networks): `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, `LOCK TABLES` on all databases. The password goes to Vault (`databases/mariadb/databasus`) and is not printed, `reset` sets a new one. |
 
 - The audit log lives in the database, so `db_delete.sh` takes it along. It holds personal data in clear text. The roles of `db_create.sh` can change it, their grants cover the whole database.
 - An audited write costs one more INSERT with all columns as JSON, so switch it on only for the tables where you need the history. A database without `audit_setup.sh` has no triggers and no cost.
@@ -125,6 +125,22 @@ The scripts in `scripts/postgresql/` (run them on the host with `sudo`) add the 
 - The job lives in the `pg_cron` database (`cron.database_name`, default `postgres`), not in the audited database. After a restore from a dump run `audit_setup.sh` again; `db_delete.sh` removes the job together with the database. Without `pg_cron` the default partition catches every row, the log keeps working and only the partitions are not maintained.
 - An audited write costs one more INSERT, so switch it on only for the tables where you need the history.
 - Switching on `pg_cron` is the only change to the server: after the Ansible run, check `SHOW shared_preload_libraries;`.
+
+### Database passwords in Vault
+
+`db_create.sh` and `user_create.sh` (PostgreSQL and MariaDB) are idempotent: a second run reports `unchanged` and changes nothing, an aborted run is finished by running it again. `--dry-run` shows the plan. The password of a **new** user is generated, stored in Vault as `databases/<dbms>/<user>` (keys `username`, `password`, e.g. `databases/postgresql/keycloak_owner`) and never printed; an existing user keeps its password. Vault is written first, so an unreachable Vault stops the script before anything is created. Names must match `^[a-z][a-z0-9_]*$` (52 characters at most).
+
+Set up once (on Windows, with the root token):
+
+1. `.\scripts\vault\configure-vault-databases.ps1 -VaultToken (Read-Host -AsSecureString "Vault token") -NewSecretId -DatabaseHost docker01.vpn.rjst.de` mounts the KV engine `databases`, writes the policy `databases-write` (create and update on `databases/data/*`, no read, no delete) and the AppRole `dbadmin` (token lifetime 5 minutes), and puts `/etc/gitops/databases_role_id` and `databases_secret_id` (mode 600) on the host over SSH (`-SshUser`, default `root`; `-SshArgument` for a port or key). The values go through the stdin of `ssh` and are not shown. `-WhatIf` shows the plan. Like for `docker01`, the role is not bound to an address (Vault sees a pod address).
+2. Without `-DatabaseHost` the `secret_id` is shown once and you create the two files yourself on the host as root: `install -d -m 700 /etc/gitops`, then `(umask 077; cat > /etc/gitops/databases_secret_id)` and the same for `databases_role_id` (paste, Ctrl-D).
+3. `curl` and `jq` are on every host through the Ansible role `base`.
+4. Read a password on Windows: `vault kv get -field=password databases/postgresql/keycloak_owner`.
+
+- The host can write passwords but not read one back, so a leaked `secret_id` exposes no existing password. It can overwrite one, though: a new `-NewSecretId` cuts a leaked file off. With `-DatabaseHost` the older `secret_id`s are destroyed only after both files are on the host, so a failed SSH login leaves the working one valid. Run the script again with `-NewSecretId` to rotate.
+- `user_password.sh <login>` (or `<database> <username>`) rotates a password: it sets a new random one in Vault and in the database, every run again, the older ones stay as versions in Vault. `backup_user_create.sh` stores the password of the Databasus login the same way. Both support `--dry-run` and never print a password.
+- Logins that existed before the scripts used Vault (including `databasus`) are not in Vault yet. Their first `user_password.sh` run puts them there. For `databasus` enter the new password in the Databasus UI afterwards, it keeps its own copy.
+- Still printing a password or not idempotent: the MongoDB scripts, and `user_delete.sh`, `db_delete.sh`, `schema_create.sh` and `copy_db.sh` (they do not create passwords, but have the old `$?` checks).
 
 ### MongoDB (scripts)
 
@@ -252,7 +268,7 @@ Run everything in this section from the `tofu/proxmox/` folder.
 
 ### Setup
 
-1. Create the state database on the Docker host. The script prints the password of the user `tofu_state_owner` once, store it in the password manager. Add the database `tofu_state` in Databasus so that the state is part of the backups. The PostgreSQL host must not be a VM managed by this state:
+1. Create the state database on the Docker host. The script stores the password of the user `tofu_state_owner` in Vault (`databases/postgresql/tofu_state_owner`, see [Database passwords in Vault](#database-passwords-in-vault)). Add the database `tofu_state` in Databasus so that the state is part of the backups. The PostgreSQL host must not be a VM managed by this state:
 
    ```bash
    sudo scripts/postgresql/db_create.sh tofu_state
@@ -341,8 +357,9 @@ Every project with a `vault.env.example` reads its secrets from Vault. `deploy.s
 
 Set up once (on Windows, with the root token):
 
-1. `.\scripts\vault\configure-vault-docker.ps1 -VaultToken <token> -NewSecretId` mounts the KV engine `docker`, writes the read-only policy `docker` and the AppRole `docker01` (token lifetime 5 minutes). It prints the `role_id` and the `secret_id` once. Do not bind the role to the address of the Docker host (`-AllowedCidr`): Vault runs in the cluster and sees the address of a pod (`10.42.x.x`), so the login fails with "source address unauthorized by CIDR restrictions".
-2. On the Docker host as root: `install -d -m 700 /etc/gitops`, then `(umask 077; cat > /etc/gitops/secret_id)` and the same for `role_id` (paste, Ctrl-D). A new `secret_id` (`-NewSecretId`) destroys the old one, so a leaked file is cut off by running the script again.
+1. `.\scripts\vault\configure-vault-docker.ps1 -VaultToken (Read-Host -AsSecureString "Vault token") -NewSecretId -DockerHost docker01.vpn.rjst.de` mounts the KV engine `docker`, writes the read-only policy `docker` and the AppRole `docker01` (token lifetime 5 minutes), and puts `/etc/gitops/role_id` and `secret_id` (mode 600) on the Docker host over SSH (`-SshUser`, default `root`; `-SshArgument` for a port or key). The values go through the stdin of `ssh` and are not shown. `-WhatIf` shows the plan; a second run reports `Unchanged`. Do not bind the role to the address of the Docker host (`-AllowedCidr`): Vault runs in the cluster and sees the address of a pod (`10.42.x.x`), so the login fails with "source address unauthorized by CIDR restrictions".
+2. Without `-DockerHost` the `secret_id` is shown once and you create the two files yourself on the Docker host as root: `install -d -m 700 /etc/gitops`, then `(umask 077; cat > /etc/gitops/secret_id)` and the same for `role_id` (paste, Ctrl-D).
+3. A new `secret_id` (`-NewSecretId`) destroys the old one, so a leaked file is cut off by running the script again. With `-DockerHost` the old one is destroyed only after both files are on the host, so a failed SSH login leaves the working one valid.
 3. Put the values of a project into Vault, e.g. `vault kv put docker/keycloak KC_DB_USERNAME=... KC_DB_PASSWORD=... KC_BOOTSTRAP_ADMIN_PASSWORD=...` (`vault kv patch` changes single keys). Values must not contain a single quote or a control character (a line break), `deploy.sh` refuses them.
 4. `sudo scripts/docker/deploy.sh keycloak`.
 
@@ -613,7 +630,7 @@ Databasus makes the logical backups (`pg_dump`) of the PostgreSQL databases and 
 
 #### On the Docker host
 
-1. Create the login role once. It gets `pg_read_all_data` (SELECT on all tables, views and sequences in all databases and schemas, also later ones) and `CONNECT` on every existing database. The `ro` role of `user_create.sh` is not enough, it only sees the `public` schema of one database and would miss e.g. the `partman` schema. The script prints the password once, an existing role keeps its password (`reset` sets a new one):
+1. Create the login role once. It gets `pg_read_all_data` (SELECT on all tables, views and sequences in all databases and schemas, also later ones) and `CONNECT` on every existing database. The `ro` role of `user_create.sh` is not enough, it only sees the `public` schema of one database and would miss e.g. the `partman` schema. The script stores the password in Vault (`databases/postgresql/databasus`, not printed), an existing role keeps its password (`reset` sets a new one):
 
    ```bash
    sudo scripts/postgresql/backup_user_create.sh
@@ -643,7 +660,7 @@ The first account becomes the administrator.
 | Storage: access key and secret | `access_key` and `secret_key` of `vault kv get docker/s3/databasus`. The identity `databasus` may only read, write and list the bucket `databases` |
 | Database: host | `host.docker.internal` |
 | Database: port | `5432` |
-| Database: user | `databasus` (password of the script above) |
+| Database: user | `databasus` (password: `vault kv get -field=password databases/postgresql/databasus`) |
 | Database: name | one entry per database |
 | Schedule | daily 01:00 UTC |
 | Retention | 14 daily, 8 weekly, 6 monthly (GFS) |
@@ -752,8 +769,8 @@ Daily at 02:30 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`) the container fetches the Ra
 
 Keycloak (`docker/keycloak`) runs on the Docker host and not in the cluster, on purpose: it is the login of everything else, so it must not depend on the cluster, ArgoCD or Vault, and a rebuilt cluster does not touch it. The database is the local PostgreSQL (`host.docker.internal`), which Databasus backs up. The public URL is `https://auth.proxy.rjst.de` (the NetBird reverse proxy, TLS ends there). It is the issuer in every token and in the config of every client, so choose it once. Keycloak serves one URL only, a second hostname does not work for logins.
 
-1. On the Docker host: `scripts/postgresql/db_create.sh keycloak` (prints the password of `keycloak_owner`), then add the database `keycloak` in the Databasus UI: the users and their group membership live only there (realm and clients are in Git, see below).
-2. The Vault secret `docker/keycloak` (`vault kv put docker/keycloak ...`, names in `docker/keycloak/vault.env.example`): the database user and password and the password of the first admin (`openssl rand -base64 24`). Keep them in the password manager.
+1. On the Docker host: `scripts/postgresql/db_create.sh keycloak` (stores the password of `keycloak_owner` in Vault as `databases/postgresql/keycloak_owner`), then add the database `keycloak` in the Databasus UI: the users and their group membership live only there (realm and clients are in Git, see below).
+2. The Vault secret `docker/keycloak` (`vault kv put docker/keycloak ...`, names in `docker/keycloak/vault.env.example`): the database user and password (`vault kv get -field=password databases/postgresql/keycloak_owner`) and the password of the first admin (`openssl rand -base64 24`). Keep the admin password in the password manager.
 3. `sudo scripts/docker/deploy.sh keycloak`
 4. NetBird dashboard: a reverse proxy service `auth.proxy.rjst.de` to port `8180` of the Docker host, restricted to your peers (this is what keeps Keycloak internal). The published port `8180` itself is open like the other Docker ports (see the note after the setup steps under [Backups](#backups)).
 5. Log in as `admin` at `https://auth.proxy.rjst.de/admin/`, create a personal admin in the realm `master` (role `admin`) and delete `admin`: the bootstrap variables are only read while the master realm has no user. Create a separate realm for the apps, the issuer is then `https://auth.proxy.rjst.de/realms/<name>`.
