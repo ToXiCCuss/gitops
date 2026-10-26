@@ -14,6 +14,12 @@ docker_packages:
 # Inhalt von /etc/docker/daemon.json (als YAML-Dict, wird zu JSON konvertiert)
 docker_daemon_options:
   live-restore: true
+  # Without a limit the json-file log of a container grows until the disk is full.
+  # Applies to containers created after the restart of dockerd (docker compose up -d --force-recreate).
+  log-driver: json-file
+  log-opts:
+    max-size: 10m
+    max-file: "3"
 
 # Docker-Netzwerke, die auf Docker-Hosts vorhanden sein sollen
 docker_networks: []
