@@ -157,7 +157,7 @@ function Set-KvEngine {
     Get-ResourceState -Resource "KV v2 engine $engineName/" -State $state
 }
 
-function Set-WriteOnlyPolicy {
+function Set-DatabasePolicy {
     [CmdletBinding(SupportsShouldProcess)]
     param()
     $existing = Get-VaultData -Path "sys/policies/acl/$policyName"
@@ -258,7 +258,7 @@ function New-DatabaseSecretId {
 
 Set-ApproleAuthMethod
 Set-KvEngine
-Set-WriteOnlyPolicy
+Set-DatabasePolicy
 Set-DatabaseAppRole
 if ($NewSecretId) {
     New-DatabaseSecretId
