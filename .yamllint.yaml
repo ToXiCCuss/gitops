@@ -1,0 +1,29 @@
+extends: default
+
+ignore: |
+  kubernetes/archive/
+  kubernetes/parked/
+  kubernetes/monitoring/crds/
+  kubernetes/kafka/kubectl/kube-apicurio-registry-operator.yaml
+  # ansible-vault encrypted
+  ansible/group_vars/all/secrets.yml
+
+rules:
+  # Dashboards, certificates and Helm values contain long lines
+  line-length: disable
+  # Argo CD manifests and Compose files start without "---"
+  document-start: disable
+  # Ansible tasks use yes/no, "on" and "off" are plain values in Helm values and Compose files
+  truthy:
+    allowed-values: ["true", "false", "yes", "no"]
+    check-keys: false
+  # .gitattributes stores LF, a Windows checkout mixes CRLF and LF
+  new-lines: disable
+  # The Ansible variables align inline maps in columns
+  braces:
+    max-spaces-inside: -1
+  commas:
+    max-spaces-after: -1
+  indentation:
+    spaces: consistent
+    ignore: ansible/group_vars/all/main.yml

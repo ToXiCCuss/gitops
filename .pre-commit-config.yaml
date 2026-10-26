@@ -1,0 +1,6 @@
+# Local checks from AGENTS.md ("Check before done"). Install once: pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
