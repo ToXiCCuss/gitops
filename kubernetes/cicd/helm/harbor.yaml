@@ -43,6 +43,42 @@ spec:
                 coreDatabase: "harbor"
               maxIdleConns: 1
               maxOpenConns: 10
+            # Starting values without measurements: small requests, memory limits with headroom. Check the real
+            # use in the Kubernetes dashboards after the sync and tighten them.
+            portal:
+              resources:
+                requests: {cpu: 20m, memory: 32Mi}
+                limits: {cpu: 500m, memory: 128Mi}
+            core:
+              resources:
+                requests: {cpu: 100m, memory: 256Mi}
+                limits: {cpu: "1", memory: 1Gi}
+            jobservice:
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: 500m, memory: 512Mi}
+            registry:
+              registry:
+                resources:
+                  requests: {cpu: 100m, memory: 128Mi}
+                  limits: {cpu: "1", memory: 512Mi}
+              controller:
+                resources:
+                  requests: {cpu: 20m, memory: 32Mi}
+                  limits: {cpu: 500m, memory: 128Mi}
+            trivy:
+              resources:
+                requests: {cpu: 100m, memory: 256Mi}
+                limits: {cpu: "1", memory: 1Gi}
+            nginx:
+              resources:
+                requests: {cpu: 20m, memory: 32Mi}
+                limits: {cpu: 500m, memory: 128Mi}
+            redis:
+              internal:
+                resources:
+                  requests: {cpu: 20m, memory: 64Mi}
+                  limits: {cpu: 500m, memory: 256Mi}
   syncPolicy:
     automated:
       prune: true
