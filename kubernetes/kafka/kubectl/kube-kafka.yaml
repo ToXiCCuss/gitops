@@ -143,4 +143,3 @@ spec:
           targetLabel: node_ip
           replacement: $1
           action: replace
-
