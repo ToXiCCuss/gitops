@@ -21,6 +21,9 @@ services:
       portal.group: "Platform"
       portal.description: "Login and identities"
       portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/keycloak.svg"
+    # A process in the container cannot gain more privileges than it started with (setuid binaries, file capabilities)
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 # A fixed network name, so that the job of docker/keycloak-config reaches Keycloak as http://keycloak:8080
