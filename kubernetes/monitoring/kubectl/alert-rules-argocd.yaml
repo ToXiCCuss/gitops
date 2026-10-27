@@ -1,0 +1,44 @@
+# The application controller of Argo CD (kubernetes/argocd-values.yaml, controller.metrics) reports one
+# argocd_app_info per Application. All Applications sync automatically, so one that stays out of sync or unhealthy
+# means a merge to master is not live. A sync_status of Unknown is a comparison error, e.g. a Vault path that
+# the AVP plugin cannot render. Argo CD itself is installed with helm, so enabling the metrics needs a
+# manual "helm upgrade" (README: Deployment Guide).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: argocd
+  namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  groups:
+    - name: argocd
+      rules:
+        - alert: ArgoAppNotSynced
+          expr: argocd_app_info{sync_status!="Synced"}
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The Argo CD Application {{ $labels.name }} is {{ $labels.sync_status }} for 30 minutes"
+        - alert: ArgoAppUnhealthy
+          expr: argocd_app_info{health_status!="Healthy"}
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The Argo CD Application {{ $labels.name }} is {{ $labels.health_status }} for 15 minutes"
+        - alert: ArgoSyncFailed
+          expr: increase(argocd_app_sync_total{phase=~"Error|Failed"}[15m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "A sync of the Argo CD Application {{ $labels.name }} ended in {{ $labels.phase }}"
+        # for: 2h so that the alert does not fire between the merge of the rule and the helm upgrade of Argo CD
+        - alert: ArgoMetricsMissing
+          expr: absent(argocd_app_info)
+          for: 2h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Prometheus gets no metrics of the Argo CD application controller"
