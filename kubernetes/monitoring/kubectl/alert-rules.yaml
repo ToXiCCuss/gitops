@@ -184,14 +184,16 @@ spec:
             severity: critical
           annotations:
             summary: "git pull --ff-only fails on {{ $labels.instance }}, no Docker project is deployed (journalctl -u gitops-deploy)"
-        # also fires when the timer is stopped or the AppRole files of Vault are missing (the unit is then skipped)
+        # also fires when the timer is stopped or the AppRole files of Vault are missing (the unit is then skipped).
+        # The timer runs hourly from 08:00 to 20:00 local time (gitops_deploy_calendar), so the rule only looks
+        # at 08:00-18:00 UTC (09/10:00-19/20:00 local, winter/summer time) and allows two missed runs.
         - alert: DockerDeployStale
-          expr: time() - gitops_deploy_last_success_timestamp_seconds > 3600
+          expr: time() - gitops_deploy_last_success_timestamp_seconds > 7200 and on() (hour() >= 8 and hour() < 18)
           for: 15m
           labels:
             severity: warning
           annotations:
-            summary: "The last successful Docker deploy on {{ $labels.instance }} is more than an hour ago"
+            summary: "The last successful Docker deploy on {{ $labels.instance }} is more than two hours ago"
         # for: 2h so that the alert does not fire between the merge of the rule and the Ansible run on the host
         - alert: DockerDeployNeverReported
           expr: absent(gitops_deploy_last_success_timestamp_seconds)
