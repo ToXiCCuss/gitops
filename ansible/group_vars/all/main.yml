@@ -64,6 +64,8 @@ host_config:
       - { port: 2456,  proto: udp, comment: "Game server (Pelican)" }
       - { port: 2457,  proto: udp, comment: "Game server (Pelican)" }
       - { port: 2458,  proto: udp, comment: "Game server (Pelican)" }
+      - { port: 15636, proto: udp, comment: "Enshrouded game server" }
+      - { port: 15637, proto: udp, comment: "Enshrouded query (Steam)" }
       - { port: 5432,  proto: tcp, from_ip: 172.16.0.0/12, comment: "PostgreSQL from the Docker networks" }
       - { port: 3306,  proto: tcp, from_ip: 172.16.0.0/12, comment: "MariaDB from the Docker networks" }
       - { port: 9000,  proto: tcp, from_ip: 172.16.0.0/12, comment: "RustFS S3 from the Docker networks" }
