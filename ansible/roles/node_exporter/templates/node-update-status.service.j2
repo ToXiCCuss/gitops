@@ -1,0 +1,7 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Write the update state of the host for the node_exporter
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/node-update-status.sh {{ node_exporter_textfile_dir }}/node-update-status.prom

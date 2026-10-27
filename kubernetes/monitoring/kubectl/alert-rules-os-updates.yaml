@@ -1,0 +1,38 @@
+# ansible/roles/node_exporter/files/node-update-status.sh writes the update state of every host into the textfile
+# collector of the node_exporter once an hour. unattended-upgrades installs the security updates by itself but
+# never reboots (unattended_upgrades_reboot: false), so a kernel or libc update waits for a manual reboot.
+# A reboot of the k3s node stops all Applications for a moment, therefore it is only reported.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: os-updates
+  namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  groups:
+    - name: os-updates
+      rules:
+        - alert: RebootRequired
+          expr: node_reboot_required_since_timestamp_seconds > 0 and time() - node_reboot_required_since_timestamp_seconds > 7 * 24 * 3600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.instance }} has needed a reboot for more than 7 days"
+        # unattended-upgrades runs once a day, a stamp older than 3 days means it does not run (stopped timer, broken apt)
+        - alert: UnattendedUpgradesStalled
+          expr: time() - node_unattended_upgrades_last_run_timestamp_seconds > 3 * 24 * 3600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "unattended-upgrades has not run on {{ $labels.instance }} for more than 3 days"
+        # Security updates are installed within a day, so one that waits for 3 days is held back (a conflict, a broken source)
+        - alert: SecurityUpdatesPending
+          expr: node_pending_updates{type="security"} > 0
+          for: 3d
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $value }} security updates are pending on {{ $labels.instance }} for 3 days (apt-get dist-upgrade --simulate)"
