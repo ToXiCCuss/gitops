@@ -5,7 +5,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 | Folder | Content |
 |---|---|
 | `ansible/` | Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter, mysqld exporter, the deploy timer of the Docker host. Secrets in an ansible-vault file. |
-| `docker/` | One Docker Compose project per service on the Docker host (restic-backup, Databasus, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`, on the Docker host every 15 minutes by a systemd timer. Images are pinned by digest and updated by Renovate. |
+| `docker/` | One Docker Compose project per service on the Docker host (restic-backup, Databasus, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`, on the Docker host hourly from 08:00 to 20:00 by a systemd timer. Images are pinned by digest and updated by Renovate. |
 | `istio/` | `IstioOperator` file for the manual `istioctl install` (outside ArgoCD). |
 | `tofu/` | OpenTofu: VMs on the Proxmox host (`tofu/proxmox/`), state in PostgreSQL. Cloud-init installs Ansible and checks out this repository on each VM. |
 | `kubernetes/` | ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, spring). |
@@ -323,7 +323,7 @@ sudo scripts/docker/deploy.sh --list
 
 #### Automatic deploy
 
-A merge to `master` is deployed on the Docker host like it is in Argo CD: the systemd timer `gitops-deploy.timer` (Ansible role `gitops_deploy`, host group `gitops_deploy_hosts`) runs `deploy.sh --pull --metrics-file ...` in `/root/gitops` 15 minutes after the end of the last run (`gitops_deploy_interval`). Only a project whose compose file, image or Vault secret changed is recreated. Rollback is `git revert` on `master`, the next run deploys it.
+A merge to `master` is deployed on the Docker host like it is in Argo CD: the systemd timer `gitops-deploy.timer` (Ansible role `gitops_deploy`, host group `gitops_deploy_hosts`) runs `deploy.sh --pull --metrics-file ...` in `/root/gitops` every full hour from 08:00 to 20:00 local time (`gitops_deploy_calendar`), not at night. Only a project whose compose file, image or Vault secret changed is recreated. Rollback is `git revert` on `master`, the next run deploys it.
 
 ```bash
 sudo ansible-playbook -i inventory.ini site.yml --tags gitops_deploy --check --diff   # dry run first, in /root/gitops/ansible

@@ -3,8 +3,7 @@
 Description=Deploy the Docker Compose projects from the gitops repository regularly
 
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec={{ gitops_deploy_interval }}
+OnCalendar={{ gitops_deploy_calendar }}
 RandomizedDelaySec=1min
 
 [Install]
