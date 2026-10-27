@@ -884,6 +884,8 @@ helm install argocd argo/argo-cd -n argocd --values argocd-values.yaml --create-
 helm upgrade argocd argo/argo-cd -n argocd --values argocd-values.yaml
 ```
 
+Argo CD is not part of GitOps, so a change of `argocd-values.yaml` only takes effect with this `helm upgrade` (the controller restarts for a moment, the Applications keep running). The metrics of the application controller (`controller.metrics`, with a ServiceMonitor) are switched on there. Prometheus alerts on them (`kubernetes/monitoring/kubectl/alert-rules-argocd.yaml`): an Application that is not `Synced` for 30 minutes (`Unknown` is a comparison error, e.g. a missing Vault path), one that is not `Healthy` for 15 minutes, a failed sync, and `ArgoMetricsMissing` (2 hours without metrics, which is the reminder to run the `helm upgrade` after the merge). The Status dashboard in Grafana shows the Applications with their sync and health status.
+
 #### 2. Deploy Vault standalone
 
 ```bash
