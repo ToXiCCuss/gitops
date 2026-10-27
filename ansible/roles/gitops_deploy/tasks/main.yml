@@ -1,0 +1,49 @@
+---
+- name: Check that the repository checkout with deploy.sh exists
+  ansible.builtin.stat:
+    path: "{{ gitops_deploy_repository_dir }}/scripts/docker/deploy.sh"
+  register: gitops_deploy_script
+
+- name: Fail when deploy.sh is not at gitops_deploy_repository_dir
+  ansible.builtin.assert:
+    that: gitops_deploy_script.stat.exists
+    fail_msg: "{{ gitops_deploy_repository_dir }}/scripts/docker/deploy.sh is missing: check out the repository there or set gitops_deploy_repository_dir"
+
+- name: Create the textfile collector directory
+  ansible.builtin.file:
+    path: "{{ gitops_deploy_metrics_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the service that runs deploy.sh
+  ansible.builtin.template:
+    src: gitops-deploy.service.j2
+    dest: /etc/systemd/system/gitops-deploy.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: gitops_deploy_service
+
+- name: Install the timer
+  ansible.builtin.template:
+    src: gitops-deploy.timer.j2
+    dest: /etc/systemd/system/gitops-deploy.timer
+    owner: root
+    group: root
+    mode: "0644"
+  register: gitops_deploy_timer
+
+- name: Reload systemd after the units changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: gitops_deploy_service is changed or gitops_deploy_timer is changed
+
+# In check mode on a new host the unit file does not exist yet, so enabling it would fail
+- name: Ensure the timer is enabled and running
+  ansible.builtin.systemd:
+    name: gitops-deploy.timer
+    state: started
+    enabled: true
+  ignore_errors: "{{ ansible_check_mode }}"

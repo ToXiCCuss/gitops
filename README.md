@@ -4,8 +4,8 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 
 | Folder | Content |
 |---|---|
-| `ansible/` | Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter, mysqld exporter. Secrets in an ansible-vault file. |
-| `docker/` | One Docker Compose project per service on the Docker host (restic-backup, Databasus, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`. Images are pinned by digest and updated by Renovate. |
+| `ansible/` | Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter, mysqld exporter, the deploy timer of the Docker host. Secrets in an ansible-vault file. |
+| `docker/` | One Docker Compose project per service on the Docker host (restic-backup, Databasus, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`, on the Docker host hourly from 08:00 to 20:00 by a systemd timer. Images are pinned by digest and updated by Renovate. |
 | `istio/` | `IstioOperator` file for the manual `istioctl install` (outside ArgoCD). |
 | `tofu/` | OpenTofu: VMs on the Proxmox host (`tofu/proxmox/`), state in PostgreSQL. Cloud-init installs Ansible and checks out this repository on each VM. |
 | `kubernetes/` | ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, spring). |
@@ -350,6 +350,25 @@ sudo scripts/docker/deploy.sh restic-backup vault-backup # only these
 sudo scripts/docker/deploy.sh --pull rustfs      # git pull --ff-only first
 sudo scripts/docker/deploy.sh --list
 ```
+
+#### Automatic deploy
+
+A merge to `master` is deployed on the Docker host like it is in Argo CD: the systemd timer `gitops-deploy.timer` (Ansible role `gitops_deploy`, host group `gitops_deploy_hosts`) runs `deploy.sh --pull --metrics-file ...` in `/root/gitops` every full hour from 08:00 to 20:00 local time (`gitops_deploy_calendar`), not at night. Only a project whose compose file, image or Vault secret changed is recreated. Rollback is `git revert` on `master`, the next run deploys it.
+
+```bash
+sudo ansible-playbook -i inventory.ini site.yml --tags gitops_deploy --check --diff   # dry run first, in /root/gitops/ansible
+sudo ansible-playbook -i inventory.ini site.yml --tags gitops_deploy
+systemctl list-timers gitops-deploy.timer          # when does it run next
+journalctl -u gitops-deploy -n 100                 # the log of the last runs
+sudo systemctl stop gitops-deploy.timer            # pause it, e.g. while you change files in /root/gitops by hand
+```
+
+- The timer needs the AppRole files `/etc/gitops/role_id` and `/etc/gitops/secret_id` (see [Secrets from Vault](#secrets-from-vault)). Without `role_id` the run is skipped.
+- `git pull --ff-only` fails when the checkout has local changes or a commit that is not on `master`. Then nothing is deployed until you clean it up, and `DockerDeployPullFailed` fires.
+- If Vault is not reachable, the projects with secrets are not deployed (no fallback) and `DockerDeployFailed` fires after 30 minutes.
+- The run leaves its result in the textfile collector of the node_exporter (`/var/lib/prometheus/node-exporter/gitops-deploy.prom`): `gitops_deploy_project_success{project}`, `gitops_deploy_pull_success`, `gitops_deploy_last_success_timestamp_seconds`, `gitops_deploy_last_run_timestamp_seconds` and `gitops_deploy_revision_info{revision}` (the commit that is deployed). The rules are in `kubernetes/monitoring/kubectl/alert-rules.yaml` (`gitops-deploy`) and go through Alertmanager to Discord.
+- Order of the first rollout: merge to `master` (the alert rules go live through Argo CD), `git pull` in `/root/gitops` on the host, then the Ansible command above. `DockerDeployNeverReported` waits 2 hours for that.
+- A manual `deploy.sh` run stays possible and does not touch the metrics (only a run with `--metrics-file` writes them).
 
 `deploy.sh` never removes anything. To take a project down (also one that was already deleted from `docker/`) use `undeploy.sh`. It needs at least one project name, asks before it acts and removes only the containers and networks, the data and the named volumes stay:
 

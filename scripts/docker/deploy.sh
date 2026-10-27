@@ -5,13 +5,16 @@
 # management UI). Idempotent: a project is only recreated when its compose file or
 # its environment changed.
 #
-#   sudo scripts/docker/deploy.sh [--pull] [--adopt] [--list] [project ...]
+#   sudo scripts/docker/deploy.sh [--pull] [--adopt] [--list] [--metrics-file FILE] [project ...]
 #
 #   --pull   git pull --ff-only in the repository first
 #   --adopt  remove an existing container of the same name that belongs to another
 #            Compose project (created by the old management UI) so that it is created
 #            again by this script. Data lives in folders on the host and stays
 #   --list   list the projects and exit
+#   --metrics-file FILE
+#            write the result of the run for the node_exporter textfile collector
+#            (gitops_deploy_* metrics, see the README). The gitops-deploy timer sets it
 #
 # Without a project name all projects are deployed in a fixed order.
 #
@@ -59,6 +62,7 @@ VAULT_TIMEOUT_SECONDS=15
 PULL=""
 ADOPT=""
 LIST=""
+METRICS_FILE=""
 PROJECTS=()
 VAULT_TOKEN=""
 VAULT_ENV_FILES=()
@@ -68,7 +72,9 @@ while [[ $# -gt 0 ]]; do
         --pull)  PULL=1; shift ;;
         --adopt) ADOPT=1; shift ;;
         --list)  LIST=1; shift ;;
-        -h|--help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --metrics-file) [[ -n "${2:-}" ]] || { error "--metrics-file needs a file name"; exit 1; }
+                        METRICS_FILE="$2"; shift 2 ;;
+        -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) error "Unknown argument: $1"; exit 1 ;;
         *)  PROJECTS+=("$1"); shift ;;
     esac
@@ -87,9 +93,64 @@ command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 || {
 
 [[ ${#PROJECTS[@]} -gt 0 ]] || PROJECTS=("${ALL_PROJECTS[@]}")
 
+PULL_OK=1
+FAILED=()
+SUCCEEDED=()
+
+# previous_success_time: the time of the last successful run from the previous metrics file, 0 if there is none
+previous_success_time() {
+    local previous
+    previous=$(sed -n 's/^gitops_deploy_last_success_timestamp_seconds //p' "$METRICS_FILE" 2>/dev/null | head -n 1) || true
+    echo "${previous:-0}"
+}
+
+# print_metrics <now> <time of the last success> <revision>: the metrics of this run in the format of the textfile collector
+print_metrics() {
+    local project
+    printf 'gitops_deploy_pull_success %s
+' "$PULL_OK"
+    printf 'gitops_deploy_last_run_timestamp_seconds %s
+' "$1"
+    printf 'gitops_deploy_last_success_timestamp_seconds %s
+' "$2"
+    printf 'gitops_deploy_revision_info{revision="%s"} 1
+' "$3"
+    for project in ${SUCCEEDED[@]+"${SUCCEEDED[@]}"}; do
+        printf 'gitops_deploy_project_success{project="%s"} 1
+' "$project"
+    done
+    for project in ${FAILED[@]+"${FAILED[@]}"}; do
+        printf 'gitops_deploy_project_success{project="%s"} 0
+' "$project"
+    done
+}
+
+# write_metrics: the result of this run for the textfile collector of the node_exporter. It is written to a
+# temporary file and moved, so the node_exporter never reads a half written file. The time of the last
+# success stays as it was when a run fails, Prometheus alerts when it gets too old
+write_metrics() {
+    local now last_success revision
+    if [[ -n "$METRICS_FILE" ]]; then
+        now=$(date +%s)
+        last_success=$(previous_success_time)
+        if [[ "$PULL_OK" == 1 && ${#FAILED[@]} -eq 0 ]]; then
+            last_success="$now"
+        fi
+        revision=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null) || revision="unknown"
+        if ! print_metrics "$now" "$last_success" "$revision" > "$METRICS_FILE.tmp" || ! mv "$METRICS_FILE.tmp" "$METRICS_FILE"; then
+            warn "Writing the metrics to $METRICS_FILE failed"
+        fi
+    fi
+}
+
 if [[ -n "$PULL" ]]; then
     step "git pull"
-    git -C "$REPO_DIR" pull --ff-only
+    if ! git -C "$REPO_DIR" pull --ff-only; then
+        error "git pull failed (local changes or a diverged branch?), nothing is deployed"
+        PULL_OK=0
+        write_metrics
+        exit 1
+    fi
 fi
 
 # A project gets its secrets from Vault if it names the keys it needs in vault.env.example
@@ -231,7 +292,6 @@ adopt() {
     done
 }
 
-FAILED=()
 for project in "${PROJECTS[@]}"; do
     step "$project"
     dir="$DOCKER_DIR/$project"
@@ -252,6 +312,7 @@ for project in "${PROJECTS[@]}"; do
     [[ -z "$ADOPT" ]] || adopt "$project" "$proj"
     if (cd "$dir" && docker compose -p "$proj" up -d); then
         success "$project is up"
+        SUCCEEDED+=("$project")
     else
         error "$project failed (a container of the same name from another project? try --adopt)"
         FAILED+=("$project")
@@ -260,6 +321,7 @@ for project in "${PROJECTS[@]}"; do
 done
 
 echo
+write_metrics
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     error "Failed: ${FAILED[*]}"
     exit 1

@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+# Deploys the Docker Compose projects of the repository: git pull --ff-only, then every project that
+# changed is recreated. A failed run shows up in the metrics (gitops_deploy_*) and in the alerts.
+[Unit]
+Description=Deploy the Docker Compose projects from the gitops repository
+Wants=network-online.target
+After=network-online.target docker.service
+# Without the AppRole of Vault no project with secrets can be deployed (README: Secrets from Vault)
+ConditionPathExists=/etc/gitops/role_id
+
+[Service]
+Type=oneshot
+ExecStart={{ gitops_deploy_repository_dir }}/scripts/docker/deploy.sh --pull --metrics-file {{ gitops_deploy_metrics_dir }}/gitops-deploy.prom
+TimeoutStartSec=15min

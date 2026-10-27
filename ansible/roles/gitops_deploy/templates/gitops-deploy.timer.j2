@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Deploy the Docker Compose projects from the gitops repository regularly
+
+[Timer]
+OnCalendar={{ gitops_deploy_calendar }}
+RandomizedDelaySec=1min
+
+[Install]
+WantedBy=timers.target

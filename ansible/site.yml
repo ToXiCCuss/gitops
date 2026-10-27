@@ -21,6 +21,7 @@
         - firewall
         - node_exporter
         - docker
+        - gitops_deploy
         - mariadb
         - mariadb_exporter
         - postgresql
@@ -56,6 +57,14 @@
   become: true
   roles:
     - docker
+
+# After Docker and the node_exporter: it needs the Docker host and the textfile collector directory
+- name: Deploy the Docker Compose projects regularly
+  hosts: has_gitops_deploy
+  become: true
+  roles:
+    - role: gitops_deploy
+      tags: gitops_deploy
 
 - name: Install MariaDB
   hosts: has_mariadb
