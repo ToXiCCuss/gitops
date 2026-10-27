@@ -9,3 +9,12 @@ node_exporter_service_name: prometheus-node-exporter
 # Directory of the textfile collector. The backup jobs write their *.prom files there
 # (docker/offsite-sync, docker/vault-backup, docker/restic-backup, scripts/netbird/netbird_backup.sh).
 node_exporter_textfile_dir: /var/lib/prometheus/node-exporter
+
+# Mounts that the filesystem collector leaves out (regular expression). The default of the exporter plus the
+# mounts of the kubelet and of k3s (secrets and shm of every pod are tmpfs mounts): without them a k3s node
+# reports hundreds of mounts that are not disks.
+node_exporter_mount_points_exclude: '^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/storage/.+|var/lib/kubelet/.+|run/k3s/.+)($|/)'
+
+# The update state of the host (reboot needed, pending packages, last run of unattended-upgrades) goes into the
+# textfile collector once an hour, see files/node-update-status.sh
+node_exporter_update_status_interval: 1h

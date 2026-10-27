@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Write the update state of the host regularly
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ node_exporter_update_status_interval }}
+RandomizedDelaySec=1min
+
+[Install]
+WantedBy=timers.target

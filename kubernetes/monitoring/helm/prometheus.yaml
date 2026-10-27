@@ -145,37 +145,11 @@ spec:
                       sourceLabels:
                         - __meta_kubernetes_pod_node_name
                       targetLabel: kubernetes_node
+            # No node-exporter pod: every host (docker01 and the k3s node) runs the exporter from the Ansible role
+            # node_exporter, which also writes the textfile metrics (backups, deploy, updates). The hosts are scraped
+            # by the job node-exporter below. The pod would use the port 9100 of the host as well.
             nodeExporter:
-              enabled: true
-              resources:
-                limits:
-                  memory: 100Mi
-                  cpu: 250m
-              serviceMonitor:
-                relabelings:
-                  - action: replace
-                    regex: (.*)
-                    replacement: $$1
-                    sourceLabels:
-                      - __meta_kubernetes_pod_node_name
-                    targetLabel: kubernetes_node
-            prometheus-node-exporter:
-              fullnameOverride: node-exporter
-              podLabels:
-                jobLabel: node-exporter
-              extraArgs:
-                - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
-                - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$
-              prometheus:
-                monitor:
-                  enabled: true
-                  relabelings:
-                    - action: replace
-                      regex: (.*)
-                      replacement: $$1
-                      sourceLabels:
-                        - __meta_kubernetes_pod_node_name
-                      targetLabel: kubernetes_node
+              enabled: false
             prometheusOperator:
               enabled: true
               resources:
@@ -251,6 +225,8 @@ spec:
                     static_configs:
                       - targets:
                           - docker01.server.lan:9100
+                          # k8sdev01 by its address, like the control plane endpoints above (the pod CIDR may reach the host in UFW)
+                          - 89.144.46.204:9100
                     relabel_configs:
                       - target_label: job
                         replacement: node-exporter

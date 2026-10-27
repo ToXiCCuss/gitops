@@ -18,8 +18,11 @@ postgres_exporter_hosts:
 
 mongodb_hosts: []
 
+# The exporter on the host replaces the node-exporter pod of the Prometheus stack on k8sdev01 (it writes the
+# textfile metrics there too, see README: Node exporter and update monitoring)
 node_exporter_hosts:
    - docker01
+   - k8sdev01
 
 # Hosts with a UFW policy (default deny incoming, rules from host_config).
 # k8sdev01 only allows the k3s pod and service CIDRs: it is reached through NetBird, everything else is denied.

@@ -82,6 +82,26 @@ The role `k3s` runs on the hosts in `k3s_hosts` (`group_vars/all/main.yml`). It 
 - `k8sdev01` has a UFW rule for the pod CIDR `10.42.0.0/16` and the service CIDR `10.43.0.0/16`, so pods can reach the host (for example the API server through the service address). Everything else stays closed, the node is reached through NetBird.
 - Istio is installed by hand after k3s with `istioctl` and `istio/istio-operator.yaml` (see [Istio installation](#istio-installation-istioctl-by-hand)).
 
+### Node exporter and update monitoring
+
+Every host in `node_exporter_hosts` (`docker01` and `k8sdev01`) runs the Debian package `prometheus-node-exporter` with the textfile collector (`/var/lib/prometheus/node-exporter`). The Prometheus stack has no node-exporter pod: it would use the same port 9100, and the textfile metrics (backups, deploy, updates) only exist on the host. Prometheus scrapes both hosts in the job `node-exporter` (`kubernetes/monitoring/helm/prometheus.yaml`). The exporter leaves out the mounts of the kubelet and k3s (`node_exporter_mount_points_exclude`).
+
+The timer `node-update-status.timer` (hourly) runs `/usr/local/bin/node-update-status.sh`, which writes `node-update-status.prom`:
+
+| Metric | Meaning |
+|---|---|
+| `node_reboot_required_since_timestamp_seconds` | Since when a reboot is needed, `0` if none is: `/var/run/reboot-required`, or (Debian does not create that file) the arrival of a kernel image that is newer than the running kernel |
+| `node_pending_updates{type="all\|security"}` | Packages that `apt-get --simulate dist-upgrade` would install or upgrade |
+| `node_unattended_upgrades_last_run_timestamp_seconds` | The last run of unattended-upgrades |
+
+`unattended-upgrades` installs the security updates by itself and never reboots (`unattended_upgrades_reboot: false`), because a reboot of `k8sdev01` stops all Applications for a moment. The alerts in `kubernetes/monitoring/kubectl/alert-rules-os-updates.yaml` go to Discord: `RebootRequired` (more than 7 days), `UnattendedUpgradesStalled` (no run for 3 days) and `SecurityUpdatesPending` (3 days). Reboot `k8sdev01` yourself in a quiet moment (`sudo reboot`, the pods start again by themselves).
+
+Rollout on `k8sdev01` (it had the node-exporter pod before):
+
+1. Merge to `master`. Argo CD removes the pod (the port is free) and Prometheus has a new target `89.144.46.204:9100`, which is down until step 2. `TargetDown` waits 5 minutes, so do step 2 right away.
+2. On `k8sdev01`: `git pull` in `/root/gitops/ansible`, then `ansible-playbook -i inventory.ini site.yml --tags node_exporter --check --diff` and without `--check`. The same run changes `docker01` (new mount filter, update timer).
+3. Check: `systemctl status prometheus-node-exporter node-update-status.timer`, `curl -s localhost:9100/metrics | grep -E "node_pending_updates|node_reboot"` and the target in Prometheus. The old `instance` labels (node name, pod address) of `k8sdev01` end, the dashboards pick the new series up through the job `node-exporter`.
+
 ### Database tuning
 
 The roles `postgresql`, `mariadb` and `mongodb` include the role `database_tuning` at their end. It sets, per database:
