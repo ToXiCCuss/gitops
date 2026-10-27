@@ -21,6 +21,10 @@ mongodb_hosts: []
 node_exporter_hosts:
    - docker01
 
+# Runs deploy.sh regularly (systemd timer). Needs the Docker projects and Vault, so only Docker hosts
+gitops_deploy_hosts:
+   - docker01
+
 # Hosts with a UFW policy (default deny incoming, rules from host_config).
 # k8sdev01 only allows the k3s pod and service CIDRs: it is reached through NetBird, everything else is denied.
 firewall_hosts:

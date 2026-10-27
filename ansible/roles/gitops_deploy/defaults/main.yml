@@ -1,0 +1,10 @@
+---
+# Checkout of this repository on the host. The timer runs deploy.sh from here, after a git pull.
+gitops_deploy_repository_dir: /root/gitops
+
+# How long after the end of a run the next one starts (systemd time span)
+gitops_deploy_interval: 15min
+
+# Textfile collector directory of the node_exporter (the same as node_exporter_textfile_dir in the
+# node_exporter role). deploy.sh leaves the result of every run there, Prometheus alerts on it.
+gitops_deploy_metrics_dir: /var/lib/prometheus/node-exporter
