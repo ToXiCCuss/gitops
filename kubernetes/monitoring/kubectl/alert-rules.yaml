@@ -152,3 +152,51 @@ spec:
             severity: critical
           annotations:
             summary: "Step {{ $labels.step }} of the restic repository {{ $labels.repository }} failed"
+
+---
+
+# deploy.sh --metrics-file (started by the gitops-deploy timer on docker01, Ansible role gitops_deploy) leaves
+# the result of every run in the textfile collector of the node_exporter. A project is deployed within 15 minutes
+# of a merge to master, so a project that stays failed or a timer that does not run means the host differs from Git.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: gitops-deploy
+  namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  groups:
+    - name: gitops-deploy
+      rules:
+        - alert: DockerDeployFailed
+          expr: gitops_deploy_project_success == 0
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The Docker project {{ $labels.project }} cannot be deployed (journalctl -u gitops-deploy on {{ $labels.instance }})"
+        # deploys nothing when the pull fails (local changes in the checkout, a branch that cannot be fast-forwarded)
+        - alert: DockerDeployPullFailed
+          expr: gitops_deploy_pull_success == 0
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "git pull --ff-only fails on {{ $labels.instance }}, no Docker project is deployed (journalctl -u gitops-deploy)"
+        # also fires when the timer is stopped or the AppRole files of Vault are missing (the unit is then skipped)
+        - alert: DockerDeployStale
+          expr: time() - gitops_deploy_last_success_timestamp_seconds > 3600
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The last successful Docker deploy on {{ $labels.instance }} is more than an hour ago"
+        # for: 2h so that the alert does not fire between the merge of the rule and the Ansible run on the host
+        - alert: DockerDeployNeverReported
+          expr: absent(gitops_deploy_last_success_timestamp_seconds)
+          for: 2h
+          labels:
+            severity: warning
+          annotations:
+            summary: "The gitops-deploy timer on docker01 never reported a successful run"
