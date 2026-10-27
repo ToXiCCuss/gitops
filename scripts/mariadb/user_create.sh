@@ -6,7 +6,11 @@
 # of a newly created user goes to Vault (databases/mariadb/<db>_<username>) and is never printed
 # (user_password.sh sets a new one).
 #
+# With only a <username> the database is left out: that is a personal login without access, which
+# person_grant.sh creates, so the call is forwarded there (person_grant.sh adds the databases later).
+#
 # Usage: user_create.sh [--dry-run] <database_name> <username> <role_type: ro|rw|owner>
+#        user_create.sh [--dry-run] <username>
 #        --dry-run  only report what would be changed
 set -euo pipefail
 
@@ -25,12 +29,15 @@ ROLE_RW=""
 ROLE_OWNER=""
 
 usage() {
-  log "Usage: $0 [--dry-run] <database_name> <username> <role_type: ro|rw|owner>"
+  log "Usage: $0 [--dry-run] <database_name> <username> <role_type: ro|rw|owner> | <username>"
   exit "$EXIT_USAGE"
 }
 
 parse_arguments() {
   parse_options "$@"
+  if ((${#POSITIONAL[@]} == 1)); then
+    exec "$(dirname "${BASH_SOURCE[0]}")/person_grant.sh" "$@"
+  fi
   ((${#POSITIONAL[@]} == 3)) || usage
 
   DB_NAME=${POSITIONAL[0]}

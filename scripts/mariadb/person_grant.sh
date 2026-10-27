@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Ensures the personal login <username> and its read-only or read-write access to one database.
+# Ensures the personal login <username> and, if a database is given, its read-only or read-write access to it.
 #
 # One login serves many databases: every run sets the access to a single database, so <username> can be
 # 'ro' in one database and 'rw' in another. MariaDB enables only one default role per connection, so the login
 # gets a role of its own (<username>_role_person) as default role and the access is the membership of that role
-# in <db>_role_ro or <db>_role_rw (created by db_create.sh). A person is never made owner.
+# in <db>_role_ro or <db>_role_rw (created by db_create.sh). A person is never made owner. Without a database
+# only the login is ensured, it has no access until a later run adds one (user_create.sh <username> forwards here).
 #
 # Idempotent: an existing login keeps its password and only gets the role membership it is missing. The password
 # of a newly created login goes to Vault (databases/mariadb/<username>) and is never printed (user_password.sh
 # sets a new one). The script only touches logins that have such a person role, so it cannot change an
 # application login like shop_owner or root.
 #
-# Usage: person_grant.sh [--dry-run] <username> <database_name> <role_type: ro|rw>
+# Usage: person_grant.sh [--dry-run] <username> [<database_name> <role_type: ro|rw>]
 #        --dry-run  only report what would be changed
 set -euo pipefail
 
@@ -31,28 +32,31 @@ ROLE_RW=""
 ROLE_OWNER=""
 
 usage() {
-  log "Usage: $0 [--dry-run] <username> <database_name> <role_type: ro|rw>"
+  log "Usage: $0 [--dry-run] <username> [<database_name> <role_type: ro|rw>]"
   exit "$EXIT_USAGE"
 }
 
 parse_arguments() {
   parse_options "$@"
-  ((${#POSITIONAL[@]} == 3)) || usage
+  ((${#POSITIONAL[@]} == 1 || ${#POSITIONAL[@]} == 3)) || usage
 
   LOGIN=${POSITIONAL[0]}
-  DB_NAME=${POSITIONAL[1]}
   validate_name "username" "$LOGIN" "$MAX_NAME_LENGTH"
-  validate_name "database name" "$DB_NAME" "$MAX_NAME_LENGTH"
   PERSON_ROLE="${LOGIN}_role_person"
-  ROLE_RO="${DB_NAME}_role_ro"
-  ROLE_RW="${DB_NAME}_role_rw"
-  ROLE_OWNER="${DB_NAME}_role_owner"
 
-  case ${POSITIONAL[2]} in
-  ro) TARGET_ROLE=$ROLE_RO ;;
-  rw) TARGET_ROLE=$ROLE_RW ;;
-  *) die "invalid role type '${POSITIONAL[2]}', use 'ro' or 'rw' (owner access is the login ${DB_NAME}_owner of db_create.sh)" ;;
-  esac
+  if ((${#POSITIONAL[@]} == 3)); then
+    DB_NAME=${POSITIONAL[1]}
+    validate_name "database name" "$DB_NAME" "$MAX_NAME_LENGTH"
+    ROLE_RO="${DB_NAME}_role_ro"
+    ROLE_RW="${DB_NAME}_role_rw"
+    ROLE_OWNER="${DB_NAME}_role_owner"
+
+    case ${POSITIONAL[2]} in
+    ro) TARGET_ROLE=$ROLE_RO ;;
+    rw) TARGET_ROLE=$ROLE_RW ;;
+    *) die "invalid role type '${POSITIONAL[2]}', use 'ro' or 'rw' (owner access is the login ${DB_NAME}_owner of db_create.sh)" ;;
+    esac
+  fi
 }
 
 # The names are validated against NAME_PATTERN, so they can be put into the SQL directly
@@ -153,14 +157,20 @@ main() {
   parse_arguments "$@"
   require_commands sudo mariadb openssl
   require_vault_access
-  require_database_and_role
+  if [[ -n $DB_NAME ]]; then
+    require_database_and_role
+  fi
   require_person_login_or_absent
 
   ensure_person_role
   ensure_login
   ensure_person_role_is_default
-  ensure_role_assignment
-  log "Done: $LOGIN on $DB_NAME as ${TARGET_ROLE##*_}"
+  if [[ -n $DB_NAME ]]; then
+    ensure_role_assignment
+    log "Done: $LOGIN on $DB_NAME as ${TARGET_ROLE##*_}"
+  else
+    log "Done: $LOGIN without database access (person_grant.sh $LOGIN <database> <ro|rw> adds it)"
+  fi
 }
 
 main "$@"

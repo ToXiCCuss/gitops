@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Ensures the personal login <username> and its read-only or read-write access to one database.
+# Ensures the personal login <username> and, if a database is given, its read-only or read-write access to it.
 #
 # One login serves many databases: every run sets the access to a single database, so <username> can be
 # 'ro' in one database and 'rw' in another. The access is the membership in <db>_role_ro or <db>_role_rw
-# (created by db_create.sh), a person is never made owner.
+# (created by db_create.sh), a person is never made owner. Without a database only the login is ensured,
+# it has no access until a later run adds one (user_create.sh <username> forwards here).
 #
 # Idempotent: an existing login keeps its password and only gets the membership it is missing. The password
 # of a newly created login goes to Vault (databases/postgresql/<username>) and is never printed
 # (user_password.sh sets a new one). The script only touches logins it created itself (marked with a role
 # comment), so it cannot change an application login like shop_owner or a role like postgres.
 #
-# Usage: person_grant.sh [--dry-run] <username> <database_name> <role_type: ro|rw>
+# Usage: person_grant.sh [--dry-run] <username> [<database_name> <role_type: ro|rw>]
 #        --dry-run  only report what would be changed
 set -euo pipefail
 
@@ -30,27 +31,30 @@ ROLE_RW=""
 ROLE_OWNER=""
 
 usage() {
-  log "Usage: $0 [--dry-run] <username> <database_name> <role_type: ro|rw>"
+  log "Usage: $0 [--dry-run] <username> [<database_name> <role_type: ro|rw>]"
   exit "$EXIT_USAGE"
 }
 
 parse_arguments() {
   parse_options "$@"
-  ((${#POSITIONAL[@]} == 3)) || usage
+  ((${#POSITIONAL[@]} == 1 || ${#POSITIONAL[@]} == 3)) || usage
 
   LOGIN=${POSITIONAL[0]}
-  DB_NAME=${POSITIONAL[1]}
   validate_name "username" "$LOGIN" "$MAX_NAME_LENGTH"
-  validate_name "database name" "$DB_NAME" "$MAX_NAME_LENGTH"
-  ROLE_RO="${DB_NAME}_role_ro"
-  ROLE_RW="${DB_NAME}_role_rw"
-  ROLE_OWNER="${DB_NAME}_role_owner"
 
-  case ${POSITIONAL[2]} in
-  ro) TARGET_ROLE=$ROLE_RO ;;
-  rw) TARGET_ROLE=$ROLE_RW ;;
-  *) die "invalid role type '${POSITIONAL[2]}', use 'ro' or 'rw' (owner access is the login ${DB_NAME}_owner of db_create.sh)" ;;
-  esac
+  if ((${#POSITIONAL[@]} == 3)); then
+    DB_NAME=${POSITIONAL[1]}
+    validate_name "database name" "$DB_NAME" "$MAX_NAME_LENGTH"
+    ROLE_RO="${DB_NAME}_role_ro"
+    ROLE_RW="${DB_NAME}_role_rw"
+    ROLE_OWNER="${DB_NAME}_role_owner"
+
+    case ${POSITIONAL[2]} in
+    ro) TARGET_ROLE=$ROLE_RO ;;
+    rw) TARGET_ROLE=$ROLE_RW ;;
+    *) die "invalid role type '${POSITIONAL[2]}', use 'ro' or 'rw' (owner access is the login ${DB_NAME}_owner of db_create.sh)" ;;
+    esac
+  fi
 }
 
 # The names reach the SQL as psql variables (:"x" is an identifier, :'x' a literal), never by string concatenation
@@ -148,11 +152,17 @@ main() {
   parse_arguments "$@"
   require_commands sudo psql openssl
   require_vault_access
-  require_database_and_role
+  if [[ -n $DB_NAME ]]; then
+    require_database_and_role
+  fi
 
   ensure_login
-  ensure_role_membership
-  log "Done: $LOGIN on $DB_NAME as ${TARGET_ROLE##*_}"
+  if [[ -n $DB_NAME ]]; then
+    ensure_role_membership
+    log "Done: $LOGIN on $DB_NAME as ${TARGET_ROLE##*_}"
+  else
+    log "Done: $LOGIN without database access (person_grant.sh $LOGIN <database> <ro|rw> adds it)"
+  fi
 }
 
 main "$@"
