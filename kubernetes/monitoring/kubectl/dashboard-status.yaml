@@ -871,7 +871,7 @@ data:
         {
           "id": 13,
           "type": "stat",
-          "title": "Docker deploy: last success (alert after 1 h)",
+          "title": "Docker deploy: last success (hourly 08-20, alert after 2 h by day)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -910,11 +910,11 @@ data:
                   },
                   {
                     "color": "yellow",
-                    "value": 1800
+                    "value": 46800
                   },
                   {
                     "color": "red",
-                    "value": 3600
+                    "value": 90000
                   }
                 ]
               }
