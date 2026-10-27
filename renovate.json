@@ -5,6 +5,7 @@
     ":prConcurrentLimitNone",
     ":prHourlyLimitNone"
   ],
+  "timezone": "Europe/Berlin",
   "minimumReleaseAge": "3 days",
   "ignorePaths": [
     "kubernetes/archive/**",
@@ -21,5 +22,42 @@
       "/^kubernetes/[^/]+/kubectl/.+\\.yaml$/",
       "/^kubernetes/argocd-values\\.yaml$/"
     ]
-  }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "k3s version of the Ansible role (the upgrade itself stays manual, see README)",
+      "managerFilePatterns": [
+        "/^ansible/roles/k3s/defaults/main\\.yml$/"
+      ],
+      "matchStrings": [
+        "k3s_version: \"(?<currentValue>v[^\"]+)\""
+      ],
+      "depNameTemplate": "k3s-io/k3s",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\+k3s(?<build>\\d+)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Merge digest and patch updates of these Docker images by themselves. The gitops-deploy timer rolls them out within 15 minutes. Every other image stays a manual review.",
+      "matchManagers": [
+        "docker-compose"
+      ],
+      "matchPackageNames": [
+        "gcr.io/cadvisor/cadvisor",
+        "rclone/rclone",
+        "alpine"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeSchedule": [
+        "after 9am and before 5pm every weekday"
+      ]
+    }
+  ]
 }

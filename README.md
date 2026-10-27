@@ -15,6 +15,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 
 - [Ansible](#ansible)
 - [OpenTofu (Proxmox VMs)](#opentofu-proxmox-vms)
+- [Updates (Renovate)](#updates-renovate)
 - [Docker](#docker)
 - [Kubernetes](#kubernetes)
 
@@ -307,6 +308,15 @@ tofu apply
 After the first boot, check `cloud-init status` on the VM. Then add the host to the Ansible configuration (`ansible/group_vars/all/main.yml`) and run the playbook on the VM from `/root/gitops/ansible`. `tofu output vm_ip_addresses` lists the addresses.
 
 The VMs have `prevent_destroy` set. To remove one on purpose, delete that line in `modules/vm/main.tf` first.
+
+## Updates (Renovate)
+
+Renovate (GitHub app, `renovate.json`) opens a pull request for every new version, after the release is 3 days old (`minimumReleaseAge`). It covers the Helm charts and manifests of `kubernetes/`, the images of `docker/` and `k3s_version` in `ansible/roles/k3s/defaults/main.yml`.
+
+- **Merged by Renovate itself:** digest and patch updates of `gcr.io/cadvisor/cadvisor`, `rclone/rclone` and `alpine` in `docker/`, on weekdays between 9:00 and 17:00 (Europe/Berlin), so a failed deploy is seen the same day. There is no CI check in front of it. The Docker host deploys the merge within 15 minutes (see [Automatic deploy](#automatic-deploy)), a failure goes through the `DockerDeploy*` alerts to Discord, rollback is `git revert`. A new image is added to the list in the `packageRules` of `renovate.json` on purpose, nothing is merged by default.
+- **Reviewed and merged by hand:** everything else. A merge to `master` is live in Argo CD (Kubernetes) or on the Docker host within minutes.
+- **k3s:** the pull request only raises `k3s_version`. The upgrade stays manual (dry run first, see [k3s](#k3s)). Release candidates are ignored.
+- **Not tracked by Renovate:** Istio (`istioctl`), NetBird, Traefik and CrowdSec. Their versions are passed to the scripts or live outside the repository.
 
 ## Docker
 
