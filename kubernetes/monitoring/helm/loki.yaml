@@ -13,7 +13,7 @@ spec:
   source:
     # The chart moved from grafana/helm-charts to grafana-community/helm-charts, like tempo.
     repoURL: https://grafana-community.github.io/helm-charts
-    targetRevision: 19.1.1
+    targetRevision: 19.4.0
     chart: loki
     plugin:
       env:
