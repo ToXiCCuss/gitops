@@ -39,17 +39,6 @@ roles:
         description: Jenkins administrator
       - name: user
         description: Jenkins user, looks at jobs and builds them
-    # viewer may look at the applications, admin may also run actions (loggers, shutdown) in Spring Boot Admin
-    sba-service-dev:
-      - name: viewer
-        description: Spring Boot Admin dev, read only
-      - name: admin
-        description: Spring Boot Admin dev, actions
-    sba-service-prod:
-      - name: viewer
-        description: Spring Boot Admin prod, read only
-      - name: admin
-        description: Spring Boot Admin prod, actions
     # The role names are the policies of RustFS: consoleAdmin may do everything, readwrite and readonly work on the buckets
     rustfs:
       - name: consoleAdmin
@@ -109,66 +98,6 @@ clients:
         protocolMapper: oidc-usermodel-client-role-mapper
         config:
           usermodel.clientRoleMapping.clientId: harbor
-          claim.name: roles
-          jsonType.label: String
-          multivalued: "true"
-          id.token.claim: "true"
-          access.token.claim: "true"
-          userinfo.token.claim: "true"
-
-  - clientId: sba-service-dev
-    name: Spring Boot Admin (dev)
-    protocol: openid-connect
-    enabled: true
-    publicClient: false
-    secret: $(env:SBA_DEV_CLIENT_SECRET)
-    standardFlowEnabled: true
-    directAccessGrantsEnabled: false
-    serviceAccountsEnabled: false
-    rootUrl: https://sba-service-dev.k8sdev.rjst.de
-    redirectUris:
-      - https://sba-service-dev.k8sdev.rjst.de/login/oauth2/code/keycloak
-    webOrigins:
-      - https://sba-service-dev.k8sdev.rjst.de
-    attributes:
-      # Where Keycloak may send the user after the logout of the application (the start page of the stage)
-      post.logout.redirect.uris: https://sba-service-dev.k8sdev.rjst.de/*
-    protocolMappers:
-      - name: sba-service-dev-roles
-        protocol: openid-connect
-        protocolMapper: oidc-usermodel-client-role-mapper
-        config:
-          usermodel.clientRoleMapping.clientId: sba-service-dev
-          claim.name: roles
-          jsonType.label: String
-          multivalued: "true"
-          id.token.claim: "true"
-          access.token.claim: "true"
-          userinfo.token.claim: "true"
-
-  - clientId: sba-service-prod
-    name: Spring Boot Admin (prod)
-    protocol: openid-connect
-    enabled: true
-    publicClient: false
-    secret: $(env:SBA_PROD_CLIENT_SECRET)
-    standardFlowEnabled: true
-    directAccessGrantsEnabled: false
-    serviceAccountsEnabled: false
-    rootUrl: https://sba-service-prod.k8sdev.rjst.de
-    redirectUris:
-      - https://sba-service-prod.k8sdev.rjst.de/login/oauth2/code/keycloak
-    webOrigins:
-      - https://sba-service-prod.k8sdev.rjst.de
-    attributes:
-      # Where Keycloak may send the user after the logout of the application (the start page of the stage)
-      post.logout.redirect.uris: https://sba-service-prod.k8sdev.rjst.de/*
-    protocolMappers:
-      - name: sba-service-prod-roles
-        protocol: openid-connect
-        protocolMapper: oidc-usermodel-client-role-mapper
-        config:
-          usermodel.clientRoleMapping.clientId: sba-service-prod
           claim.name: roles
           jsonType.label: String
           multivalued: "true"

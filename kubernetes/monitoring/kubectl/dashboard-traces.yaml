@@ -58,23 +58,6 @@ data:
             ]
           },
           {
-            "type": "textbox",
-            "name": "exclude",
-            "label": "Exclude services (regex)",
-            "query": ".*sba-service.*",
-            "current": {
-              "text": ".*sba-service.*",
-              "value": ".*sba-service.*"
-            },
-            "options": [
-              {
-                "selected": true,
-                "text": ".*sba-service.*",
-                "value": ".*sba-service.*"
-              }
-            ]
-          },
-          {
             "type": "custom",
             "name": "minDuration",
             "label": "Slow from",
@@ -147,7 +130,7 @@ data:
                 "uid": "tempo"
               },
               "queryType": "traceql",
-              "query": "{ resource.service.name =~ \"$stage\" && resource.service.name !~ \"$exclude\" }",
+              "query": "{ resource.service.name =~ \"$stage\" }",
               "limit": 50,
               "tableType": "traces",
               "refId": "A"
@@ -182,7 +165,7 @@ data:
                 "uid": "tempo"
               },
               "queryType": "traceql",
-              "query": "{ resource.service.name =~ \"$stage\" && resource.service.name !~ \"$exclude\" && duration > $minDuration }",
+              "query": "{ resource.service.name =~ \"$stage\" && duration > $minDuration }",
               "limit": 50,
               "tableType": "traces",
               "refId": "A"
@@ -217,7 +200,7 @@ data:
                 "uid": "tempo"
               },
               "queryType": "traceql",
-              "query": "{ resource.service.name =~ \"$stage\" && resource.service.name !~ \"$exclude\" && status = error }",
+              "query": "{ resource.service.name =~ \"$stage\" && status = error }",
               "limit": 50,
               "tableType": "traces",
               "refId": "A"

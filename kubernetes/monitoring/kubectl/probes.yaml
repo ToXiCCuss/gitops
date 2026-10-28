@@ -52,5 +52,3 @@ spec:
         - https://freewar-chaos-service-prod.k8sdev.rjst.de
         - https://freewar-digmap-dev.k8sdev.rjst.de
         - https://freewar-digmap-prod.k8sdev.rjst.de
-        - https://sba-service-dev.k8sdev.rjst.de
-        - https://sba-service-prod.k8sdev.rjst.de

@@ -1,6 +1,6 @@
 # Grafana picks this up through the dashboard sidecar (label grafana_dashboard, all namespaces).
 # Calls, errors and latency per service from the span metrics Tempo writes to Prometheus (see helm/tempo.yaml),
-# plus the service graph. The variable "exclude" hides services by regex (default: the sba-services).
+# plus the service graph.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -29,25 +29,7 @@ data:
       },
       "editable": true,
       "templating": {
-        "list": [
-          {
-            "type": "textbox",
-            "name": "exclude",
-            "label": "Exclude services (regex)",
-            "query": ".*sba-service.*",
-            "current": {
-              "text": ".*sba-service.*",
-              "value": ".*sba-service.*"
-            },
-            "options": [
-              {
-                "selected": true,
-                "text": ".*sba-service.*",
-                "value": ".*sba-service.*"
-              }
-            ]
-          }
-        ]
+        "list": []
       },
       "panels": [
         {
@@ -70,7 +52,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (service) (increase(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\", service!~\"$exclude\"}[$__range]))",
+              "expr": "sum by (service) (increase(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\"}[$__range]))",
               "legendFormat": "{{service}}",
               "instant": true,
               "range": false,
@@ -114,7 +96,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\", service!~\"$exclude\"}[$__rate_interval]))",
+              "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\"}[$__rate_interval]))",
               "legendFormat": "{{service}}",
               "instant": false,
               "range": true,
@@ -155,7 +137,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\", status_code=\"STATUS_CODE_ERROR\", service!~\"$exclude\"}[$__rate_interval]))",
+              "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\", status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval]))",
               "legendFormat": "{{service}}",
               "instant": false,
               "range": true,
@@ -196,7 +178,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "histogram_quantile(0.95, sum by (le, service) (rate(traces_spanmetrics_latency_bucket{span_kind=\"SPAN_KIND_SERVER\", service!~\"$exclude\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le, service) (rate(traces_spanmetrics_latency_bucket{span_kind=\"SPAN_KIND_SERVER\"}[$__rate_interval])))",
               "legendFormat": "{{service}}",
               "instant": false,
               "range": true,
@@ -237,7 +219,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (client, server) (increase(traces_service_graph_request_total{client!~\"$exclude\", server!~\"$exclude\"}[$__range]))",
+              "expr": "sum by (client, server) (increase(traces_service_graph_request_total{}[$__range]))",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -280,7 +262,7 @@ data:
                 "uid": "tempo"
               },
               "queryType": "serviceMap",
-              "serviceMapQuery": "{client!~\"$exclude\", server!~\"$exclude\"}",
+              "serviceMapQuery": "{}",
               "refId": "A"
             }
           ],
