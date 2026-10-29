@@ -47,6 +47,13 @@ roles:
         description: RustFS, reads and writes objects
       - name: readonly
         description: RustFS, read only
+    # admin makes a Forgejo site admin, user may log in (publish and read packages). Forgejo refuses a user without a role
+    # (required claim roles of the auth source keycloak in kubernetes/cicd/helm/forgejo.yaml)
+    forgejo:
+      - name: admin
+        description: Forgejo site admin
+      - name: user
+        description: Forgejo user, publishes and reads packages
 
 clients:
   - clientId: grafana
@@ -189,6 +196,46 @@ clients:
           claim.name: roles
           jsonType.label: String
           multivalued: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+
+  - clientId: forgejo
+    name: Forgejo
+    protocol: openid-connect
+    enabled: true
+    publicClient: false
+    secret: $(env:FORGEJO_CLIENT_SECRET)
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    rootUrl: https://forgejo.k8sdev.rjst.de
+    redirectUris:
+      # The path ends in the name of the auth source in Forgejo (keycloak)
+      - https://forgejo.k8sdev.rjst.de/user/oauth2/keycloak/callback
+    webOrigins:
+      - https://forgejo.k8sdev.rjst.de
+    protocolMappers:
+      - name: forgejo-roles
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-client-role-mapper
+        config:
+          usermodel.clientRoleMapping.clientId: forgejo
+          claim.name: roles
+          jsonType.label: String
+          multivalued: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+      # Forgejo names a new user after the claim nickname (oauth2_client USERNAME in kubernetes/cicd/helm/forgejo.yaml), Keycloak leaves it empty
+      # by default: fill it with the Keycloak username
+      - name: forgejo-nickname
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-property-mapper
+        config:
+          user.attribute: username
+          claim.name: nickname
+          jsonType.label: String
           id.token.claim: "true"
           access.token.claim: "true"
           userinfo.token.claim: "true"

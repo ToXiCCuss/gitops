@@ -863,7 +863,7 @@ kubernetes/<domain>/
 
 1. infra (cert-manager, ClusterIssuer, Istio security policies, NetBird operator)
 2. monitoring (Prometheus, exporters, Istio dashboards)
-3. cicd (Harbor, Artifactory, Jenkins)
+3. cicd (Harbor, Jenkins, Forgejo)
 4. management (Portal)
 5. kafka (Strimzi, Apicurio Registry, AKHQ)
 6. spring
@@ -1055,6 +1055,7 @@ Every app is reached as `https://<app>.k8sdev.rjst.de` (see the next section): i
 | Apicurio Registry | `apicurio.k8sdev.rjst.de` | `example-apicurioregistry-mem-service.kafka:8080` | 8450 |
 | Portal | `portal.k8sdev.rjst.de` | `portal.portal:80` | 8451 |
 | Prometheus | `prometheus.k8sdev.rjst.de` | `prometheus-prometheus.prometheus:9090` | 8452 |
+| Forgejo | `forgejo.k8sdev.rjst.de` | `forgejo-http.forgejo:3000` | 8453 |
 
 Each app needs the CNAME, the `<app>-users` distribution group and the policy from above. The nodes need access to pull from Harbor too (`harbor.k8sdev.rjst.de` has a valid certificate, so k3s needs no insecure-registry setting): put the node peers into `harbor-users`.
 
@@ -1109,6 +1110,17 @@ A new private key (for example when the old file is lost): generate one in the s
 ```
 
 Build history lives only in the Jenkins volume, it is not backed up.
+
+#### Forgejo (package registry)
+
+`cicd/helm/forgejo.yaml` runs Forgejo (the LTS line, rootless image) as the package registry of the own libraries: Maven, and npm or Helm if needed. Container images stay in Harbor (its pull-through cache feeds k3s), Git stays on GitHub, so SSH and Actions are off. The chart creates everything at every start of the pod: the config, the local admin `localadmin` (the emergency login, password from Vault) and the auth source `keycloak`. Users log in with Keycloak only, there is no registration form and no anonymous access.
+
+- **Before the first sync:** `scripts/postgresql/db_create.sh forgejo` on docker01 (the password of `forgejo_owner` goes to Vault `databases/postgresql/forgejo_owner`), then `generate-secrets.ps1` (step 3): it generates `argocd/data/forgejo` (`admin.password`, `oidc.client_secret`, `security.secret_key`, `security.internal_token`) and asks for the database user and password. `security.secret_key` encrypts the secrets in the database (the client secret of the auth source, 2FA): never change it.
+- **Keycloak:** the client `forgejo` in `docker/keycloak-config/realms/rjst.yaml`. Its secret goes into the Vault secret `docker/keycloak-config` as `FORGEJO_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/forgejo`) before the merge (the variable is required, without it the deploy timer fails on `keycloak-config`), then `sudo scripts/docker/deploy.sh keycloak-config`. Give the users the client role `forgejo` `user` or `admin`: a user without one is refused, `admin` makes a site admin. The first login creates the user, named after the Keycloak username (claim `nickname`).
+- **NetBird:** the CNAME `forgejo` in the zone and the policy `forgejo-users` -> `k8s-forgejo` on TCP 443 (see step 5).
+- **Maven:** the packages belong to a user or an organization (e.g. an organization `rjst`). The repository URL is `https://forgejo.k8sdev.rjst.de/api/packages/<owner>/maven`, the same for `<distributionManagement>` (releases and snapshots) and `<repositories>`. Maven logs in with the Forgejo username and an access token with the scope `package` (**Settings > Applications**) in a `<server>` of `settings.xml`, never with the Keycloak password. Pods in the cluster reach the URL through the CoreDNS rewrite to the internal gateway.
+
+The packages live only in the Forgejo volume, it is not backed up. The database is dumped by `restic-backup` like every other on docker01.
 
 #### 6. Verify
 
