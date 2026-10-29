@@ -5,16 +5,18 @@
 #               annotations on the VirtualService: portal.rjst.de/name, /group, /description,
 #               /icon (a devicon.dev name such as argocd, or name/variant such as jenkins/plain;
 #               an https:// URL to an image for what devicon does not have, e.g. Keycloak and NetBird;
-#               anything else is shown as text, e.g. an emoji), /hidden: "true", /stage, /version.
+#               anything else is shown as text, e.g. an emoji), /hidden: "true", /stage, /version,
+#               /public: "true" (reachable from the Internet, not only through NetBird: a "public" badge).
 #               A VirtualService in one of the STAGE_NAMESPACES (dev, prod, ...) is an app with
 #               a stage: one card per app, one link per stage, name from the app label,
 #               version from app.kubernetes.io/version.
 #   Docker      every service in docker/*/docker-compose.yml that has the labels portal.name
 #               and portal.url (the NetBird reverse proxy address, https://<app>.proxy.rjst.de);
-#               optional portal.group, portal.description, portal.icon (devicon.dev name or https:// URL). The repository is read
+#               optional portal.group, portal.description, portal.icon (devicon.dev name or https:// URL),
+#               portal.public: "true" (the NetBird proxy entry is public, not peers only). The repository is read
 #               from Git, so a service shows up once it is merged, not once it runs.
 #   Static      the env var STATIC_SERVICES of the generator container: a JSON list of
-#               {name, url, group, description, icon} for what is neither of the above (NetBird).
+#               {name, url, group, description, icon, public} for what is neither of the above (NetBird).
 #
 # The sidecar renders /data/services.json every minute, nginx serves it next to index.html.
 # Own Gateway/Service/listener/NetBird resource - see kube-istio-internal.yaml.
@@ -127,7 +129,8 @@ data:
                  description: ($a["portal.rjst.de/description"] // ""),
                  icon: ($a["portal.rjst.de/icon"] // (if $l["app.kubernetes.io/name"] == "spring-boot" then "spring" else "" end)),
                  stage: $stage,
-                 version: ($a["portal.rjst.de/version"] // $l["app.kubernetes.io/version"] // "") }]' \
+                 version: ($a["portal.rjst.de/version"] // $l["app.kubernetes.io/version"] // ""),
+                 public: (($a["portal.rjst.de/public"] // "") == "true") }]' \
           "$WORK/vs.raw" > "$WORK/k8s.json.new" && mv "$WORK/k8s.json.new" "$WORK/k8s.json"
       else
         echo "kubectl failed: $(cat "$WORK/err")" >&2
@@ -152,7 +155,8 @@ data:
                   url: .["portal.url"],
                   group: (.["portal.group"] // "Docker"),
                   description: (.["portal.description"] // ""),
-                  icon: (.["portal.icon"] // "") }]' \
+                  icon: (.["portal.icon"] // ""),
+                  public: ((.["portal.public"] // "" | tostring) == "true") }]' \
           > "$WORK/docker.json.new" && mv "$WORK/docker.json.new" "$WORK/docker.json"
       fi
 
@@ -199,10 +203,11 @@ data:
     <style>
       :root {
         --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #646d78;
-        --line: #dfe3e8; --accent: #2f6fed;
+        --line: #dfe3e8; --accent: #2f6fed; --public: #b35c00;
       }
       @media (prefers-color-scheme: dark) {
-        :root { --bg: #111418; --card: #1a1f26; --text: #e7eaee; --muted: #8b95a1; --line: #2a313b; --accent: #6b9bff; }
+        :root { --bg: #111418; --card: #1a1f26; --text: #e7eaee; --muted: #8b95a1; --line: #2a313b; --accent: #6b9bff;
+                --public: #f0a35e; }
       }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
@@ -223,6 +228,8 @@ data:
       .icon.img { background: #fff; border: 1px solid var(--line); }
       .icon img { width: 22px; height: 22px; }
       .name { font-weight: 600; }
+      .public { margin-left: 6px; padding: 0 7px; border: 1px solid var(--public); border-radius: 999px;
+                color: var(--public); font-size: 11px; font-weight: 600; vertical-align: 1px; }
       .desc, .host { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
       div.card { cursor: default; }
       .stages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -306,7 +313,13 @@ data:
             if (!staged) { card.href = s.url; card.target = "_blank"; card.rel = "noopener"; }
             card.append(iconEl(s));
             const text = el("div");
-            text.append(el("div", "name", s.name));
+            const name = el("div", "name", s.name);
+            if (s.public) {
+              const badge = el("span", "public", "public");
+              badge.title = "Reachable from the Internet, not only through NetBird";
+              name.append(badge);
+            }
+            text.append(name);
             if (!staged) text.append(el("div", "desc", s.description || new URL(s.url).host));
             else {
               if (s.description) text.append(el("div", "desc", s.description));
@@ -431,7 +444,7 @@ spec:
             - name: STATIC_SERVICES
               value: |
                 [{"name": "NetBird", "url": "https://proxy.rjst.de", "group": "Platform",
-                  "description": "VPN and access management",
+                  "description": "VPN and access management", "public": true,
                   "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/netbird.svg"},
                  {"name": "Hetzner", "url": "https://www.hetzner.com/de/", "group": "External",
                   "description": "Servers and hosting",

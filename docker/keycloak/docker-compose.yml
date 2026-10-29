@@ -19,6 +19,7 @@ services:
       portal.name: "Keycloak"
       portal.url: "https://auth.proxy.rjst.de"
       portal.group: "Platform"
+      portal.public: "true"
       portal.description: "Login and identities"
       portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/keycloak.svg"
     # A process in the container cannot gain more privileges than it started with (setuid binaries, file capabilities)

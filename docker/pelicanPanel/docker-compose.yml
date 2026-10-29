@@ -25,7 +25,8 @@ services:
       # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
       portal.name: "Pelican Panel"
       portal.url: "https://webinterface.proxy.rjst.de"
-      portal.group: "Docker"
+      portal.group: "Platform"
+      portal.public: "true"
       portal.description: "Game server management"
       portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/pelican-panel.svg"
 

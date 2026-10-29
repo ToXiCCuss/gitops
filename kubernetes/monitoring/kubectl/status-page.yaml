@@ -61,6 +61,7 @@ metadata:
     portal.rjst.de/name: Status
     portal.rjst.de/group: Monitoring
     portal.rjst.de/description: Public status page
+    portal.rjst.de/public: "true"
     portal.rjst.de/icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/gatus.svg
 spec:
   hosts:

@@ -31,7 +31,7 @@ services:
       # points to the console (9001)
       portal.name: "RustFS"
       portal.url: "https://s3-admin.proxy.rjst.de"
-      portal.group: "Backup"
+      portal.group: "Monitoring"
       portal.description: "S3 storage"
       portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/rustfs.svg"
     # A process in the container cannot gain more privileges than it started with (setuid binaries, file capabilities)
