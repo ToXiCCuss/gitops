@@ -1,0 +1,110 @@
+# NetBird groups exist only while this app is deployed (destination k8s-forgejo, users forgejo-users).
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: k8s-forgejo
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: k8s-forgejo
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: forgejo-users
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: forgejo-users
+
+---
+
+# forgejo: https://forgejo.k8sdev.rjst.de -> forgejo-http.forgejo:3000
+# Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: forgejo
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: internal-gateway
+  servers:
+    - port:
+        number: 8453
+        name: https-forgejo
+        protocol: HTTPS
+      hosts:
+        - forgejo.k8sdev.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: k8sdev-wildcard-tls
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gw-forgejo
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  type: ClusterIP
+  selector:
+    app: internal-gateway
+    istio: internal-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8453
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: forgejo
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: Forgejo
+    portal.rjst.de/group: Platform
+    portal.rjst.de/description: Package registry (Maven)
+    portal.rjst.de/icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/forgejo.svg
+spec:
+  hosts:
+    - forgejo.k8sdev.rjst.de
+  gateways:
+    - forgejo
+  http:
+    - route:
+        - destination:
+            host: forgejo-http.forgejo.svc.cluster.local
+            port:
+              number: 3000
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: gw-forgejo
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: gw-forgejo
+  groups:
+    - name: k8s-forgejo
+    - name: kubernetes-services

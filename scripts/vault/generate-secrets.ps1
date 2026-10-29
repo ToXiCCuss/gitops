@@ -4,12 +4,13 @@
     writes them into Vault (KV v2), so ArgoCD's AVP plugin can render them.
 
 .DESCRIPTION
-    - Freely generatable secrets (Harbor/Jenkins/Grafana admin passwords, the OIDC client secrets of Grafana, Harbor, Jenkins and Vault)
+    - Freely generatable secrets (Harbor/Jenkins/Grafana/Forgejo admin passwords, the OIDC client secrets of Grafana, Harbor, Jenkins,
+      Vault and Forgejo, the secret key and internal token of Forgejo)
       are generated locally and written to Vault, but never replace a value
       that already exists.
     - External values are prompted for interactively and written to Vault:
       the Hetzner and NetBird API tokens, the docker01 DB credentials for
-      Harbor. Leave blank to skip a value - existing Vault
+      Harbor and Forgejo. Leave blank to skip a value - existing Vault
       data for that key is left untouched.
     - Safe to re-run: it asks before overwriting a value you provide if it
       already has one.
@@ -123,6 +124,11 @@ Set-VaultKV -Path "prometheus" -Data @{ "oidc.client_secret" = (New-RandomSecret
 Set-VaultKV -Path "harbor" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "jenkins" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "vault" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
+# security.secret_key encrypts the secrets in the Forgejo database: SkipExisting keeps it, a new value would make them unreadable
+Set-VaultKV -Path "forgejo" -Data @{ "admin.password" = (New-RandomSecret) } -SkipExisting
+Set-VaultKV -Path "forgejo" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
+Set-VaultKV -Path "forgejo" -Data @{ "security.secret_key" = (New-RandomSecret -Length 64) } -SkipExisting
+Set-VaultKV -Path "forgejo" -Data @{ "security.internal_token" = (New-RandomSecret -Length 64) } -SkipExisting
 
 # ── 2. External values that must match reality - prompt, never generate ───
 Write-Step "External values (leave blank to skip / keep existing)"
@@ -139,6 +145,14 @@ $harborDbUser = Read-Host "Harbor external DB username (blank to skip)"
 if ($harborDbUser) {
     $harborDbPass = Read-OptionalSecret "Harbor external DB password"
     Set-VaultKV -Path "harbor" -Data @{ "database.username" = $harborDbUser; "database.password" = $harborDbPass }
+}
+
+Write-Warn2 "For Forgejo, run scripts/postgresql/db_create.sh forgejo on docker01 first - the password of forgejo_owner is in Vault databases/postgresql/forgejo_owner."
+
+$forgejoDbUser = Read-Host "Forgejo external DB username (blank to skip)"
+if ($forgejoDbUser) {
+    $forgejoDbPass = Read-OptionalSecret "Forgejo external DB password"
+    Set-VaultKV -Path "forgejo" -Data @{ "database.username" = $forgejoDbUser; "database.password" = $forgejoDbPass }
 }
 
 Write-Step "Done"

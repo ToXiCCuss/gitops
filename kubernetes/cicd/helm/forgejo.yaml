@@ -1,0 +1,105 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: forgejo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  destination:
+    namespace: forgejo
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    # OCI chart: a repoURL without a scheme is pulled as OCI. Chart 17.x is Forgejo 15, the LTS line (supported until 2027-07)
+    repoURL: code.forgejo.org/forgejo-helm
+    chart: forgejo
+    targetRevision: 17.3.2
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            # Package registry of the own libraries (Maven, npm, OCI, Helm ...). Git stays on GitHub: no SSH, no Actions.
+            # The users come from Keycloak only, localadmin is the emergency login.
+            gitea:
+              admin:
+                username: localadmin
+                password: <path:argocd/data/forgejo#admin.password>
+                email: localadmin@forgejo.k8sdev.rjst.de
+                passwordMode: keepUpdated
+              # Login with Keycloak (realm rjst, client forgejo). The name is part of the redirect URI of the client.
+              # The client roles of forgejo arrive as the claim roles: a user without one is refused, admin makes a site admin.
+              oauth:
+                - name: keycloak
+                  provider: openidConnect
+                  key: forgejo
+                  secret: <path:argocd/data/forgejo#oidc.client_secret>
+                  autoDiscoverUrl: https://auth.proxy.rjst.de/realms/rjst/.well-known/openid-configuration
+                  scopes: profile,email
+                  requiredClaimName: roles
+                  groupClaimName: roles
+                  adminGroup: admin
+              config:
+                APP_NAME: Forgejo
+                server:
+                  # Part of every package URL (Maven <repository>), choose it once
+                  ROOT_URL: https://forgejo.k8sdev.rjst.de/
+                  DOMAIN: forgejo.k8sdev.rjst.de
+                  DISABLE_SSH: true
+                  START_SSH_SERVER: false
+                database:
+                  DB_TYPE: postgres
+                  HOST: docker01.server.lan:5432
+                  NAME: forgejo
+                  USER: <path:argocd/data/forgejo#database.username>
+                  PASSWD: <path:argocd/data/forgejo#database.password>
+                security:
+                  INSTALL_LOCK: true
+                  # Encrypts the secrets in the database (2FA, the client secret of the auth source): never change it
+                  SECRET_KEY: <path:argocd/data/forgejo#security.secret_key>
+                  INTERNAL_TOKEN: <path:argocd/data/forgejo#security.internal_token>
+                # No registration form and no anonymous access: an account is created at the first login with Keycloak
+                service:
+                  DISABLE_REGISTRATION: false
+                  ALLOW_ONLY_EXTERNAL_REGISTRATION: true
+                  SHOW_REGISTRATION_BUTTON: false
+                  REQUIRE_SIGNIN_VIEW: true
+                openid:
+                  ENABLE_OPENID_SIGNIN: false
+                  ENABLE_OPENID_SIGNUP: false
+                # The username is the claim nickname, which the client forgejo fills with the Keycloak username
+                oauth2_client:
+                  ENABLE_AUTO_REGISTRATION: true
+                  USERNAME: nickname
+                  UPDATE_AVATAR: false
+                # Forgejo is no login provider for other apps and runs no CI
+                oauth2:
+                  ENABLED: false
+                actions:
+                  ENABLED: false
+                picture:
+                  DISABLE_GRAVATAR: true
+                packages:
+                  ENABLED: true
+            # The packages live on this volume, it is not backed up (like the other PVCs)
+            persistence:
+              size: 10Gi
+            # Starting values without measurements: small requests, memory limit with headroom. Check the real
+            # use in the Kubernetes dashboards after the sync and tighten them.
+            resources:
+              requests: {cpu: 50m, memory: 128Mi}
+              limits: {cpu: "1", memory: 512Mi}
+            # The init containers run the database migrations and sync the admin and the auth source keycloak
+            initContainers:
+              resources:
+                requests: {cpu: 100m, memory: 128Mi}
+                limits: {cpu: "1", memory: 512Mi}
+            # The test pod of the chart pulls busybox:latest
+            test:
+              enabled: false
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
