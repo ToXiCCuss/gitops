@@ -19,6 +19,7 @@
 #               {name, url, group, description, icon, public} for what is neither of the above (NetBird).
 #
 # The sidecar renders /data/services.json every minute, nginx serves it next to index.html.
+# After a change of the ConfigMap raise portal.rjst.de/config-revision in the Deployment (restart).
 # Own Gateway/Service/listener/NetBird resource - see kube-istio-internal.yaml.
 apiVersion: v1
 kind: Namespace
@@ -379,6 +380,10 @@ spec:
     metadata:
       labels:
         app: portal
+      # Raise it with every change of the ConfigMap portal-generator: the pod does not restart on its own,
+      # the generator loop keeps the old script and the subPath mount of index.html never updates.
+      annotations:
+        portal.rjst.de/config-revision: "2"
     spec:
       serviceAccountName: portal
       securityContext:
