@@ -7,7 +7,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 | `ansible/` | Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter, mysqld exporter, the deploy timer of the Docker host. Secrets in an ansible-vault file. |
 | `docker/` | One Docker Compose project per service on the Docker host (restic-backup, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`, on the Docker host hourly from 08:00 to 20:00 by a systemd timer. Images are pinned by digest and updated by Renovate. |
 | `istio/` | `IstioOperator` file for the manual `istioctl install` (outside ArgoCD). |
-| `tofu/` | OpenTofu: VMs on the Proxmox host (`tofu/proxmox/`), state in PostgreSQL. Cloud-init installs Ansible and checks out this repository on each VM. |
+| `tofu/` | OpenTofu: VMs on the Proxmox host (`tofu/proxmox/`), state in the RustFS S3 (bucket `tofu-state`). Cloud-init installs Ansible and checks out this repository on each VM. |
 | `kubernetes/` | ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, spring). |
 | `scripts/` | Helper scripts: Ansible secrets, backup host setup, Vault (PowerShell), database administration, Linux benchmarks. |
 
@@ -292,20 +292,16 @@ Run everything in this section from the `tofu/proxmox/` folder.
 
 ### Setup
 
-1. Create the state database on the Docker host. The script stores the password of the user `tofu_state_owner` in Vault (`databases/postgresql/tofu_state_owner`, see [Database passwords in Vault](#database-passwords-in-vault)). `restic-backup` finds the database `tofu_state` on its own, so the state is part of the backups. The PostgreSQL host must not be a VM managed by this state:
-
-   ```bash
-   sudo scripts/postgresql/db_create.sh tofu_state
-   ```
-
+1. Create the S3 identity `tofu-state` (bucket `tofu-state`) for RustFS: run `scripts/vault/create-s3-identities.ps1` for its key in Vault (`docker/s3/tofu-state`), then `scripts/docker/setup-rustfs.sh` on the Docker host. The state is part of the local S3 and reaches pCloud with the offsite sync.
 2. Copy `backend.hcl.example` to `backend.hcl` (ignored by Git) and fill in the address of the Docker host (reached through NetBird).
 3. Replace every `CHANGE_ME` in `terraform.tfvars`.
-4. Set the secrets in the shell, never in a file:
+4. Set the secrets in the shell, never in a file. The S3 keys come from Vault (`docker/s3/tofu-state`, `access_key` and `secret_key`):
 
    ```powershell
    $env:PROXMOX_VE_ENDPOINT = "https://<proxmox-host>:8006/"
    $env:PROXMOX_VE_API_TOKEN = "<user>@<realm>!<token-name>=<secret>"
-   $env:PGPASSWORD = "<password of tofu_state_owner>"
+   $env:AWS_ACCESS_KEY_ID = "<access_key of docker/s3/tofu-state>"
+   $env:AWS_SECRET_ACCESS_KEY = "<secret_key of docker/s3/tofu-state>"
    $env:TF_ENCRYPTION = 'key_provider "pbkdf2" "state" { passphrase = "<at least 16 characters>" }'
    ```
 
@@ -315,7 +311,7 @@ Run everything in this section from the `tofu/proxmox/` folder.
    tofu init -backend-config=backend.hcl
    ```
 
-The passphrase in `TF_ENCRYPTION` encrypts the state and the plan (they contain the cloud-init content). Keep it in the password manager: without it the state cannot be read. The `pg` backend locks the state with an advisory lock of PostgreSQL. The connection uses `sslmode=disable` because it runs through NetBird and PostgreSQL has no TLS.
+The passphrase in `TF_ENCRYPTION` encrypts the state and the plan (they contain the cloud-init content). Keep it in the password manager: without it the state cannot be read. The `s3` backend locks the state with a lock file in the bucket (`use_lockfile`). The connection is plain HTTP because it runs through NetBird (WireGuard).
 
 ### Add a VM
 

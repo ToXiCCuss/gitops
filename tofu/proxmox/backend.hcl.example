@@ -1,3 +1,5 @@
-# Copy to backend.hcl (ignored by Git) and fill in. The password is not part of it: set PGPASSWORD in the shell.
-# sslmode=disable: the connection runs through NetBird (WireGuard), PostgreSQL itself has no TLS.
-conn_str = "postgres://tofu_state_owner@<docker-host>:5432/tofu_state?sslmode=disable"
+# Copy to backend.hcl (ignored by Git) and fill in. The keys are not part of it: set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the shell.
+# RustFS on the Docker host, reached through NetBird (WireGuard), so plain HTTP.
+endpoints = {
+  s3 = "http://<docker-host>:9000"
+}

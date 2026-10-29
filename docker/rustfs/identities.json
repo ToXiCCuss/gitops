@@ -1,10 +1,11 @@
 {
-  "buckets": ["backups", "databases", "vault", "pelican", "netbird"],
+  "buckets": ["backups", "databases", "vault", "pelican", "netbird", "tofu-state"],
   "identities": [
     { "name": "restic-backup", "access": "readwrite", "buckets": ["backups", "databases", "vault", "netbird"] },
     { "name": "vault", "access": "readwrite", "buckets": ["vault"] },
     { "name": "pelican", "access": "readwrite", "buckets": ["pelican"] },
     { "name": "netbird", "access": "readwrite", "buckets": ["netbird"] },
-    { "name": "offsite-sync", "access": "read", "buckets": ["backups", "databases", "vault", "pelican", "netbird"] }
+    { "name": "tofu-state", "access": "readwrite", "buckets": ["tofu-state"] },
+    { "name": "offsite-sync", "access": "read", "buckets": ["backups", "databases", "vault", "pelican", "netbird", "tofu-state"] }
   ]
 }
