@@ -595,10 +595,10 @@ The dumps are plain SQL files, one per database, in the repository `databases`: 
    ```
 
 2. On a new server: run the Ansible role `postgresql` (PostgreSQL 18 with `pg_cron` and `pg_partman`), restore `globals.sql` for the roles (their passwords are set with `user_password.sh` afterwards, they are in Vault only), create the database with `db_create.sh <name>` and the backup role with `backup_user_create.sh`.
-3. Load the dump. Restore into a scratch database first to look at the result. The extensions `pg_cron` and `pg_partman` must exist on the target server:
+3. Load the dump. Restore into a scratch database first to look at the result. The extensions `pg_cron` and `pg_partman` must exist on the target server. The shell reads the file (`<`), because the user `postgres` cannot enter `/root` where the restore folder is:
 
    ```bash
-   sudo -u postgres psql --set ON_ERROR_STOP=on --dbname <database> --file <folder>/dump/postgresql/<database>.sql
+   sudo -u postgres psql --set ON_ERROR_STOP=on --dbname <database> < <folder>/dump/postgresql/<database>.sql
    mariadb <database> < <folder>/dump/mariadb/<database>.sql
    ```
 
