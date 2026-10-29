@@ -5,7 +5,7 @@
 .DESCRIPTION
     For every identity of identities.json the secret docker/s3/<name> (access_key, secret_key) is created
     if it does not exist yet. An existing secret is never changed. The keys are random letters and digits,
-    so that they survive the forms of Databasus and Pelican and the env files of the Compose projects.
+    so that they survive the forms of Pelican and the env files of the Compose projects.
 
     RustFS itself is not touched: scripts/docker/setup-rustfs.sh on the Docker host reads the keys from
     Vault and creates the users and policies. The keys are not printed. Read one when you need it:

@@ -2,19 +2,25 @@
 # Nightly restic run on the local RustFS S3. All steps run one after the other in one run, so they
 # never fight over the repository lock:
 #   repository docker:        backup of the key files, forget, prune, check
+#   repository databases:     logical dumps of PostgreSQL and MariaDB, forget, prune, check
 #   repositories vault, netbird: check only (vault-backup and netbird_backup.sh write and prune them)
 # Every step leaves its result for the node_exporter textfile collector, Prometheus alerts on it.
 set -u
 
-apk add --no-cache restic rclone curl >/dev/null || { echo "apk add failed" >&2; exit 1; }
+apk add --no-cache restic rclone curl postgresql-client mariadb-client >/dev/null || { echo "apk add failed" >&2; exit 1; }
 
 . /common.sh
 
 # Static files only: the data directories of running services are not consistent when copied (see the README).
 # /userdata/docker and /userdata/gitops are mounted read-only by the compose file
-KEY_FILES="/userdata/gitops /userdata/docker/databasus/secret.key /userdata/docker/offsite-sync/rclone/rclone.conf"
+KEY_FILES="/userdata/gitops /userdata/docker/offsite-sync/rclone/rclone.conf"
 GITOPS_GIT_DIRECTORY=/userdata/gitops/.git
 MAX_UNUSED=10%
+
+# Scratch folder of the dumps (a bind mount of the compose file), emptied after every backup
+DUMP_DIR=/dump
+# Databases that are no data of the application: MariaDB internals (users are created by scripts/mariadb)
+MARIADB_SKIPPED_DATABASES="information_schema performance_schema mysql sys"
 
 # Mount of the textfile collector directory of the node_exporter, see docker-compose.yml
 METRICS_DIR=/metrics
@@ -92,12 +98,89 @@ forget_old_snapshots() {
     restic forget --group-by '' --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY"
 }
 
+# One group per engine (tag), so each keeps its own number of snapshots
+forget_old_dumps() {
+    restic forget --group-by tags --keep-daily "$DATABASES_KEEP_DAILY" --keep-weekly "$DATABASES_KEEP_WEEKLY" --keep-monthly "$DATABASES_KEEP_MONTHLY"
+}
+
+# dump_postgresql <directory>: globals (roles without passwords, tablespaces) and one plain SQL file per database.
+# Database names are checked by scripts/postgresql/db_create.sh, so they are safe as words and file names.
+# A failed dump is removed so that a truncated file never reaches a snapshot; the others are still dumped
+dump_postgresql() {
+    export PGHOST="$POSTGRES_HOST" PGPORT="$POSTGRES_PORT" PGUSER="$POSTGRES_USER" PGPASSWORD="$POSTGRES_PASSWORD"
+    dump_status=0
+    pg_dumpall --globals-only --no-role-passwords > "$1/globals.sql" || { rm -f "$1/globals.sql"; dump_status=1; }
+    names=$(psql --no-psqlrc --tuples-only --no-align --dbname postgres \
+        --command "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate") || return 1
+    for name in $names; do
+        pg_dump --dbname "$name" > "$1/$name.sql" || { echo "pg_dump of $name failed" >&2; rm -f "$1/$name.sql"; dump_status=1; }
+    done
+    return "$dump_status"
+}
+
+# dump_mariadb <directory>: one SQL file per database, consistent without locking (InnoDB, --single-transaction).
+# The connection stays on the Docker bridge to the host, so TLS is off (the MariaDB 11 client would otherwise insist on a verified certificate)
+dump_mariadb() {
+    export MYSQL_PWD="$MARIADB_PASSWORD"
+    dump_status=0
+    names=$(mariadb --host "$MARIADB_HOST" --port "$MARIADB_PORT" --user "$MARIADB_USER" --skip-ssl \
+        --batch --skip-column-names --execute "SHOW DATABASES") || return 1
+    for name in $names; do
+        case " $MARIADB_SKIPPED_DATABASES " in *" $name "*) continue ;; esac
+        mariadb-dump --host "$MARIADB_HOST" --port "$MARIADB_PORT" --user "$MARIADB_USER" --skip-ssl \
+            --single-transaction --routines --events --triggers "$name" > "$1/$name.sql" \
+            || { echo "mariadb-dump of $name failed" >&2; rm -f "$1/$name.sql"; dump_status=1; }
+    done
+    return "$dump_status"
+}
+
+# backup_dumps <engine> <dump function>: dumps into a scratch folder first and backs up the files. A pipe into
+# "restic backup --stdin" would be shorter, but /bin/sh has no pipefail: a dump that died halfway would be a
+# snapshot that looks fine. The folder holds all data in plain text, so it is removed in every case
+backup_dumps() {
+    restic cat config >/dev/null 2>&1 || restic init || return 1
+    directory="$DUMP_DIR/$1"
+    rm -rf "$directory"
+    mkdir -p "$directory" && chmod 700 "$directory" || return 1
+    "$2" "$directory"
+    dumps_complete=$?
+    backup_complete=0
+    if [ -n "$(ls -A "$directory")" ]; then
+        restic backup "$directory" --tag "$1" || backup_complete=1
+    fi
+    rm -rf "$directory"
+    [ "$dumps_complete" = 0 ] && [ "$backup_complete" = 0 ]
+}
+
+backup_postgresql() {
+    backup_dumps postgresql dump_postgresql
+}
+
+backup_mariadb() {
+    backup_dumps mariadb dump_mariadb
+}
+
 prune_unused_data() {
     restic prune --max-unused "$MAX_UNUSED"
 }
 
 check_repository() {
     restic check --read-data-subset "$CHECK_READ_DATA_SUBSET"
+}
+
+run_databases() {
+    select_repository databases s3
+    databases_backed_up=""
+    run_step databases backup-postgresql backup_postgresql && databases_backed_up=1
+    # MariaDB is optional: without a password in Vault there is no step
+    if [ -n "${MARIADB_PASSWORD:-}" ]; then
+        run_step databases backup-mariadb backup_mariadb && databases_backed_up=1
+    fi
+    if [ -n "$databases_backed_up" ]; then
+        run_step databases forget forget_old_dumps
+        run_step databases prune prune_unused_data
+    fi
+    run_step databases check check_repository
 }
 
 run_nightly() {
@@ -110,6 +193,7 @@ run_nightly() {
         run_step docker prune prune_unused_data
     fi
     run_step docker check check_repository
+    run_databases
     for repository in vault netbird; do
         select_repository "$repository" s3
         run_step "$repository" check check_repository

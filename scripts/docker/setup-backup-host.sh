@@ -1,8 +1,8 @@
 #!/bin/bash
 # =============================================================================
 # setup-backup-host.sh
-# Prepares the Docker host for the backup projects (restic-backup, offsite-sync,
-# databasus). The projects are deployed with scripts/docker/deploy.sh.
+# Prepares the Docker host for the backup projects (restic-backup, offsite-sync).
+# The projects are deployed with scripts/docker/deploy.sh.
 #
 #   sudo ./setup-backup-host.sh [--rclone-conf /root/.config/rclone/rclone.conf] [--dns 1.1.1.1] [--pcloud-remote pCloud]
 #
@@ -81,8 +81,8 @@ fi
 
 # ── Directories ───────────────────────────────────────────────────────────────
 step "Creating data directories"
-mkdir -p "$DATA_ROOT"/restic-backup/{cache,restore} "$DATA_ROOT/offsite-sync/rclone" "$DATA_ROOT/databasus"
-chmod 700 "$DATA_ROOT/offsite-sync/rclone"
+mkdir -p "$DATA_ROOT"/restic-backup/{cache,restore,dump} "$DATA_ROOT/offsite-sync/rclone"
+chmod 700 "$DATA_ROOT/offsite-sync/rclone" "$DATA_ROOT/restic-backup/dump"
 success "Directories created below $DATA_ROOT"
 
 # ── rclone.conf ───────────────────────────────────────────────────────────────

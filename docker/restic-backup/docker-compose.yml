@@ -13,7 +13,7 @@ services:
     dns:
       - 1.1.1.1
       - 9.9.9.9
-    # host.docker.internal points to the Docker host, where the RustFS S3 listens
+    # host.docker.internal points to the Docker host, where the RustFS S3, PostgreSQL and MariaDB listen
     extra_hosts:
       - "host.docker.internal:host-gateway"
     entrypoint: ["/bin/sh", "/backup.sh"]
@@ -31,6 +31,8 @@ services:
       - /root/docker/offsite-sync/rclone:/root/.config/rclone:ro
       # Only restore target that is writable (scripts/docker/restore.sh)
       - /root/docker/restic-backup/restore:/restore
+      # Scratch folder of the database dumps, emptied after every backup
+      - /root/docker/restic-backup/dump:/dump
       # Textfile collector of the node_exporter: every step leaves its result there
       - /var/lib/prometheus/node-exporter:/metrics
     # A process in the container cannot gain more privileges than it started with (setuid binaries, file capabilities)

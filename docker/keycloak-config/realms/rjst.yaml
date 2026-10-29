@@ -1,5 +1,5 @@
 # The realm of the apps. Users and their passwords are not in here: they are created in the Keycloak UI
-# and live in the database (Databasus). Everything else about the login of the apps is defined here.
+# and live in the database (backed up by restic-backup). Everything else about the login of the apps is defined here.
 realm: rjst
 enabled: true
 displayName: RJST

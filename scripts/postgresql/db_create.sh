@@ -144,7 +144,7 @@ SQL
   fi
 }
 
-# The Databasus backup role (backup_user_create.sh) needs CONNECT on every database, if the role exists
+# The backup role (backup_user_create.sh) needs CONNECT on every database, if the role exists
 ensure_backup_role_can_connect() {
   apply_sql postgres applied "CONNECT of $BACKUP_ROLE (only if the role exists)" <<'SQL'
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'db_name', :'backup_role')

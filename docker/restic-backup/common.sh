@@ -8,25 +8,27 @@ PCLOUD_ROOT=/Backups/s3
 # repository_path <name>: bucket and path of the repository in the S3 (the offsite sync keeps the same path in pCloud)
 repository_path() {
     case "$1" in
-        docker)  echo "backups/docker" ;;
-        vault)   echo "vault/raft" ;;
-        netbird) echo "netbird/restic" ;;
-        *)       return 1 ;;
+        docker)    echo "backups/docker" ;;
+        databases) echo "databases/restic" ;;
+        vault)     echo "vault/raft" ;;
+        netbird)   echo "netbird/restic" ;;
+        *)         return 1 ;;
     esac
 }
 
 repository_password() {
     case "$1" in
-        docker)  echo "$RESTIC_PASSWORD_DOCKER" ;;
-        vault)   echo "$RESTIC_PASSWORD_VAULT" ;;
-        netbird) echo "$RESTIC_PASSWORD_NETBIRD" ;;
+        docker)    echo "$RESTIC_PASSWORD_DOCKER" ;;
+        databases) echo "$RESTIC_PASSWORD_DATABASES" ;;
+        vault)     echo "$RESTIC_PASSWORD_VAULT" ;;
+        netbird)   echo "$RESTIC_PASSWORD_NETBIRD" ;;
     esac
 }
 
 # select_repository <name> <s3|pcloud>: points restic at the repository, either the one on the local S3
 # or its copy in pCloud (needs the rclone.conf mounted by the compose file)
 select_repository() {
-    repository_location=$(repository_path "$1") || { echo "Unknown repository: $1 (docker, vault or netbird)" >&2; return 1; }
+    repository_location=$(repository_path "$1") || { echo "Unknown repository: $1 (docker, databases, vault or netbird)" >&2; return 1; }
     case "$2" in
         s3)     RESTIC_REPOSITORY="s3:$S3_ENDPOINT/$repository_location" ;;
         pcloud) RESTIC_REPOSITORY="rclone:$PCLOUD_REMOTE:$PCLOUD_ROOT/$repository_location" ;;

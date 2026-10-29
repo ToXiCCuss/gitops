@@ -11,7 +11,7 @@
 # partitions of the next months and drops the ones older than the retention.
 #
 # The audit schema is not readable for the application roles of db_create.sh, only for postgres and
-# the Databasus backup role. The trigger function runs with the rights of its owner, so the
+# the backup role (databasus). The trigger function runs with the rights of its owner, so the
 # application roles can write through it without access to the schema.
 #
 # Idempotent: running it again keeps the data of audit_log and reports what it created or changed.

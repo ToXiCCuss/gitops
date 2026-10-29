@@ -4,18 +4,20 @@
 # Browses and restores the restic repositories of the Docker host. It runs restic in the
 # restic-backup container, which has the S3 keys and the passwords (project docker/restic-backup).
 #
-#   sudo scripts/docker/restore.sh [--from pcloud] snapshots <repository>
-#   sudo scripts/docker/restore.sh [--from pcloud] files <repository> [snapshot]
-#   sudo scripts/docker/restore.sh [--from pcloud] restore <repository> [snapshot] [--include <path>]
+#   sudo scripts/docker/restore.sh [--from pcloud] [--tag <tag>] snapshots <repository>
+#   sudo scripts/docker/restore.sh [--from pcloud] [--tag <tag>] files <repository> [snapshot]
+#   sudo scripts/docker/restore.sh [--from pcloud] [--tag <tag>] restore <repository> [snapshot] [--include <path>]
 #
-#   repository  docker (key files), vault (Raft snapshots) or netbird
+#   repository  docker (key files), databases (SQL dumps), vault (Raft snapshots) or netbird
 #   snapshot    an id from "snapshots", default latest
 #   --from      s3 (default, the local RustFS) or pcloud (the copy of the offsite sync, for a lost S3)
+#   --tag       only snapshots with this tag. The repository databases holds the tags postgresql and mariadb,
+#               "latest" is the newest of any tag without it
 #   --include   restores only this path of the snapshot (as in "files"), repeatable
 #
 # "restore" writes into a new folder /root/docker/restic-backup/restore/<repository>-<snapshot>-<time>,
 # the only writable place. It never overwrites anything: move the files into place yourself.
-# Restored key files hold secrets in plain text, delete the folder afterwards.
+# Restored key files and dumps hold secrets and data in plain text, delete the folder afterwards.
 # =============================================================================
 
 set -euo pipefail
@@ -37,15 +39,17 @@ COMMAND=""
 REPOSITORY=""
 SNAPSHOT="latest"
 INCLUDES=()
+TAGS=()
 
 usage() {
-    sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --from)    SOURCE="${2:?--from needs s3 or pcloud}"; shift 2 ;;
         --include) INCLUDES+=(--include "${2:?--include needs a path}"); shift 2 ;;
+        --tag)     TAGS+=(--tag "${2:?--tag needs a tag}"); shift 2 ;;
         -h|--help) usage; exit 0 ;;
         -*)        error "Unknown argument: $1"; exit 1 ;;
         *)
@@ -80,14 +84,14 @@ run_restic() {
 restore_snapshot() {
     local folder="$REPOSITORY-$SNAPSHOT-$(date +%Y%m%d-%H%M%S)"
     step "Restoring $REPOSITORY, snapshot $SNAPSHOT (from $SOURCE)"
-    run_restic restore "$SNAPSHOT" --target "$CONTAINER_RESTORE_DIR/$folder" "${INCLUDES[@]}"
+    run_restic restore "$SNAPSHOT" --target "$CONTAINER_RESTORE_DIR/$folder" "${TAGS[@]}" "${INCLUDES[@]}"
     success "Restored to $HOST_RESTORE_DIR/$folder"
     warn "Move the files into place, then delete the folder (it may hold secrets in plain text)"
 }
 
 case "$COMMAND" in
-    snapshots) run_restic snapshots ;;
-    files)     run_restic ls --long "$SNAPSHOT" ;;
+    snapshots) run_restic snapshots "${TAGS[@]}" ;;
+    files)     run_restic ls --long "$SNAPSHOT" "${TAGS[@]}" ;;
     restore)   restore_snapshot ;;
     *)         error "Unknown command: $COMMAND (snapshots, files or restore)"; usage >&2; exit 1 ;;
 esac

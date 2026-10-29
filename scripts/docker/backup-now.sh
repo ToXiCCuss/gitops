@@ -12,8 +12,8 @@
 #
 # Everything is also written to /var/log/backup-now.log (appended), so a run can be read afterwards.
 # A failed step does not stop the others, the script exits with 1 and names the failed steps.
-# Not covered: Databasus (start it in its UI, "Backup now") and the NetBird server
-# (sudo netbird_backup.sh on that host). Run both before this script if they should be in the sync.
+# Not covered: the NetBird server (sudo netbird_backup.sh on that host). Run it before this script
+# if it should be in the sync.
 # =============================================================================
 
 set -euo pipefail
@@ -34,7 +34,7 @@ FAILED=()
 case "${1:-}" in
     "")           ;;
     --background) RUN_IN_BACKGROUND=1 ;;
-    -h|--help)    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)            error "Unknown argument: $1"; exit 1 ;;
 esac
 

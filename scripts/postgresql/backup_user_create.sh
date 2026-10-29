@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ensures the login role Databasus uses for the logical backups.
+# Ensures the login role restic-backup uses for the logical backups (the name "databasus" is historic, Databasus is gone).
 #
 # pg_read_all_data is a predefined role of the whole cluster: SELECT on all tables, views and
 # sequences in ALL databases and schemas (also the ones created later), nothing else. One role

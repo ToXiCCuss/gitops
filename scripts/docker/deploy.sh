@@ -47,7 +47,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DOCKER_DIR="$REPO_DIR/docker"
 
 # Order: the S3 first, the services that write to it afterwards
-ALL_PROJECTS=(rustfs restic-backup databasus keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
+ALL_PROJECTS=(rustfs restic-backup keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
 
 # Projects that need the keys of an S3 identity (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), as project:identity.
 # The keys are docker/s3/<identity> in Vault (scripts/vault/create-s3-identities.ps1)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ensures the login Databasus uses for the logical backups.
+# Ensures the login restic-backup uses for the logical backups (the name "databasus" is historic, Databasus is gone).
 #
 # The user may read everything a dump needs and write nothing: SELECT (also the routines),
 # SHOW VIEW, TRIGGER, EVENT and LOCK TABLES on all databases, also on the ones created later.
@@ -96,7 +96,7 @@ main() {
 
   ensure_backup_user
   apply_backup_privileges
-  log "In Databasus: add the database with this user, host = this server, port 3306, and use 'Test connection'."
+  log "Put the password into the Vault secret docker/restic-backup as MARIADB_PASSWORD, see the README (Setup restic-backup)."
 }
 
 main "$@"

@@ -5,7 +5,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 | Folder | Content |
 |---|---|
 | `ansible/` | Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter, mysqld exporter, the deploy timer of the Docker host. Secrets in an ansible-vault file. |
-| `docker/` | One Docker Compose project per service on the Docker host (restic-backup, Databasus, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`, on the Docker host hourly from 08:00 to 20:00 by a systemd timer. Images are pinned by digest and updated by Renovate. |
+| `docker/` | One Docker Compose project per service on the Docker host (restic-backup, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`, on the Docker host hourly from 08:00 to 20:00 by a systemd timer. Images are pinned by digest and updated by Renovate. |
 | `istio/` | `IstioOperator` file for the manual `istioctl install` (outside ArgoCD). |
 | `tofu/` | OpenTofu: VMs on the Proxmox host (`tofu/proxmox/`), state in PostgreSQL. Cloud-init installs Ansible and checks out this repository on each VM. |
 | `kubernetes/` | ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, spring). |
@@ -123,13 +123,13 @@ The role `mariadb` sets `bind-address` and `event_scheduler = ON` (`/etc/mysql/m
 | `audit_enable.sh [--dry-run] <db> <table> ...` | Triggers write the old and new values of every INSERT, UPDATE and DELETE of the tables to `audit_log`. Run it again after a column changed. The record id is the primary key (several columns joined by `-`), `NULL` without one. An UPDATE that changes nothing is not logged. |
 | `audit_disable.sh [--dry-run] <db> <table> ...` | Removes the triggers (a table without them is `unchanged`). Rows already logged stay until the retention drops them. |
 | `audit_list.sh <db>` | Audited tables, retention, partitions with their row counts. |
-| `backup_user_create.sh [user] [reset]` | Read-only login for Databasus (default `databasus`, host `%`, so keep port 3306 closed except for the Docker networks): `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, `LOCK TABLES` on all databases. The password goes to Vault (`databases/mariadb/databasus`) and is not printed, `reset` sets a new one. |
+| `backup_user_create.sh [user] [reset]` | Read-only login for the backup (`restic-backup`, default `databasus`, host `%`, so keep port 3306 closed except for the Docker networks): `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, `LOCK TABLES` on all databases. The password goes to Vault (`databases/mariadb/databasus`) and is not printed, `reset` sets a new one. |
 
 - The audit log lives in the database, so `db_delete.sh` takes it along. It holds personal data in clear text. The roles of `db_create.sh` can change it, their grants cover the whole database.
 - An audited write costs one more INSERT with all columns as JSON, so switch it on only for the tables where you need the history. A database without `audit_setup.sh` has no triggers and no cost.
 - The partition `p_future` (`VALUES LESS THAN MAXVALUE`) catches every row without a monthly partition. A stopped event scheduler only leaves the partitions unmaintained, audited writes never fail.
 - Monitoring: the role `mariadb_exporter` installs `prometheus-mysqld-exporter` (port 9104, scraped by the job `mysqld-exporter` in `kubernetes/monitoring/helm/prometheus.yaml`, alert `MariaDBDown` on `mysql_up`). It logs in as the MariaDB user `prometheus@localhost` through the socket (`unix_socket`, no password, `MAX_USER_CONNECTIONS 3`) with `PROCESS`, `BINLOG MONITOR`, `REPLICA MONITOR` and `SELECT` on `performance_schema.*`. The role creates the user, there is no script for it. The dashboard is a patched copy of 14057 in `kubernetes/monitoring/kubectl/dashboard-mariadb.yaml` (the original filters the handler panels on a variable it never defines and reads a metric the exporter no longer has); the role enables the `info_schema.processlist` collector for its process state panels.
-- Backups: Databasus (logical, MariaDB 11 is supported) once the database exists, see [Backups](#backups). The grants of the backup user are what `mariadb-dump` needs; the Databasus documentation does not name them, adjust them if "Test connection" or a run complains. `mariabackup` (physical) is for later, when the dump gets too slow or too large.
+- Backups: `restic-backup` dumps every database with `mariadb-dump` once the backup login has its password in Vault `docker/restic-backup` (`MARIADB_PASSWORD`), see [Backups](#backups). The grants of the backup user are what `mariadb-dump` needs, adjust them if a run complains. `mariabackup` (physical) is for later, when the dump gets too slow or too large.
 
 ### PostgreSQL (audit log)
 
@@ -142,7 +142,7 @@ The scripts in `scripts/postgresql/` (run them on the host with `sudo`) add the 
 | `audit_disable.sh [--dry-run] <db> <table> ...` | Removes the triggers (a table without them is `unchanged`). Rows already logged stay until the retention drops them. |
 | `audit_list.sh <db>` | Audited tables, retention, the `pg_cron` job and the partitions with their size and row count. |
 
-- The application roles of `db_create.sh` cannot read or change `audit.audit_log` (no access to the schema). The trigger function runs with the rights of its owner, so they can still write through it. `postgres` and the Databasus backup role (`pg_read_all_data`) can read it.
+- The application roles of `db_create.sh` cannot read or change `audit.audit_log` (no access to the schema). The trigger function runs with the rights of its owner, so they can still write through it. `postgres` and the backup role (`pg_read_all_data`) can read it.
 - The job lives in the `pg_cron` database (`cron.database_name`, default `postgres`), not in the audited database. After a restore from a dump run `audit_setup.sh` again; `db_delete.sh` removes the job together with the database. Without `pg_cron` the default partition catches every row, the log keeps working and only the partitions are not maintained.
 - An audited write costs one more INSERT, so switch it on only for the tables where you need the history.
 - Switching on `pg_cron` is the only change to the server: after the Ansible run, check `SHOW shared_preload_libraries;`.
@@ -159,8 +159,8 @@ Set up once (on Windows, with the root token):
 4. Read a password on Windows: `vault kv get -field=password databases/postgresql/keycloak_owner`.
 
 - The host can write and delete passwords but not read one back, so a leaked `secret_id` exposes no existing password. It can overwrite or delete one, though: a new `-NewSecretId` cuts a leaked file off. With `-DatabaseHost` the older `secret_id`s are destroyed only after both files are on the host, so a failed SSH login leaves the working one valid. Run the script again with `-NewSecretId` to rotate.
-- `user_password.sh <login>` (or `<database> <username>`) rotates a password: it sets a new random one in Vault and in the database, every run again, the older ones stay as versions in Vault. `backup_user_create.sh` stores the password of the Databasus login the same way. Both support `--dry-run` and never print a password.
-- Logins that existed before the scripts used Vault (including `databasus`) are not in Vault yet. Their first `user_password.sh` run puts them there. For `databasus` enter the new password in the Databasus UI afterwards, it keeps its own copy.
+- `user_password.sh <login>` (or `<database> <username>`) rotates a password: it sets a new random one in Vault and in the database, every run again, the older ones stay as versions in Vault. `backup_user_create.sh` stores the password of the backup login the same way. Both support `--dry-run` and never print a password.
+- Logins that existed before the scripts used Vault (including `databasus`) are not in Vault yet. Their first `user_password.sh` run puts them there. For `databasus` put the new password into `docker/restic-backup` as `POSTGRES_PASSWORD` afterwards and deploy `restic-backup` again, the container keeps its own copy.
 - All scripts for PostgreSQL, MariaDB and MongoDB follow the same rules: an error stops the script, a second run reports what is `unchanged`, and everything that changes something has `--dry-run` (the read-only `list_user_roles.sh` and `audit_list.sh` have none). Tools: `sudo`, the client of the DBMS, `openssl`; the scripts that store a password also `curl` and `jq`.
 - `db_delete.sh`, `user_delete.sh`, `cleanup_db_user.sh` and `copy_db.sh` delete data for good, so run them with `--dry-run` first. `db_delete.sh` finds the logins of a database by their membership in its three roles, not by their name: a database `shop` and a database `shop_dev` do not take each other's logins along. They refuse system databases and, for MariaDB, `root`. The Vault entry of every login (`databases/<dbms>/<login>`, for MongoDB `databases/mongodb/<database>/<username>`) is deleted with all its versions **before** the login is dropped: if Vault refuses (an old policy: run `configure-vault-databases.ps1` again), the script stops while the login still exists and can be repeated. `user_delete.sh` deletes the entry even if the login is already gone, so it also cleans up the leftover of an earlier deletion.
 - Personal logins (PostgreSQL, `scripts/postgresql/`): `person_grant.sh <username> <database> <ro|rw>` ensures the login `<username>` (no database prefix, one login for all databases) and its membership in `<db>_role_ro` or `<db>_role_rw`. The database is optional: `person_grant.sh <username>` (or `user_create.sh <username>`, which forwards there; with `<database> <username> <role>` it creates the application login `<database>_<username>` as before) only creates the login without any access, a later run with a database adds it. Run it once per database, so `robert` can be `ro` in `shop` and `rw` in `billing`; a changed role type moves the login, `owner` is not possible (that is `<db>_owner` of `db_create.sh`). The password of a new login goes to Vault as `databases/postgresql/<username>` (`user_password.sh <username>` rotates it). The script only touches logins it created itself (marked by a role comment), so it refuses an application login like `shop_owner` or `postgres`. `person_revoke.sh <username> <database>` takes the access to one database away and keeps the login for the others; `person_revoke.sh <username>` terminates its sessions, deletes the Vault entry (needs the current policy of `configure-vault-databases.ps1`) and drops the login. Both support `--dry-run`, report an absent login or access as `unchanged` and refuse logins that `person_grant.sh` did not create (`user_delete.sh` expects `<database> <username>` and does not fit these logins). The rights of the two roles come from `db_create.sh` and `schema_create.sh`. MariaDB (`scripts/mariadb/`) has the same two scripts with the same arguments, `--dry-run` and Vault path (`databases/mariadb/<username>`). The difference: MariaDB enables only one default role per connection, so the login gets a role of its own, `<username>_role_person`, as default role, and `person_grant.sh` puts `<db>_role_ro` or `<db>_role_rw` into that role. The role is also the marker for a personal login (MariaDB has no comment on a user), and `person_revoke.sh <username>` drops it with the login. Open connections stay until they end, like with `user_delete.sh`.
@@ -292,7 +292,7 @@ Run everything in this section from the `tofu/proxmox/` folder.
 
 ### Setup
 
-1. Create the state database on the Docker host. The script stores the password of the user `tofu_state_owner` in Vault (`databases/postgresql/tofu_state_owner`, see [Database passwords in Vault](#database-passwords-in-vault)). Add the database `tofu_state` in Databasus so that the state is part of the backups. The PostgreSQL host must not be a VM managed by this state:
+1. Create the state database on the Docker host. The script stores the password of the user `tofu_state_owner` in Vault (`databases/postgresql/tofu_state_owner`, see [Database passwords in Vault](#database-passwords-in-vault)). `restic-backup` finds the database `tofu_state` on its own, so the state is part of the backups. The PostgreSQL host must not be a VM managed by this state:
 
    ```bash
    sudo scripts/postgresql/db_create.sh tofu_state
@@ -375,7 +375,7 @@ sudo systemctl stop gitops-deploy.timer            # pause it, e.g. while you ch
 
 ```bash
 sudo scripts/docker/undeploy.sh uptimeKuma
-sudo scripts/docker/undeploy.sh --yes restic-backup databasus   # without the question
+sudo scripts/docker/undeploy.sh --yes restic-backup offsite-sync   # without the question
 ```
 
 `cleanup.sh` shows what Docker keeps without using it (dry run) and with `--apply` removes only the safe part: unused images without a tag and the build cache. The images of `docker/` are pinned by digest and have no tag, so the old versions that Renovate leaves behind appear as `repository:<none>`. Images with a tag and no container, volumes, stopped containers and networks are only listed. Volumes hold data, `netbird-rollback/*` are the rollback points of `netbird_upgrade.sh` and Pelican creates its own networks and containers.
@@ -430,9 +430,8 @@ flowchart LR
   subgraph host["Docker host"]
     vault -->|"snapshot API, periodic token"| vaultbackup["vault-backup (restic)"]
     keys["Key files"] -->|read-only| resticbackup["restic-backup (restic)"]
-    pg[("PostgreSQL")] --> databasus["Databasus (pg_dump)"]
-    resticbackup -->|bucket backups| s3[("RustFS S3")]
-    databasus -->|bucket databases| s3
+    pg[("PostgreSQL, MariaDB")] -->|"pg_dump, mariadb-dump"| resticbackup
+    resticbackup -->|"buckets backups, databases"| s3[("RustFS S3")]
     vaultbackup -->|bucket vault| s3
     netbird["NetBird server (netbird_backup.sh, restic)"] -->|bucket netbird| s3
     s3 -->|read-only identity| sync["offsite-sync (rclone, 05:00 UTC)"]
@@ -443,36 +442,34 @@ flowchart LR
 | Service | Task | Notes |
 |---|---|---|
 | RustFS | Local S3 staging | One identity per service (`docker/rustfs/identities.json`, keys in Vault), the offsite sync can only read |
-| restic-backup | One nightly run: backs up a few static key files, thins out and prunes the repository and checks it, then checks the Vault and NetBird repositories | restic, repository `backups/docker`. Reports every step to Prometheus. Restore with `scripts/docker/restore.sh` |
-| Databasus | Logical PostgreSQL backups (`pg_dump`), MariaDB the same way once it is installed (login from `scripts/mariadb/backup_user_create.sh`) | bucket `databases` |
+| restic-backup | One nightly run: backs up a few static key files and the SQL dumps of all PostgreSQL and MariaDB databases, thins out and prunes both repositories and checks them, then checks the Vault and NetBird repositories | restic, repositories `backups/docker` and `databases/restic`. Reports every step to Prometheus. Restore with `scripts/docker/restore.sh` |
 | vault-backup | Daily Raft snapshot of Vault | Periodic token that may only read the snapshot, bucket `vault`, repository `vault/raft`, keeps its own retention |
 | NetBird backup | Config and database of the self-hosted NetBird server (`scripts/netbird/`) | bucket `netbird`, repository `netbird/restic`, keeps its own retention |
 | Offsite sync | Copies the whole S3 to pCloud and verifies the copy | Keeps deleted or overwritten files 30 days in `Backups-deleted` |
 
-Everything writes to the S3 only, pCloud is written by the offsite sync alone. Not covered: the PVCs of the Kubernetes apps. MariaDB (`docker01`) is not backed up until a database is added in the Databasus UI with its backup login, MongoDB is not operated (`mongodb_hosts` is empty), if it is, Databasus backs it up like the PostgreSQL databases.
+Everything writes to the S3 only, pCloud is written by the offsite sync alone. Not covered: the PVCs of the Kubernetes apps. MariaDB (`docker01`) is not backed up until `MARIADB_PASSWORD` of its backup login is in the Vault secret `docker/restic-backup`. MongoDB is not operated (`mongodb_hosts` is empty), if it is, `backup.sh` needs a dump step for it.
 
 #### Retention, checks and schedule
 
 | Data | Daily | Weekly | Monthly | Set in |
 |---|---|---|---|---|
 | Vault | 14 | 8 | 12 | `vault-backup` (`restic forget --prune` after each run) |
-| PostgreSQL dumps | 14 | 8 | 6 | Databasus, per database |
+| SQL dumps (PostgreSQL, MariaDB) | 14 | 8 | 6 | `restic-backup` (`DATABASES_KEEP_*` in `default.env`, per engine) |
 | Key files | 7 | 4 | 6 | `restic-backup` (`KEEP_*` in `default.env`, `restic forget` after each backup) |
 | NetBird | 0 | 8 | 6 | `netbird_backup.sh` (`RESTIC_KEEP_*` in `/etc/netbird-backup.cred`) |
 | Deleted files in pCloud | 30 days | | | `RETENTION_DAYS` of the offsite sync |
 
 | Check | How |
 |---|---|
-| Repository structure and a sample of the data | `restic-backup`, every night on the repositories `docker`, `vault` and `netbird`: `restic check` with a 10% read-data subset (`CHECK_READ_DATA_SUBSET`), so the whole repository has been read after about ten nights |
+| Repository structure and a sample of the data | `restic-backup`, every night on the repositories `docker`, `databases`, `vault` and `netbird`: `restic check` with a 10% read-data subset (`CHECK_READ_DATA_SUBSET`), so the whole repository has been read after about ten nights |
 | Offsite copy complete and intact | `rclone check --one-way --size-only` S3 -> pCloud after every sync (S3 and pCloud have no common hash, so it compares sizes). A mismatch fails the sync |
-| Failed jobs | Offsite sync, `vault-backup` and `netbird_backup.sh` (`DISCORD_WEBHOOK_URL`) post to a Discord webhook when a run fails. `restic-backup` does it too (optional, a failed step is named). Databasus has its own Discord notification, see [Discord alerts](#discord-alerts). A job that does not run at all sends nothing itself. For `offsite-sync`, `vault-backup` and `restic-backup` Prometheus catches it, see [Backup age alerts](#backup-age-alerts) |
+| Failed jobs | Offsite sync, `vault-backup` and `netbird_backup.sh` (`DISCORD_WEBHOOK_URL`) post to a Discord webhook when a run fails. `restic-backup` does it too (optional, a failed step is named, a failed dump too). A job that does not run at all sends nothing itself. For `offsite-sync`, `vault-backup` and `restic-backup` Prometheus catches it, see [Backup age alerts](#backup-age-alerts) |
 | Backups can be restored | By hand once per quarter: restore the latest PostgreSQL dump into a scratch database and a Vault snapshot, both from **pCloud** |
 
 | Time (UTC) | Job |
 |---|---|
-| 01:00 | Databasus (PostgreSQL dumps) |
 | 02:30 | vault-backup (Vault snapshot) |
-| 03:00 | restic-backup (backup of the key files, forget, prune, check of `docker`, check of `vault` and `netbird`) |
+| 03:00 | restic-backup (backup of the key files and the SQL dumps, forget, prune, check of `docker` and `databases`, check of `vault` and `netbird`) |
 | 05:00 | Offsite sync with check, runs when nothing writes to the S3 any more |
 
 #### Discord alerts
@@ -487,7 +484,6 @@ Failed backups are reported to a Discord channel through a webhook. Only failure
    |---|---|
    | `offsite-sync`, `vault-backup`, `restic-backup` | `DISCORD_WEBHOOK_URL` in the Vault secret `docker/<project>` (`vault kv patch`), then `sudo scripts/docker/deploy.sh <project>` |
    | `netbird_backup.sh` | `sudo ./netbird_backup_setup.sh --discord-webhook <url>` (writes it to `/etc/netbird-backup.cred`) |
-   | Databasus | In the UI add a Discord notifier with the URL and select it for every database (failed backups) |
 
 4. Test the webhook, a message must appear in the channel:
 
@@ -502,9 +498,9 @@ An old `PUSH_URL` in a secret of Vault or in `/etc/netbird-backup.cred` is ignor
 
 A job that does not run at all (container stopped, cron gone) sends no Discord message. To catch that, `offsite-sync`, `vault-backup` and `restic-backup` write `backup_last_success_timestamp_seconds{backup="<job>"}` after every successful run into the textfile collector directory of the node_exporter on docker01 (`/var/lib/prometheus/node-exporter/<job>.prom`, created by the Ansible role `node_exporter`). `restic-backup` writes it only when every step of the run worked. Prometheus scrapes the files with the other node_exporter metrics and the rules in `kubernetes/monitoring/kubectl/alert-rules.yaml` alert when the last success is older than 26 hours or when one of the three never reported.
 
-`restic-backup` additionally reports every step (`backup`, `forget`, `prune` and `check` of the repository `docker`, `check` of `vault` and `netbird`) in `restic-backup-<repository>-<step>.prom`: `restic_step_success{repository,step}` (1 or 0), `restic_step_last_success_timestamp_seconds` and `restic_step_duration_seconds`. The rule `ResticStepFailed` alerts as soon as a step failed, the table "Restic steps" of the Status dashboard shows the last result of every step. The output of the steps (the run log) is in `docker logs restic-backup`.
+`restic-backup` additionally reports every step (`backup`, `forget`, `prune` and `check` of the repository `docker`, `backup-postgresql`, `backup-mariadb`, `forget`, `prune` and `check` of `databases`, `check` of `vault` and `netbird`) in `restic-backup-<repository>-<step>.prom`: `restic_step_success{repository,step}` (1 or 0), `restic_step_last_success_timestamp_seconds` and `restic_step_duration_seconds`. The rule `ResticStepFailed` alerts as soon as a step failed, the table "Restic steps" of the Status dashboard shows the last result of every step. The output of the steps (the run log) is in `docker logs restic-backup`.
 
-The alerts go through Alertmanager to a Discord webhook, which is set in Vault as `argocd/data/prometheus#discord_webhook_url`. Databasus and `netbird_backup.sh` do not write this metric. They are only covered by their own Discord notification (NetBird is backed up by hand with every update, see `netbird_upgrade.sh`).
+The alerts go through Alertmanager to a Discord webhook, which is set in Vault as `argocd/data/prometheus#discord_webhook_url`. `netbird_backup.sh` does not write this metric. It is only covered by its own Discord notification (NetBird is backed up by hand with every update, see `netbird_upgrade.sh`).
 
 After the first deploy check the metric: `curl -s localhost:9100/metrics | grep backup_last` on docker01, or `backup_last_success_timestamp_seconds` in Prometheus.
 
@@ -523,7 +519,7 @@ After the first deploy check the metric: `curl -s localhost:9100/metrics | grep 
 
    | Secret in Vault | Keys |
    |---|---|
-   | `docker/restic-backup` | `RESTIC_PASSWORD_DOCKER` (a new one: `openssl rand -base64 24`, also into the password manager), `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD` (the same as `RESTIC_PASSWORD` of `docker/vault-backup` and the first line of `/root/restic`), optional `DISCORD_WEBHOOK_URL` |
+   | `docker/restic-backup` | `RESTIC_PASSWORD_DOCKER` and `RESTIC_PASSWORD_DATABASES` (new ones: `openssl rand -base64 24`, also into the password manager), `POSTGRES_PASSWORD`, optional `MARIADB_PASSWORD` (both from the backup logins, see [Database dumps](#database-dumps)), `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD` (the same as `RESTIC_PASSWORD` of `docker/vault-backup` and the first line of `/root/restic`), optional `DISCORD_WEBHOOK_URL` |
    | `docker/offsite-sync` | `DISCORD_WEBHOOK_URL` |
    | `docker/vault-backup` | `VAULT_TOKEN` (see below), `RESTIC_PASSWORD` (the password of the Vault repository), optional `DISCORD_WEBHOOK_URL` |
 
@@ -535,11 +531,11 @@ After the first deploy check the metric: `curl -s localhost:9100/metrics | grep 
 
    The Docker host must reach `https://vault.k8sdev.rjst.de`: `docker01` is a NetBird peer, put it into the group `vault-users` (the policy `vault-users` -> `k8s-vault` exists, see NetBird configuration).
 
-6. Deploy them: `sudo scripts/docker/deploy.sh restic-backup databasus vault-backup offsite-sync`.
-7. Configure Databasus in its UI (see the section below): S3 storage with the `databasus` keys, databases, schedule. Databasus is the only place that needs the `databasus` keys. `restic-backup` has no UI, run it once to test it: `docker exec restic-backup sh /backup.sh now`.
+6. Deploy them: `sudo scripts/docker/deploy.sh restic-backup vault-backup offsite-sync`.
+7. Prepare the database backup logins ([Database dumps](#database-dumps)), then run `restic-backup` once to test it: `docker exec restic-backup sh /backup.sh now`.
 8. Store the restic password and `rclone.conf` in your password manager. Without them the pCloud backups cannot be read after a total loss.
 
-Databasus (`4005`), Keycloak (`8180`) and the S3 port (`9000`) are published on all interfaces of the host. Restrict them to NetBird with a host firewall and allow them for your peers with NetBird policies. The backups should run before the sync, so schedule them between 01:00 and 03:00.
+Keycloak (`8180`) and the S3 port (`9000`) are published on all interfaces of the host. Restrict them to NetBird with a host firewall and allow them for your peers with NetBird policies. The backups should run before the sync, so schedule them between 01:00 and 03:00.
 
 #### Test the restore
 
@@ -549,14 +545,14 @@ A backup that was never restored is not a backup. After the first nightly sync, 
 
 Keep these in the password manager, nothing can be read without them and they are not on the servers:
 
-- the restic passwords of the repositories `docker` (project `restic-backup`), `vault` (project `vault-backup`) and `netbird` (`/root/restic`)
+- the restic passwords of the repositories `docker` and `databases` (project `restic-backup`), `vault` (project `vault-backup`) and `netbird` (`/root/restic`)
 - the `rclone.conf` of pCloud (the token)
 - the Vault unseal keys and the root token (printed once by `init-vault.ps1`) and the Ansible vault password (`ansible/.vault_pass`)
 
 | Data | Restore with |
 |---|---|
 | Key files (`rclone.conf`, `secret.key`), the secrets are in Vault | `scripts/docker/restore.sh`, repository `docker` (below) |
-| PostgreSQL | Databasus (below) |
+| PostgreSQL, MariaDB | `scripts/docker/restore.sh`, repository `databases` (below) |
 | Vault | `scripts/vault/vault_restore.sh` (below) |
 | NetBird server | `netbird_restore.sh` (below) |
 | Pelican game servers | Pelican Panel, or unpack the plain `.tar.gz` by hand (below) |
@@ -575,29 +571,38 @@ Keep these in the password manager, nothing can be read without them and they ar
 
    ```bash
    sudo scripts/docker/restore.sh restore docker
-   sudo scripts/docker/restore.sh restore docker <snapshot> --include /userdata/docker/databasus/secret.key
+   sudo scripts/docker/restore.sh restore docker <snapshot> --include /userdata/docker/offsite-sync/rclone/rclone.conf
    ```
 
    The script restores into a **new** folder `/root/docker/restic-backup/restore/<repository>-<snapshot>-<time>` (the only writable place of the container, it never overwrites anything) and prints it. The files hold secrets in plain text, delete the folder afterwards. `/userdata/docker` in the snapshot is `/root/docker` on the host, `/userdata/gitops` is `/root/gitops`.
 
-3. Copy the file back to its place (`/root/docker/offsite-sync/rclone/rclone.conf`, `/root/docker/databasus/secret.key`), check the owner and mode (`600`) and deploy the project with `deploy.sh`.
+3. Copy the file back to its place (`/root/docker/offsite-sync/rclone/rclone.conf`), check the owner and mode (`600`) and deploy the project with `deploy.sh`.
 
-`restore.sh` takes the repositories `docker`, `vault` and `netbird` (the Vault and NetBird snapshots can also be browsed this way, they are restored with their own scripts below). It needs the running container `restic-backup`. With the S3 gone use `--from pcloud`.
+`restore.sh` takes the repositories `docker`, `databases`, `vault` and `netbird` (the Vault and NetBird snapshots can also be browsed this way, they are restored with their own scripts below). It needs the running container `restic-backup`. With the S3 gone use `--from pcloud`.
 
-After a total loss of RustFS deploy it and run `setup-rustfs.sh` again (the keys are in Vault), then fill it from pCloud (below). The key files are also in the repository `docker` on pCloud, see the last section.
+After a total loss of RustFS deploy it and run `setup-rustfs.sh` again (the keys are in Vault), then fill it from pCloud (below). The key files and the dumps are also in the repositories `docker` and `databases` on pCloud, see the last section.
 
-#### PostgreSQL
+#### PostgreSQL and MariaDB
 
-1. Databasus: select the database, then the backup and restore it. Restore into a scratch database first to look at the result.
-2. On a new server: run the Ansible role `postgresql` (PostgreSQL 18 with `pg_cron` and `pg_partman`), create the database with `db_create.sh <name>` and the backup role with `backup_user_create.sh`, then restore the dump with Databasus.
-3. Databasus itself: its configuration (databases, storage, schedules) is not backed up, set it up again as in [Setup Databasus](#setup-databasus). The file `secret.key` is backed up (repository `docker`): put it back into `/root/docker/databasus/` **before** the first start, then the encrypted backups can be restored.
-4. Without Databasus (https://databasus.com/how-to-recover-without-databasus/): take three things from the bucket `databases` (or from pCloud, `Backups/s3/databases/`) and the key file. The backup file `<database>-<timestamp>-<backup id>`, its `.metadata` file (salt and initialisation vector) and `secret.key`. The backups are AES-256-GCM encrypted. Decrypt them with the Python script of that page (`pip install pycryptodome`, enter the paths and the key in `decrypt_backup(...)`), the result is `decrypted_<file>`. Then restore it:
+The dumps are plain SQL files, one per database, in the repository `databases`: `postgresql/<database>.sql` and `postgresql/globals.sql` (roles without passwords and tablespaces) with the tag `postgresql`, `mariadb/<database>.sql` with the tag `mariadb`. The passwords of the logins are in Vault (`databases/...`), the dumps do not hold them.
+
+1. Look at the snapshots and restore the newest of an engine (the folder is printed, the dumps hold all data in plain text, delete it afterwards):
 
    ```bash
-   pg_restore -h <host> -U <user> -d <database> decrypted_<file>
+   sudo scripts/docker/restore.sh --tag postgresql snapshots databases
+   sudo scripts/docker/restore.sh --tag postgresql restore databases
+   sudo scripts/docker/restore.sh --tag postgresql restore databases <snapshot> --include /dump/postgresql/<database>.sql
    ```
 
-   The metadata file must belong to the backup file, a wrong key or a damaged file makes the decryption fail. Keep `secret.key` in the password manager as well: without it the dumps are unreadable.
+2. On a new server: run the Ansible role `postgresql` (PostgreSQL 18 with `pg_cron` and `pg_partman`), restore `globals.sql` for the roles (their passwords are set with `user_password.sh` afterwards, they are in Vault only), create the database with `db_create.sh <name>` and the backup role with `backup_user_create.sh`.
+3. Load the dump. Restore into a scratch database first to look at the result. The extensions `pg_cron` and `pg_partman` must exist on the target server:
+
+   ```bash
+   sudo -u postgres psql --set ON_ERROR_STOP=on --dbname <database> --file <folder>/dump/postgresql/<database>.sql
+   mariadb <database> < <folder>/dump/mariadb/<database>.sql
+   ```
+
+4. Without the Docker host (the S3 is gone): the same with `--from pcloud`, or with `restic -r rclone:pCloud:/Backups/s3/databases/restic restore latest --tag postgresql --target <folder>` and the restic password of the repository `databases`.
 
 #### Vault
 
@@ -631,11 +636,12 @@ The offsite sync keeps a copy of every bucket in `pCloud:/Backups/s3/<bucket>/`.
 
 ```bash
 restic -r rclone:pCloud:/Backups/s3/backups/docker snapshots
+restic -r rclone:pCloud:/Backups/s3/databases/restic restore latest --tag postgresql --target /restore/databases
 restic -r rclone:pCloud:/Backups/s3/vault/raft restore latest --target /restore/vault
 restic -r rclone:pCloud:/Backups/s3/netbird/restic restore latest --target /restore/netbird
 ```
 
-With the container `restic-backup` running, `sudo scripts/docker/restore.sh --from pcloud restore docker` does the same for the key files (it reads the `rclone.conf` of the offsite sync, the S3 is not needed). To fill a new RustFS again, run the nightly sync the other way round: `rclone sync pCloud:/Backups/s3 RUSTFS:` (with an S3 remote named `RUSTFS` and the root key from the secret `docker/rustfs` in Vault).
+With the container `restic-backup` running, `sudo scripts/docker/restore.sh --from pcloud restore docker` does the same for the key files (`--tag postgresql restore databases` for the dumps; it reads the `rclone.conf` of the offsite sync, the S3 is not needed). To fill a new RustFS again, run the nightly sync the other way round: `rclone sync pCloud:/Backups/s3 RUSTFS:` (with an S3 remote named `RUSTFS` and the root key from the secret `docker/rustfs` in Vault).
 
 ### Setup restic-backup
 
@@ -644,13 +650,14 @@ With the container `restic-backup` running, `sudo scripts/docker/restore.sh --fr
 | Repository | Steps | Notes |
 |---|---|---|
 | `docker` (`backups/docker`) | `backup`, `forget`, `prune`, `check` | The key files (below). `forget` keeps 7 daily, 4 weekly and 6 monthly snapshots over **all** snapshots of the repository (`--group-by ''`), so the snapshots of the former Backrest age out as well. `prune` removes a pack when more than 10% of it is unused. `check` reads 10% of the data. `forget` and `prune` are skipped when the backup failed |
+| `databases` (`databases/restic`) | `backup-postgresql`, `backup-mariadb`, `forget`, `prune`, `check` | One plain SQL file per database (`pg_dump`, `mariadb-dump`), see [Database dumps](#database-dumps). `forget` keeps 14 daily, 8 weekly and 6 monthly snapshots per engine (tag). `backup-mariadb` only runs when `MARIADB_PASSWORD` is set. `forget` and `prune` are skipped when no dump could be backed up |
 | `vault` (`vault/raft`), `netbird` (`netbird/restic`) | `check` | Written and pruned by `vault-backup` and `netbird_backup.sh`. The repositories must exist, a missing one fails the step |
 
-Every step leaves its result for Prometheus, see [Backup age alerts](#backup-age-alerts). The container exits the run with an error if a step failed and posts the failed steps to Discord (optional). The log of a run is in `docker logs restic-backup`, a run right now: `docker exec restic-backup sh /backup.sh now`. All backups of the Docker host and then the offsite sync in one go: `sudo scripts/docker/backup-now.sh` (the log is also in `/var/log/backup-now.log`, with `--background` the run survives a dropped SSH session, follow it with `tail -f`; Databasus is started in its UI, the NetBird server with `netbird_backup.sh` on that host).
+Every step leaves its result for Prometheus, see [Backup age alerts](#backup-age-alerts). The container exits the run with an error if a step failed and posts the failed steps to Discord (optional). The log of a run is in `docker logs restic-backup`, a run right now: `docker exec restic-backup sh /backup.sh now`. All backups of the Docker host and then the offsite sync in one go: `sudo scripts/docker/backup-now.sh` (the log is also in `/var/log/backup-now.log`, with `--background` the run survives a dropped SSH session, follow it with `tail -f`; the NetBird server with `netbird_backup.sh` on that host).
 
-- Secrets are in Vault (`docker/restic-backup`, the S3 keys of the identity `restic-backup` are added from `docker/s3/restic-backup`), `default.env` lists all variables, also the time of the run (`BACKUP_HOUR`, `BACKUP_MINUTE`), the retention (`KEEP_*`) and the share of data that `check` reads (`CHECK_READ_DATA_SUBSET`). The secret holds the restic passwords of the repositories (`RESTIC_PASSWORD_DOCKER`, `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD`) and optionally `DISCORD_WEBHOOK_URL`. Order on a new host: `setup-backup-host.sh`, the secret in Vault (`vault kv put docker/restic-backup ...`), `deploy.sh restic-backup`
-- The repository `docker` is initialised by the first run. `vault` and `netbird` already exist (created by `vault-backup` and `netbird_backup.sh`), `restic-backup` only checks them
-- The repository checkout (`/root/gitops`) and `/root/docker` are mounted read-only, the container can only write to `/restore` and the restic cache
+- Secrets are in Vault (`docker/restic-backup`, the S3 keys of the identity `restic-backup` are added from `docker/s3/restic-backup`), `default.env` lists all variables, also the time of the run (`BACKUP_HOUR`, `BACKUP_MINUTE`), the retention (`KEEP_*`, `DATABASES_KEEP_*`), the database hosts and logins and the share of data that `check` reads (`CHECK_READ_DATA_SUBSET`). The secret holds the restic passwords of the repositories (`RESTIC_PASSWORD_DOCKER`, `RESTIC_PASSWORD_DATABASES`, `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD`), the passwords of the database backup logins (`POSTGRES_PASSWORD`, optional `MARIADB_PASSWORD`) and optionally `DISCORD_WEBHOOK_URL`. Order on a new host: `setup-backup-host.sh`, the secret in Vault (`vault kv put docker/restic-backup ...`), `deploy.sh restic-backup`
+- The repositories `docker` and `databases` are initialised by the first run. `vault` and `netbird` already exist (created by `vault-backup` and `netbird_backup.sh`), `restic-backup` only checks them
+- The repository checkout (`/root/gitops`) and `/root/docker` are mounted read-only, the container can only write to `/restore`, `/dump` (the scratch folder of the dumps) and the restic cache
 - The `rclone.conf` of the offsite sync is mounted read-only. It is only used to restore from pCloud, the container never writes to pCloud
 - Restore with `scripts/docker/restore.sh`, see [Key files](#key-files)
 - Store the restic passwords and `rclone.conf` outside the server as well (password manager)
@@ -664,62 +671,68 @@ Every step leaves its result for Prometheus, see [Backup age alerts](#backup-age
 5. Look at what `forget` would remove from the old snapshots: `docker exec restic-backup sh -c '. /common.sh && select_repository docker s3 && restic forget --dry-run --group-by "" --keep-daily 7 --keep-weekly 4 --keep-monthly 6'`.
 6. Delete the old data once you trust the new run: `rm -r /root/docker/backrest`. In the NetBird dashboard remove the reverse proxy service `backrest.proxy.rjst.de`.
 
-The key files are in the plan of the script (`KEY_FILES` in `backup.sh`), the data directories of running services (the internal database of Databasus) are not copied, a copy of a live database is not consistent. PostgreSQL is backed up by Databasus.
+The key files are in the plan of the script (`KEY_FILES` in `backup.sh`), the data directories of running databases are not copied, a copy of a live database is not consistent. PostgreSQL and MariaDB are backed up as dumps ([Database dumps](#database-dumps)).
 
 | Setting | Value |
 |---|---|
 | Repository | `docker` |
-| Paths | `/userdata/gitops` (the repository checkout `/root/gitops`, it holds no secrets)<br>`/userdata/docker/databasus/secret.key`<br>`/userdata/docker/offsite-sync/rclone/rclone.conf` |
+| Paths | `/userdata/gitops` (the repository checkout `/root/gitops`, it holds no secrets)<br>`/userdata/docker/offsite-sync/rclone/rclone.conf` |
 | Excludes | `/userdata/gitops/.git` (the history is on GitHub) |
 | Schedule | daily 03:00 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`) |
 | Retention | daily 7, weekly 4, monthly 6 |
 
 Test it: `docker exec restic-backup sh /backup.sh now`, then restore a file with `scripts/docker/restore.sh`. Restoring from pCloud (`--from pcloud`) is done after the first offsite sync.
 
-### Setup Databasus
+### Database dumps
 
-Databasus makes the logical backups (`pg_dump`) of the PostgreSQL databases and writes them to the bucket `databases` of the local RustFS S3. PostgreSQL 18 runs directly on the Docker host (Ansible role `postgresql`), Databasus reaches it as `host.docker.internal`, which the compose file points to the host.
+`restic-backup` dumps the databases of the Docker host itself, no UI and no list of databases: it asks the server which ones exist, so a new database is part of the next run. PostgreSQL 18 runs directly on the Docker host (Ansible role `postgresql`), MariaDB too, the container reaches both as `host.docker.internal`, which the compose file points to the host.
 
-#### On the Docker host
+| Engine | What is dumped | Not dumped |
+|---|---|---|
+| PostgreSQL | `pg_dumpall --globals-only --no-role-passwords` and `pg_dump` of every database that accepts connections (not the templates) | The data directory, role passwords (they are in Vault) |
+| MariaDB | `mariadb-dump --single-transaction --routines --events --triggers` of every database | `information_schema`, `performance_schema`, `mysql`, `sys`: users are created by `scripts/mariadb` |
 
-1. Create the login role once. It gets `pg_read_all_data` (SELECT on all tables, views and sequences in all databases and schemas, also later ones) and `CONNECT` on every existing database. The `ro` role of `user_create.sh` is not enough, it only sees the `public` schema of one database and would miss e.g. the `partman` schema. The script stores the password in Vault (`databases/postgresql/databasus`, not printed), an existing role keeps its password (`reset` sets a new one):
+The dumps are written to the scratch folder `/dump` (`/root/docker/restic-backup/dump`, mode 700) first and backed up as files, then the folder is emptied. A dump that fails is removed, the others are still backed up, the step is reported as failed (`restic_step_success{repository="databases"}`) and `ResticStepFailed` alerts. A pipe straight into restic would be shorter, but `/bin/sh` has no `pipefail`, so a dump that died halfway would end up in a snapshot that looks fine.
+
+#### Setup
+
+1. Create the backup logins once (the name `databasus` is historic). PostgreSQL: `pg_read_all_data` (SELECT on all tables, views and sequences in all databases and schemas, also later ones) and `CONNECT` on every existing database. The `ro` role of `user_create.sh` is not enough, it only sees the `public` schema of one database and would miss e.g. the `partman` schema. MariaDB: `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, `LOCK TABLES`. The scripts store the passwords in Vault (`databases/postgresql/databasus`, `databases/mariadb/databasus`, not printed), an existing login keeps its password (`reset` sets a new one):
 
    ```bash
    sudo scripts/postgresql/backup_user_create.sh
+   sudo scripts/mariadb/backup_user_create.sh
    ```
 
-2. `CONNECT` is needed because `db_create.sh` revokes it from `PUBLIC` and `pg_read_all_data` does not include it. `db_create.sh` grants it on every new database. Run the script above again for databases created in another way (the error otherwise is `permission denied for database`).
-3. The containers of the Docker network must reach PostgreSQL (5432) and the S3 (9000) of the host. The firewall blocks that by default (the test below times out). The Ansible role `firewall` allows both from `172.16.0.0/12`, see [Firewall](#firewall). Test it from a container, `open` is the right answer:
+2. `CONNECT` is needed because `db_create.sh` revokes it from `PUBLIC` and `pg_read_all_data` does not include it. `db_create.sh` grants it on every new database. Run the script above again for databases created in another way (the dump of such a database fails with `permission denied for database`).
+3. The containers of the Docker network must reach PostgreSQL (5432), MariaDB (3306) and the S3 (9000) of the host. The firewall blocks that by default (the test below times out). The Ansible role `firewall` allows them from `172.16.0.0/12`, see [Firewall](#firewall). Test it from a container, `open` is the right answer:
 
    ```bash
    docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 5432
+   docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 3306
    docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 9000
    ```
 
-4. Deploy the project with `sudo scripts/docker/deploy.sh databasus` (the container is recreated for the host entry).
+4. The host cannot read a password from Vault, so copy them on Windows into the secret of the project (a new `RESTIC_PASSWORD_DATABASES` too, `openssl rand -base64 24`, also into the password manager). `vault kv patch` keeps the other keys:
 
-#### In the Databasus UI (`http://<docker-host>:4005`)
+   ```powershell
+   vault kv patch docker/restic-backup `
+     POSTGRES_PASSWORD=$(vault kv get -field=password databases/postgresql/databasus) `
+     MARIADB_PASSWORD=$(vault kv get -field=password databases/mariadb/databasus) `
+     RESTIC_PASSWORD_DATABASES=<new password>
+   ```
 
-The first account becomes the administrator.
+5. Let the identity `restic-backup` write to the bucket `databases`: `sudo scripts/docker/setup-rustfs.sh` (it updates the policies of `docker/rustfs/identities.json`). Then `sudo scripts/docker/setup-backup-host.sh` (the folder `dump`) and `sudo scripts/docker/deploy.sh restic-backup` (the container is recreated for the new mount).
+6. Run it once and look at the result: `docker exec restic-backup sh /backup.sh now`, the log must end with `Run finished`, then restore a dump into a scratch database, see [PostgreSQL and MariaDB](#postgresql-and-mariadb).
 
-| Setting | Value |
-|---|---|
-| Storage: type | S3 |
-| Storage: endpoint | `http://host.docker.internal:9000` (http, RustFS here has no TLS; not `localhost`, that is the container itself) |
-| Storage: bucket | `databases` |
-| Storage: region | any, e.g. `us-east-1` |
-| Storage: path-style | on (`endpoint/bucket`) |
-| Storage: access key and secret | `access_key` and `secret_key` of `vault kv get docker/s3/databasus`. The identity `databasus` may only read, write and list the bucket `databases` |
-| Database: host | `host.docker.internal` |
-| Database: port | `5432` |
-| Database: user | `databasus` (password: `vault kv get -field=password databases/postgresql/databasus`) |
-| Database: name | one entry per database |
-| Schedule | daily 01:00 UTC |
-| Retention | 14 daily, 8 weekly, 6 monthly (GFS) |
+Not yet verified: a complete run, the TLS setting of the MariaDB client (`--skip-ssl`, the connection stays on the Docker bridge to the host) and a restore, which needs the extensions `pg_cron` and `pg_partman` on the target server. `pg_dump` must be version 18 or newer (the Alpine package `postgresql-client`), otherwise the dump fails with a version mismatch.
 
-The configuration of Databasus (`/databasus-data/pgdata`, an internal PostgreSQL database) is not backed up: copying a running database is not consistent. Keep a list of your databases and the values above, so that you can enter them again. `secret.key` in the same folder is the key for the stored credentials and for the encrypted backups, it is backed up by the plan for the key files (and belongs into the password manager, the Databasus FAQ recommends this).
+#### Move from Databasus (once)
 
-The S3 storage and the connection to `fw_chaos` were tested. Not yet verified: a complete backup run, because the `pg_dump` of Databasus must be version 18 or newer, and a restore, which needs the extensions `pg_cron` and `pg_partman` on the target server. Test both ("Backup now", then restore into a scratch database) once.
+Do it after the first successful run and a test restore of the new dumps.
+
+1. `sudo scripts/docker/undeploy.sh --yes databasus` (the data stays in `/root/docker/databasus`).
+2. The old dumps stay in the bucket `databases` (and in pCloud, `Backups/s3/databases/`), the new repository is in the same bucket under `restic/`. They are AES-256-GCM encrypted with `/root/docker/databasus/secret.key`: keep that file in the password manager, then read the old dumps with the Python script of https://databasus.com/how-to-recover-without-databasus/ (`pip install pycryptodome`) and `pg_restore`. The key is also in the old snapshots of the repository `docker` for up to six months.
+3. Delete the old dumps and the identity once you trust the new run: remove the files of the former Databasus in the bucket `databases` (everything except `restic/`), delete the secret `docker/s3/databasus` in Vault, delete the user `databasus` in the RustFS console, `rm -r /root/docker/databasus`. In the NetBird dashboard remove the reverse proxy service `databasus.proxy.rjst.de`.
 
 PostgreSQL accepts connections from every address (`pg_hba.conf` `0.0.0.0/0`, `listen_addresses = '*'`), restrict it with a firewall (the rules above allow only the Docker network for these ports).
 
@@ -737,7 +750,7 @@ Nightly `rclone sync` of the RustFS S3 to pCloud (05:00 UTC, `SYNC_HOUR`), follo
 
 Buckets, users and policies come from `docker/rustfs/identities.json` (names and buckets, no keys). The keys are in Vault (`docker/s3/<name>`):
 
-1. On Windows: `.\scripts\vault\create-s3-identities.ps1 -VaultToken <token>` creates the missing keys. It never changes an existing one. Read a key with `vault kv get docker/s3/<name>` (for Databasus, Pelican and NetBird).
+1. On Windows: `.\scripts\vault\create-s3-identities.ps1 -VaultToken <token>` creates the missing keys. It never changes an existing one. Read a key with `vault kv get docker/s3/<name>` (for Pelican and NetBird).
 2. On the Docker host (after the steps below, RustFS running, the AppRole files in place, see [Secrets from Vault](#secrets-from-vault)): `sudo scripts/docker/setup-rustfs.sh` creates the buckets with the root key of the secret `docker/rustfs` (read with the AppRole), then a policy and a user per identity through the admin API of RustFS (`add-canned-policy`, `add-user`, `set-user-or-group-policy`, signed with the root key by `curl --aws-sigv4`, so `curl` 7.75 or newer). The script names the identity and prints the answer of RustFS when a step is refused. Last it tests every identity with its own keys: it lists its buckets, writes (`readwrite`) or must not write (`read`), and can neither write nor list a bucket outside its list.
 3. The firewall rule for port `9000` from the Docker networks is in `ansible/group_vars/all/main.yml` (run the Ansible playbook for the host).
 4. Keycloak: set `RUSTFS_CLIENT_SECRET` in the Vault secret `docker/keycloak-config` (`openssl rand -base64 32`), then `sudo scripts/docker/deploy.sh keycloak-config`. That creates the client `rustfs` and its client roles `consoleAdmin`, `readwrite` and `readonly` (the names of the RustFS policies). The deploy of `keycloak-config` stops with an undefined variable until the secret is set.
@@ -819,9 +832,9 @@ Daily at 02:30 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`) the container fetches the Ra
 
 ### Setup Keycloak
 
-Keycloak (`docker/keycloak`) runs on the Docker host and not in the cluster, on purpose: it is the login of everything else, so it must not depend on the cluster, ArgoCD or Vault, and a rebuilt cluster does not touch it. The database is the local PostgreSQL (`host.docker.internal`), which Databasus backs up. The public URL is `https://auth.proxy.rjst.de` (the NetBird reverse proxy, TLS ends there). It is the issuer in every token and in the config of every client, so choose it once. Keycloak serves one URL only, a second hostname does not work for logins.
+Keycloak (`docker/keycloak`) runs on the Docker host and not in the cluster, on purpose: it is the login of everything else, so it must not depend on the cluster, ArgoCD or Vault, and a rebuilt cluster does not touch it. The database is the local PostgreSQL (`host.docker.internal`), which `restic-backup` backs up. The public URL is `https://auth.proxy.rjst.de` (the NetBird reverse proxy, TLS ends there). It is the issuer in every token and in the config of every client, so choose it once. Keycloak serves one URL only, a second hostname does not work for logins.
 
-1. On the Docker host: `scripts/postgresql/db_create.sh keycloak` (stores the password of `keycloak_owner` in Vault as `databases/postgresql/keycloak_owner`), then add the database `keycloak` in the Databasus UI: the users and their group membership live only there (realm and clients are in Git, see below).
+1. On the Docker host: `scripts/postgresql/db_create.sh keycloak` (stores the password of `keycloak_owner` in Vault as `databases/postgresql/keycloak_owner`), the next `restic-backup` run dumps it on its own: the users and their group membership live only there (realm and clients are in Git, see below).
 2. The Vault secret `docker/keycloak` (`vault kv put docker/keycloak ...`, names in `docker/keycloak/vault.env.example`): the database user and password (`vault kv get -field=password databases/postgresql/keycloak_owner`) and the password of the first admin (`openssl rand -base64 24`). Keep the admin password in the password manager.
 3. `sudo scripts/docker/deploy.sh keycloak`
 4. NetBird dashboard: a reverse proxy service `auth.proxy.rjst.de` to port `8180` of the Docker host, restricted to your peers (this is what keeps Keycloak internal). The published port `8180` itself is open like the other Docker ports (see the note after the setup steps under [Backups](#backups)).
@@ -833,7 +846,7 @@ Connecting apps: every app keeps its local emergency login (ArgoCD `admin`, Jenk
 
 The login of the apps is defined in Git: `docker/keycloak-config/realms/rjst.yaml` holds the realm `rjst`, the client roles and one client per app. The project `keycloak-config` is a one-shot job ([keycloak-config-cli](https://github.com/adorsys/keycloak-config-cli)) that applies the file through the admin API and exits. `deploy.sh keycloak-config` runs it again, the import is idempotent. Only what the job created itself is removed again when it disappears from the file. The image is built for Keycloak 26.5.5, the server is newer (26.6.x): if an import fails, look at that first.
 
-What is **not** in the file: users, their passwords and their group membership. They are created in the Keycloak UI and live in the database (Databasus).
+What is **not** in the file: users, their passwords and their group membership. They are created in the Keycloak UI and live in the database (backed up by `restic-backup`).
 
 - The issuer of every app is `https://auth.proxy.rjst.de/realms/rjst`. An app creates its own user at the first login and reads the roles from the token at every login.
 - The permissions are set per app: every app has its own client roles (Grafana: `admin`, `editor`, `viewer`). A user gets the roles of the apps he may use in the Keycloak UI (**Users > Role mapping > Client roles**). For many users create a group in the UI, give it the roles and put the users into it, the roles are inherited. A user without a role of an app is refused by that app, what the other apps do is not affected.
