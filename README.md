@@ -724,16 +724,7 @@ The dumps are written to the scratch folder `/dump` (`/root/docker/restic-backup
 5. Let the identity `restic-backup` write to the bucket `databases`: `sudo scripts/docker/setup-rustfs.sh` (it updates the policies of `docker/rustfs/identities.json`). Then `sudo scripts/docker/setup-backup-host.sh` (the folder `dump`) and `sudo scripts/docker/deploy.sh restic-backup` (the container is recreated for the new mount).
 6. Run it once and look at the result: `docker exec restic-backup sh /backup.sh now`, the log must end with `Run finished`, then restore a dump into a scratch database, see [PostgreSQL and MariaDB](#postgresql-and-mariadb).
 
-Not yet verified: a complete run, the TLS setting of the MariaDB client (`--skip-ssl`, the connection stays on the Docker bridge to the host) and a restore, which needs the extensions `pg_cron` and `pg_partman` on the target server. `pg_dump` must be version 18 or newer (the Alpine package `postgresql-client`), otherwise the dump fails with a version mismatch.
-
-#### Move from Databasus (once)
-
-Do it after the first successful run and a test restore of the new dumps.
-
-1. `sudo scripts/docker/undeploy.sh --yes databasus` (the data stays in `/root/docker/databasus`).
-2. The old dumps stay in the bucket `databases` (and in pCloud, `Backups/s3/databases/`), the new repository is in the same bucket under `restic/`. They are AES-256-GCM encrypted with `/root/docker/databasus/secret.key`: keep that file in the password manager, then read the old dumps with the Python script of https://databasus.com/how-to-recover-without-databasus/ (`pip install pycryptodome`) and `pg_restore`. The key is also in the old snapshots of the repository `docker` for up to six months.
-3. Remove the old backup login: PostgreSQL `sudo -u postgres psql -c "ALTER ROLE databasus NOLOGIN"` (dropping it needs `DROP OWNED BY` in every database), MariaDB `sudo scripts/mariadb/user_delete.sh databasus`.
-4. Delete the old dumps and the identity once you trust the new run: remove the files of the former Databasus in the bucket `databases` (everything except `restic/`), delete the secret `docker/s3/databasus` in Vault, delete the user `databasus` in the RustFS console, `rm -r /root/docker/databasus`. In the NetBird dashboard remove the reverse proxy service `databasus.proxy.rjst.de`.
+Tested for PostgreSQL: a complete run and a restore of `fw_chaos` into a scratch database. Not yet verified: the MariaDB dump, including the TLS setting of the client (`--skip-ssl`, the connection stays on the Docker bridge to the host), and a restore of a database that uses `pg_cron` or `pg_partman`, which needs the extensions on the target server. `pg_dump` must be version 18 or newer (the Alpine package `postgresql-client`), otherwise the dump fails with a version mismatch.
 
 PostgreSQL accepts connections from every address (`pg_hba.conf` `0.0.0.0/0`, `listen_addresses = '*'`), restrict it with a firewall (the rules above allow only the Docker network for these ports).
 
