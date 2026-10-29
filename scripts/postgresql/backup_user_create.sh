@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ensures the login role restic-backup uses for the logical backups (the name "databasus" is historic, Databasus is gone).
+# Ensures the login role restic-backup uses for the logical backups.
 #
 # pg_read_all_data is a predefined role of the whole cluster: SELECT on all tables, views and
 # sequences in ALL databases and schemas (also the ones created later), nothing else. One role
@@ -14,14 +14,14 @@
 # new role goes to Vault (databases/postgresql/<username>) and is never printed; "reset" sets a new one.
 # Vault is written first, so an unreachable Vault stops the script before anything is changed.
 #
-# Usage: backup_user_create.sh [--dry-run] [username] [reset]     (default username: databasus)
+# Usage: backup_user_create.sh [--dry-run] [username] [reset]     (default username: backup)
 #        --dry-run  only report what would be changed
 set -euo pipefail
 
 # shellcheck source=../lib/database-common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 
-readonly DEFAULT_USER_NAME="databasus"
+readonly DEFAULT_USER_NAME="backup"
 readonly MAX_NAME_LENGTH=63
 
 RESET=false

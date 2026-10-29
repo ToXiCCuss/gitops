@@ -15,7 +15,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 
 # "<name>_role_owner" has to fit into the 63 bytes of a PostgreSQL identifier
 readonly MAX_NAME_LENGTH=52
-readonly BACKUP_ROLE="databasus"
+readonly BACKUP_ROLE="backup"
 
 DB_NAME=""
 DB_USER=""

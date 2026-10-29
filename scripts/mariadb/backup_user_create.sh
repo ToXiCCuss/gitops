@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ensures the login restic-backup uses for the logical backups (the name "databasus" is historic, Databasus is gone).
+# Ensures the login restic-backup uses for the logical backups.
 #
 # The user may read everything a dump needs and write nothing: SELECT (also the routines),
 # SHOW VIEW, TRIGGER, EVENT and LOCK TABLES on all databases, also on the ones created later.
@@ -14,14 +14,14 @@
 # new user goes to Vault (databases/mariadb/<username>) and is never printed; "reset" sets a new one.
 # Vault is written first, so an unreachable Vault stops the script before anything is changed.
 #
-# Usage: backup_user_create.sh [--dry-run] [username] [reset]     (default username: databasus)
+# Usage: backup_user_create.sh [--dry-run] [username] [reset]     (default username: backup)
 #        --dry-run  only report what would be changed
 set -euo pipefail
 
 # shellcheck source=../lib/database-common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 
-readonly DEFAULT_USER_NAME="databasus"
+readonly DEFAULT_USER_NAME="backup"
 # the 80 characters of a MariaDB user name
 readonly MAX_NAME_LENGTH=80
 readonly USER_HOST="%"
