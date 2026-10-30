@@ -205,10 +205,11 @@ data:
       :root {
         --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #646d78;
         --line: #dfe3e8; --accent: #2f6fed; --public: #b35c00;
+        --dev: #1a7f37; --qa: #d9730d; --prod: #cf222e;
       }
       @media (prefers-color-scheme: dark) {
         :root { --bg: #111418; --card: #1a1f26; --text: #e7eaee; --muted: #8b95a1; --line: #2a313b; --accent: #6b9bff;
-                --public: #f0a35e; }
+                --public: #f0a35e; --dev: #57c278; --qa: #f0a35e; --prod: #ff7b72; }
       }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
@@ -237,7 +238,11 @@ data:
       a.stage { padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px;
                 color: var(--text); text-decoration: none; }
       a.stage:hover, a.stage:focus-visible { border-color: var(--accent); }
-      a.stage.prod { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: var(--accent); font-weight: 600; }
+      a.stage.dev, a.stage.qa, a.stage.prod { background: color-mix(in srgb, var(--stage-color) 16%, transparent);
+                                              border-color: var(--stage-color); }
+      a.stage.dev { --stage-color: var(--dev); }
+      a.stage.qa { --stage-color: var(--qa); }
+      a.stage.prod { --stage-color: var(--prod); font-weight: 600; }
       a.stage small { color: var(--muted); font-weight: 400; margin-left: 4px; }
       .info { color: var(--muted); margin-top: 32px; font-size: 12.5px; }
     </style>
@@ -263,7 +268,7 @@ data:
         return e;
       }
 
-      const STAGE_ORDER = ["dev", "test", "stage", "prod"];
+      const STAGE_ORDER = ["dev", "qa", "test", "stage", "prod"];
       const stageRank = s => { const i = STAGE_ORDER.indexOf(s); return i < 0 ? STAGE_ORDER.length - 1 + 0.5 : i; };
 
       // icon: a devicon.dev name ("argocd" or "jenkins/plain") or an https:// image URL becomes a logo,
@@ -327,7 +332,7 @@ data:
               const row = el("div", "stages");
               entries.sort((x, y) => stageRank(x.stage) - stageRank(y.stage) || x.stage.localeCompare(y.stage));
               for (const e of entries) {
-                const chip = el("a", "stage" + (e.stage === "prod" ? " prod" : ""), e.stage);
+                const chip = el("a", "stage " + e.stage, e.stage);
                 chip.href = e.url;
                 chip.target = "_blank";
                 chip.rel = "noopener";
@@ -383,7 +388,7 @@ spec:
       # Raise it with every change of the ConfigMap portal-generator: the pod does not restart on its own,
       # the generator loop keeps the old script and the subPath mount of index.html never updates.
       annotations:
-        portal.rjst.de/config-revision: "2"
+        portal.rjst.de/config-revision: "3"
     spec:
       serviceAccountName: portal
       securityContext:
@@ -443,7 +448,7 @@ spec:
               value: master
             # VirtualServices in these namespaces are apps with a stage (namespace = stage).
             - name: STAGE_NAMESPACES
-              value: dev,test,stage,prod
+              value: dev,qa,test,stage,prod
             # Services that are neither a VirtualService nor in docker/ (NetBird runs on its own host)
             # and external links.
             - name: STATIC_SERVICES
