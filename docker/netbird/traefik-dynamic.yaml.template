@@ -1,0 +1,21 @@
+http:
+  middlewares:
+    # In this file and not in a label, so that the key stays out of the Compose config and deploy.sh needs no .env
+    netbird-dashboard-crowdsec:
+      plugin:
+        bouncer:
+          enabled: true
+          crowdsecMode: stream
+          crowdsecLapiScheme: http
+          crowdsecLapiHost: crowdsec:8080
+          crowdsecLapiKey: "__VAULT_NETBIRD_DASHBOARD_BOUNCER_KEY__"
+          crowdsecAppsecEnabled: true
+          crowdsecAppsecHost: crowdsec:7422
+          crowdsecAppsecFailureBlock: true
+          crowdsecAppsecUnreachableBlock: true
+
+tcp:
+  serversTransports:
+    pp-v2:
+      proxyProtocol:
+        version: 2
