@@ -1,0 +1,269 @@
+# Leantime: https://leantime.k8sdev.rjst.de - project management. There is no official Helm chart, so the app is
+# plain manifests. The database is leantime on the MariaDB of docker01, the environment with the secrets is the Secret
+# leantime (kubernetes/secrets/leantime.yaml). Setup and updates: README.md, section Leantime.
+# NetBird groups exist only while this app is deployed (destination k8s-leantime, users leantime-users).
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: k8s-leantime
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: k8s-leantime
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: leantime-users
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: leantime-users
+
+---
+
+# Two volumes and no subPath: a directory the kubelet creates for a subPath is not writable for the non-root user.
+# They are not backed up (like the other PVCs).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: leantime-userfiles
+  namespace: leantime
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: leantime-public-userfiles
+  namespace: leantime
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leantime
+  namespace: leantime
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: 1
+  # The volumes are ReadWriteOnce: the old pod has to let go of them first
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: leantime
+  template:
+    metadata:
+      labels:
+        app: leantime
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: leantime
+          image: leantime/leantime:3.12.0@sha256:8e093293224cf48a24cfac7f32631aa5335014a065cd62b8ced4a74e4d548b80
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: leantime
+          env:
+            - name: LEAN_APP_URL
+              value: https://leantime.k8sdev.rjst.de
+            - name: LEAN_DB_HOST
+              value: docker01.server.lan
+            - name: LEAN_DB_PORT
+              value: "3306"
+            - name: LEAN_DB_DATABASE
+              value: leantime
+            - name: LEAN_LANGUAGE
+              value: de-DE
+            - name: LEAN_DEFAULT_TIMEZONE
+              value: Europe/Berlin
+            # Login with Keycloak (realm rjst, client leantime). Leantime reads no role claim, so it cannot refuse a
+            # user without a role like Forgejo does. Instead it creates no users: only an address that already has
+            # an account in Leantime can log in, and the role is the one set there. The form stays as emergency login.
+            - name: LEAN_OIDC_ENABLE
+              value: "true"
+            - name: LEAN_OIDC_CREATE_USER
+              value: "false"
+            - name: LEAN_OIDC_PROVIDER_URL
+              value: https://auth.proxy.rjst.de/realms/rjst
+            - name: LEAN_OIDC_CLIENT_ID
+              value: leantime
+            - name: LEAN_OIDC_SCOPES
+              value: openid profile email
+            - name: LEAN_OIDC_FIELD_EMAIL
+              value: email
+            - name: LEAN_OIDC_FIELD_FIRSTNAME
+              value: given_name
+            - name: LEAN_OIDC_FIELD_LASTNAME
+              value: family_name
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          # No HTTP here: a database that is away would restart the pod and repair nothing
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          # Starting values without measurements: small requests, memory limit with headroom. Check the real
+          # use in the Kubernetes dashboards after the sync and tighten them.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          volumeMounts:
+            - name: userfiles
+              mountPath: /var/www/html/userfiles
+            - name: public-userfiles
+              mountPath: /var/www/html/public/userfiles
+      volumes:
+        - name: userfiles
+          persistentVolumeClaim:
+            claimName: leantime-userfiles
+        - name: public-userfiles
+          persistentVolumeClaim:
+            claimName: leantime-public-userfiles
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: leantime
+  namespace: leantime
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    app: leantime
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+
+---
+
+# leantime: https://leantime.k8sdev.rjst.de -> leantime.leantime:80
+# Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: leantime
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: internal-gateway
+  servers:
+    - port:
+        number: 8454
+        name: https-leantime
+        protocol: HTTPS
+      hosts:
+        - leantime.k8sdev.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: k8sdev-wildcard-tls
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gw-leantime
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  type: ClusterIP
+  selector:
+    app: internal-gateway
+    istio: internal-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8454
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: leantime
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: Leantime
+    portal.rjst.de/group: Platform
+    portal.rjst.de/description: Project management
+    portal.rjst.de/icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/leantime.svg
+spec:
+  hosts:
+    - leantime.k8sdev.rjst.de
+  gateways:
+    - leantime
+  http:
+    - route:
+        - destination:
+            host: leantime.leantime.svc.cluster.local
+            port:
+              number: 80
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: gw-leantime
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: gw-leantime
+  groups:
+    - name: k8s-leantime
+    - name: kubernetes-services
