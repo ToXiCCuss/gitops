@@ -4,10 +4,11 @@
 #   repository docker:        backup of the key files, forget, prune, check
 #   repository databases:     logical dumps of PostgreSQL and MariaDB, forget, prune, check
 #   repositories vault, netbird: check only (vault-backup and netbird_backup.sh write and prune them)
+#   every repository:         stats, its size and snapshots as metrics
 # Every step leaves its result for the node_exporter textfile collector, Prometheus alerts on it.
 set -u
 
-apk add --no-cache restic rclone curl postgresql-client mariadb-client >/dev/null || { echo "apk add failed" >&2; exit 1; }
+apk add --no-cache restic rclone curl jq postgresql-client mariadb-client >/dev/null || { echo "apk add failed" >&2; exit 1; }
 
 . /common.sh
 
@@ -25,6 +26,10 @@ MARIADB_SKIPPED_DATABASES="information_schema performance_schema mysql sys"
 # Mount of the textfile collector directory of the node_exporter, see docker-compose.yml
 METRICS_DIR=/metrics
 JOB_NAME=restic-backup
+
+# Time of the newest snapshot, 0 without snapshots. The zone of the writer is ignored (fromdate cannot read offsets
+# or nanoseconds): netbird_backup.sh may run in local time, a few hours do not matter for an age shown in days
+NEWEST_SNAPSHOT_FILTER='map(.time[0:19] + "Z" | fromdate) | max // 0'
 
 # The steps that failed in this run, "repository/step" separated by spaces
 FAILED_STEPS=""
@@ -71,11 +76,11 @@ write_run_metrics() {
     } | publish_metrics "$JOB_NAME"
 }
 
-# run_step <repository> <step> <function>: runs the function, records the result and returns it
+# run_step <repository> <step> <function>: runs the function with the repository as argument, records the result and returns it
 run_step() {
     started=$(date +%s)
     echo "== $1: $2"
-    if "$3"; then
+    if "$3" "$1"; then
         write_step_metrics "$1" "$2" 1 "$started"
     else
         echo "Step $2 of $1 FAILED" >&2
@@ -168,6 +173,22 @@ check_repository() {
     restic check --read-data-subset "$CHECK_READ_DATA_SUBSET"
 }
 
+# write_repository_metrics <repository>: the size in the S3 (after deduplication and compression), the number of
+# snapshots and the time of the newest one. Each value is read on its own, because /bin/sh has no pipefail
+write_repository_metrics() {
+    statistics=$(restic stats --mode raw-data --json) || return 1
+    snapshots=$(restic snapshots --json) || return 1
+    size=$(printf '%s' "$statistics" | jq -er '.total_size') || return 1
+    snapshot_count=$(printf '%s' "$snapshots" | jq -er 'length') || return 1
+    newest_snapshot=$(printf '%s' "$snapshots" | jq -er "$NEWEST_SNAPSHOT_FILTER") || return 1
+    labels="repository=\"$1\""
+    {
+        printf 'restic_repository_size_bytes{%s} %s\n' "$labels" "$size"
+        printf 'restic_repository_snapshots{%s} %s\n' "$labels" "$snapshot_count"
+        printf 'restic_repository_newest_snapshot_timestamp_seconds{%s} %s\n' "$labels" "$newest_snapshot"
+    } | publish_metrics "$JOB_NAME-$1-repository"
+}
+
 run_databases() {
     select_repository databases s3
     databases_backed_up=""
@@ -181,10 +202,11 @@ run_databases() {
         run_step databases prune prune_unused_data
     fi
     run_step databases check check_repository
+    run_step databases stats write_repository_metrics
 }
 
 run_nightly() {
-    started=$(date +%s)
+    run_started=$(date +%s)
     FAILED_STEPS=""
     select_repository docker s3
     # Without a new snapshot there is nothing to thin out, check still runs
@@ -193,13 +215,15 @@ run_nightly() {
         run_step docker prune prune_unused_data
     fi
     run_step docker check check_repository
+    run_step docker stats write_repository_metrics
     run_databases
     for repository in vault netbird; do
         select_repository "$repository" s3
         run_step "$repository" check check_repository
+        run_step "$repository" stats write_repository_metrics
     done
     [ -z "$FAILED_STEPS" ] || return 1
-    write_run_metrics "$started"
+    write_run_metrics "$run_started"
 }
 
 run_and_report() {

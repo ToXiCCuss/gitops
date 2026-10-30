@@ -496,6 +496,8 @@ A job that does not run at all (container stopped, cron gone) sends no Discord m
 
 `restic-backup` additionally reports every step (`backup`, `forget`, `prune` and `check` of the repository `docker`, `backup-postgresql`, `backup-mariadb`, `forget`, `prune` and `check` of `databases`, `check` of `vault` and `netbird`) in `restic-backup-<repository>-<step>.prom`: `restic_step_success{repository,step}` (1 or 0), `restic_step_last_success_timestamp_seconds` and `restic_step_duration_seconds`. The rule `ResticStepFailed` alerts as soon as a step failed, the table "Restic steps" of the Status dashboard shows the last result of every step. The output of the steps (the run log) is in `docker logs restic-backup`.
 
+The last step of every repository, `stats`, writes `restic-backup-<repository>-repository.prom`: `restic_repository_size_bytes{repository}` (size in the S3 after deduplication and compression), `restic_repository_snapshots` and `restic_repository_newest_snapshot_timestamp_seconds` (read as UTC, a writer in another time zone is off by its offset). The Status dashboard shows them in the table "Restic repositories" and the graph "Restic repository size". There is no alert on them.
+
 The alerts go through Alertmanager to a Discord webhook, which is set in Vault as `argocd/data/prometheus#discord_webhook_url`. `netbird_backup.sh` does not write this metric. It is only covered by its own Discord notification (NetBird is backed up by hand with every update, see `netbird_upgrade.sh`).
 
 After the first deploy check the metric: `curl -s localhost:9100/metrics | grep backup_last` on docker01, or `backup_last_success_timestamp_seconds` in Prometheus.
