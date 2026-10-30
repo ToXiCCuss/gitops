@@ -47,3 +47,42 @@
     state: started
     enabled: true
   ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Install the script that writes the open pull requests
+  ansible.builtin.copy:
+    src: gitops-open-pull-requests.sh
+    dest: /usr/local/bin/gitops-open-pull-requests.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the service that runs the script
+  ansible.builtin.template:
+    src: gitops-open-pull-requests.service.j2
+    dest: /etc/systemd/system/gitops-open-pull-requests.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: gitops_open_pull_requests_service
+
+- name: Install the timer of the script
+  ansible.builtin.template:
+    src: gitops-open-pull-requests.timer.j2
+    dest: /etc/systemd/system/gitops-open-pull-requests.timer
+    owner: root
+    group: root
+    mode: "0644"
+  register: gitops_open_pull_requests_timer
+
+- name: Reload systemd after the units of the script changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: gitops_open_pull_requests_service is changed or gitops_open_pull_requests_timer is changed
+
+# In check mode on a new host the unit file does not exist yet, so enabling it would fail
+- name: Ensure the timer of the script is enabled and running
+  ansible.builtin.systemd:
+    name: gitops-open-pull-requests.timer
+    state: started
+    enabled: true
+  ignore_errors: "{{ ansible_check_mode }}"

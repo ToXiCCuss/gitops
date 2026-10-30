@@ -1,6 +1,6 @@
 # Grafana picks this up through the dashboard sidecar (label grafana_dashboard, all namespaces).
-# Overview of the targets, PostgreSQL, MariaDB, the web UI probes, the firing alerts, the backups, the disk usage, the Docker deploy
-# and the OS updates of the hosts, see alert-rules*.yaml.
+# Overview of the targets, PostgreSQL, MariaDB, the web UI probes, the firing alerts, the backups, the disk usage, the Docker deploy,
+# the OS updates of the hosts and the open pull requests of this repository, see alert-rules*.yaml.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -1372,6 +1372,151 @@ data:
                   "Value #B": "Pending updates",
                   "Value #C": "Pending security updates",
                   "Value #D": "Last unattended-upgrades run (ago)"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 19,
+          "type": "table",
+          "title": "Open pull requests of gitops (fetched hourly)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 57,
+            "w": 24,
+            "h": 7
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "time() - gitops_open_pull_request_created_timestamp_seconds",
+              "legendFormat": "",
+              "instant": true,
+              "range": false,
+              "format": "table",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "Keine Daten"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Title"
+                },
+                "properties": [
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "Open on GitHub",
+                        "url": "${__data.fields.url}",
+                        "targetBlank": true
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "url"
+                },
+                "properties": [
+                  {
+                    "id": "custom.hidden",
+                    "value": true
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "#"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 70
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Author"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 180
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Age"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dtdurations"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 180
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "sortBy": [
+              {
+                "displayName": "Age",
+                "desc": false
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "instance": true,
+                  "job": true
+                },
+                "indexByName": {
+                  "number": 0,
+                  "title": 1,
+                  "author": 2,
+                  "Value": 3,
+                  "url": 4
+                },
+                "renameByName": {
+                  "number": "#",
+                  "title": "Title",
+                  "author": "Author",
+                  "Value": "Age"
                 }
               }
             }

@@ -361,6 +361,7 @@ sudo systemctl stop gitops-deploy.timer            # pause it, e.g. while you ch
 ```
 
 - The timer needs the AppRole files `/etc/gitops/role_id` and `/etc/gitops/secret_id` (see [Secrets from Vault](#secrets-from-vault)). Without `role_id` the run is skipped.
+- The same role installs `gitops-open-pull-requests.timer` (`gitops_deploy_open_pull_requests_calendar`, hourly). It fetches the open pull requests from the GitHub API without a token and writes them to `gitops-open-pull-requests.prom`; the Status dashboard shows them as a table. When the request fails, the last list stays: check `journalctl -u gitops-open-pull-requests`.
 - `git pull --ff-only` fails when the checkout has local changes or a commit that is not on `master`. Then nothing is deployed until you clean it up, and `DockerDeployPullFailed` fires.
 - If Vault is not reachable, the projects with secrets are not deployed (no fallback) and `DockerDeployFailed` fires after 30 minutes.
 - The run leaves its result in the textfile collector of the node_exporter (`/var/lib/prometheus/node-exporter/gitops-deploy.prom`): `gitops_deploy_project_success{project}`, `gitops_deploy_pull_success`, `gitops_deploy_last_success_timestamp_seconds`, `gitops_deploy_last_run_timestamp_seconds` and `gitops_deploy_revision_info{revision}` (the commit that is deployed). The rules are in `kubernetes/monitoring/kubectl/alert-rules.yaml` (`gitops-deploy`) and go through Alertmanager to Discord.

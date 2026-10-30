@@ -7,6 +7,9 @@ gitops_deploy_repository_dir: /root/gitops
 # (kubernetes/monitoring/kubectl/alert-rules.yaml) knows this window, change both together.
 gitops_deploy_calendar: "*-*-* 08..20:00:00"
 
+# When the open pull requests are fetched from GitHub for the Status dashboard (systemd calendar event)
+gitops_deploy_open_pull_requests_calendar: hourly
+
 # Textfile collector directory of the node_exporter (the same as node_exporter_textfile_dir in the
 # node_exporter role). deploy.sh leaves the result of every run there, Prometheus alerts on it.
 gitops_deploy_metrics_dir: /var/lib/prometheus/node-exporter

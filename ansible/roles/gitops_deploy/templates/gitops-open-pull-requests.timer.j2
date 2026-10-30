@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Write the open pull requests of the gitops repository regularly
+
+[Timer]
+OnCalendar={{ gitops_deploy_open_pull_requests_calendar }}
+RandomizedDelaySec=1min
+
+[Install]
+WantedBy=timers.target

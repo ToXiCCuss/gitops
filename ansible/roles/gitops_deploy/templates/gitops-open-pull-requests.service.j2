@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Write the open pull requests of the gitops repository for the node_exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gitops-open-pull-requests.sh {{ gitops_deploy_metrics_dir }}/gitops-open-pull-requests.prom
