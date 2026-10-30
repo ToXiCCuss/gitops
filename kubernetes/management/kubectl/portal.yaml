@@ -6,7 +6,8 @@
 #               /icon (a devicon.dev name such as argocd, or name/variant such as jenkins/plain;
 #               an https:// URL to an image for what devicon does not have, e.g. Keycloak and NetBird;
 #               anything else is shown as text, e.g. an emoji), /hidden: "true", /stage, /version,
-#               /public: "true" (reachable from the Internet, not only through NetBird: a "public" badge).
+#               /public: "true" (reachable from the Internet, not only through NetBird: a "public" badge,
+#               all others a "vpn" badge; the group External gets none).
 #               A VirtualService in one of the STAGE_NAMESPACES (dev, prod, ...) is an app with
 #               a stage: one card per app, one link per stage, name from the app label,
 #               version from app.kubernetes.io/version.
@@ -204,12 +205,12 @@ data:
     <style>
       :root {
         --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #646d78;
-        --line: #dfe3e8; --accent: #2f6fed; --public: #b35c00;
-        --dev: #1a7f37; --qa: #d9730d; --prod: #cf222e;
+        --line: #dfe3e8; --accent: #2f6fed;
+        --dev: #1a7f37; --qa: #d9730d; --prod: #cf222e; --public: var(--prod); --vpn: var(--dev);
       }
       @media (prefers-color-scheme: dark) {
         :root { --bg: #111418; --card: #1a1f26; --text: #e7eaee; --muted: #8b95a1; --line: #2a313b; --accent: #6b9bff;
-                --public: #f0a35e; --dev: #57c278; --qa: #f0a35e; --prod: #ff7b72; }
+                --dev: #57c278; --qa: #f0a35e; --prod: #ff7b72; }
       }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
@@ -230,8 +231,11 @@ data:
       .icon.img { background: #fff; border: 1px solid var(--line); }
       .icon img { width: 22px; height: 22px; }
       .name { font-weight: 600; }
-      .public { margin-left: 6px; padding: 0 7px; border: 1px solid var(--public); border-radius: 999px;
-                color: var(--public); font-size: 11px; font-weight: 600; vertical-align: 1px; }
+      .badge { margin-left: 6px; padding: 0 7px; border: 1px solid var(--badge-color); border-radius: 999px;
+               background: color-mix(in srgb, var(--badge-color) 16%, transparent);
+               font-size: 11px; font-weight: 600; vertical-align: 1px; }
+      .badge.public { --badge-color: var(--public); }
+      .badge.vpn { --badge-color: var(--vpn); }
       .desc, .host { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
       div.card { cursor: default; }
       .stages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -292,6 +296,15 @@ data:
         return box;
       }
 
+      // links to third-party sites: neither public nor behind the VPN in our sense
+      const EXTERNAL_GROUP = "External";
+      function accessBadge(s) {
+        const access = s.public ? "public" : "vpn";
+        const badge = el("span", "badge " + access, access);
+        badge.title = s.public ? "Reachable from the Internet, not only through NetBird" : "Reachable only through NetBird";
+        return badge;
+      }
+
       function render() {
         const term = q.value.trim().toLowerCase();
         const groups = new Map();
@@ -320,11 +333,7 @@ data:
             card.append(iconEl(s));
             const text = el("div");
             const name = el("div", "name", s.name);
-            if (s.public) {
-              const badge = el("span", "public", "public");
-              badge.title = "Reachable from the Internet, not only through NetBird";
-              name.append(badge);
-            }
+            if (s.group !== EXTERNAL_GROUP) name.append(accessBadge(s));
             text.append(name);
             if (!staged) text.append(el("div", "desc", s.description || new URL(s.url).host));
             else {
@@ -388,7 +397,7 @@ spec:
       # Raise it with every change of the ConfigMap portal-generator: the pod does not restart on its own,
       # the generator loop keeps the old script and the subPath mount of index.html never updates.
       annotations:
-        portal.rjst.de/config-revision: "3"
+        portal.rjst.de/config-revision: "4"
     spec:
       serviceAccountName: portal
       securityContext:
