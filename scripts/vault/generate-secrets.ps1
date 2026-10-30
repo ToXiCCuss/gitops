@@ -6,7 +6,7 @@
 .DESCRIPTION
     - Freely generatable secrets (Harbor/Jenkins/Grafana/Forgejo admin passwords, the OIDC client secrets of Grafana, Harbor, Jenkins,
       Vault, Forgejo and Leantime, the secret key, internal token and backup restic password of Forgejo,
-      the session password of Leantime)
+      the session password and backup restic password of Leantime)
       are generated locally and written to Vault, but never replace a value
       that already exists.
     - External values are prompted for interactively and written to Vault:
@@ -134,6 +134,8 @@ Set-VaultKV -Path "forgejo" -Data @{ "security.internal_token" = (New-RandomSecr
 Set-VaultKV -Path "forgejo" -Data @{ "backup.restic_password" = (New-RandomSecret -Length 64) } -SkipExisting
 Set-VaultKV -Path "leantime" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "leantime" -Data @{ "session.password" = (New-RandomSecret -Length 64) } -SkipExisting
+# Restic password of the repository leantime/restic (the CronJob leantime-backup): without it the backup cannot be read
+Set-VaultKV -Path "leantime" -Data @{ "backup.restic_password" = (New-RandomSecret -Length 64) } -SkipExisting
 
 # ── 2. External values that must match reality - prompt, never generate ───
 Write-Step "External values (leave blank to skip / keep existing)"
@@ -181,6 +183,17 @@ if ($forgejoS3.ContainsKey("access_key")) {
 }
 $forgejo = Get-VaultKV -Path "forgejo"
 Set-VaultKV -Path "restic-backup" -Engine "docker" -Data @{ "RESTIC_PASSWORD_FORGEJO" = $forgejo["backup.restic_password"] }
+
+# The same for the backup of Leantime
+Write-Step "Copying the Leantime backup values between argocd/ and docker/"
+$leantimeS3 = Get-VaultKV -Path "s3/leantime" -Engine "docker"
+if ($leantimeS3.ContainsKey("access_key")) {
+    Set-VaultKV -Path "leantime" -Data @{ "backup.s3_access_key" = $leantimeS3["access_key"]; "backup.s3_secret_key" = $leantimeS3["secret_key"] }
+} else {
+    Write-Warn2 "docker/s3/leantime does not exist yet: run create-s3-identities.ps1 first, then this script again."
+}
+$leantime = Get-VaultKV -Path "leantime"
+Set-VaultKV -Path "restic-backup" -Engine "docker" -Data @{ "RESTIC_PASSWORD_LEANTIME" = $leantime["backup.restic_password"] }
 
 Write-Step "Done"
 Write-Ok "All generated/provided values are in Vault - nothing was printed to the console or saved to disk."

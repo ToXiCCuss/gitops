@@ -167,12 +167,14 @@ spec:
   # Before restic-backup on docker01 (03:00 UTC, checks this repository) and the offsite sync (05:00 UTC)
   schedule: "0 2 * * *"
   timeZone: Etc/UTC
+  # A run missed by more than this is dropped: hours later it would stop Forgejo during the day
+  startingDeadlineSeconds: 600
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      # No second try: every try stops Forgejo again. The alert ForgejoBackupTooOld reports a failed night
+      # No second try: every try stops Forgejo again. The alert CronJobBackupFailed reports a failed night
       backoffLimit: 0
       activeDeadlineSeconds: 3600
       template:

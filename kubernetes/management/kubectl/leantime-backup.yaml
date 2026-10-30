@@ -1,0 +1,189 @@
+# Nightly backup of the two upload volumes of Leantime into the repository leantime/restic on the RustFS S3 of docker01,
+# the offsite sync copies it to pCloud and restic-backup on docker01 checks it. Unlike forgejo-backup this needs no stop:
+# an upload is a new file, and the database is dumped by restic-backup like every other on docker01.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: leantime-backup
+  namespace: leantime
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+data:
+  backup.sh: |
+    #!/bin/sh
+    set -eu
+
+    # Retention like the SQL dumps of restic-backup
+    readonly KEEP_DAILY=14
+    readonly KEEP_WEEKLY=8
+    readonly KEEP_MONTHLY=6
+    readonly MAX_UNUSED=10%
+    # The nightly restic check of restic-backup on docker01 may hold the lock for a while
+    readonly RETRY_LOCK=30m
+
+    main() {
+        apk add --no-cache restic >/dev/null
+        restic cat config >/dev/null 2>&1 || restic init
+        restic backup /userfiles /public-userfiles --host leantime --tag leantime --retry-lock "$RETRY_LOCK"
+        restic forget --host leantime --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" \
+            --keep-monthly "$KEEP_MONTHLY" --prune --max-unused "$MAX_UNUSED" --retry-lock "$RETRY_LOCK"
+        echo "Backup finished" >&2
+    }
+
+    main "$@"
+
+  restore.sh: |
+    #!/bin/sh
+    # Writes a snapshot (SNAPSHOT, default latest) back into the two volumes while Leantime runs. Started by hand only
+    # (the suspended CronJob leantime-restore, see the README). Files that are newer than the snapshot stay.
+    set -eu
+
+    readonly SNAPSHOT="${SNAPSHOT:-latest}"
+    readonly RETRY_LOCK=30m
+
+    main() {
+        apk add --no-cache restic >/dev/null
+        restic restore "$SNAPSHOT" --host leantime --target / --retry-lock "$RETRY_LOCK"
+        echo "Restore of $SNAPSHOT finished" >&2
+    }
+
+    main "$@"
+
+---
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: leantime-backup
+  namespace: leantime
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  # Before restic-backup on docker01 (03:00 UTC, checks this repository) and the offsite sync (05:00 UTC)
+  schedule: "45 2 * * *"
+  timeZone: Etc/UTC
+  # A run missed by more than this is dropped: hours later it would overlap with those two jobs
+  startingDeadlineSeconds: 600
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # The alert CronJobBackupFailed reports a failed night, the next night repeats it
+      backoffLimit: 0
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: backup
+              # The same image as restic-backup on docker01
+              image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+              command: ["/bin/sh", "/scripts/backup.sh"]
+              env:
+                - name: RESTIC_REPOSITORY
+                  value: s3:http://docker01.server.lan:9000/leantime/restic
+                - name: RESTIC_CACHE_DIR
+                  value: /cache
+              # RESTIC_PASSWORD and the S3 keys (kubernetes/secrets/leantime-backup.yaml)
+              envFrom:
+                - secretRef:
+                    name: leantime-backup
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: "1", memory: 512Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                # The volumes of Leantime (local-path: the pod runs on their node), read only
+                - name: userfiles
+                  mountPath: /userfiles
+                  readOnly: true
+                - name: public-userfiles
+                  mountPath: /public-userfiles
+                  readOnly: true
+                - name: cache
+                  mountPath: /cache
+          volumes:
+            - name: scripts
+              configMap:
+                name: leantime-backup
+            - name: userfiles
+              persistentVolumeClaim:
+                claimName: leantime-userfiles
+                readOnly: true
+            - name: public-userfiles
+              persistentVolumeClaim:
+                claimName: leantime-public-userfiles
+                readOnly: true
+            - name: cache
+              emptyDir: {}
+
+---
+
+# The restore: never scheduled (suspend), started by hand from the template, see "Leantime (project management)" in the README:
+#   kubectl -n leantime create job leantime-restore-$(date +%s) --from=cronjob/leantime-restore
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: leantime-restore
+  namespace: leantime
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  suspend: true
+  schedule: "0 0 1 1 *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: restore
+              image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+              command: ["/bin/sh", "/scripts/restore.sh"]
+              env:
+                - name: RESTIC_REPOSITORY
+                  value: s3:http://docker01.server.lan:9000/leantime/restic
+                - name: RESTIC_CACHE_DIR
+                  value: /cache
+              envFrom:
+                - secretRef:
+                    name: leantime-backup
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: "1", memory: 512Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                # Written: the restore puts the files back
+                - name: userfiles
+                  mountPath: /userfiles
+                - name: public-userfiles
+                  mountPath: /public-userfiles
+                - name: cache
+                  mountPath: /cache
+          volumes:
+            - name: scripts
+              configMap:
+                name: leantime-backup
+            - name: userfiles
+              persistentVolumeClaim:
+                claimName: leantime-userfiles
+            - name: public-userfiles
+              persistentVolumeClaim:
+                claimName: leantime-public-userfiles
+            - name: cache
+              emptyDir: {}

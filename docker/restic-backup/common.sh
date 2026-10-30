@@ -13,6 +13,7 @@ repository_path() {
         vault)     echo "vault/raft" ;;
         netbird)   echo "netbird/restic" ;;
         forgejo)   echo "forgejo/restic" ;;
+        leantime)  echo "leantime/restic" ;;
         *)         return 1 ;;
     esac
 }
@@ -24,13 +25,14 @@ repository_password() {
         vault)     echo "$RESTIC_PASSWORD_VAULT" ;;
         netbird)   echo "$RESTIC_PASSWORD_NETBIRD" ;;
         forgejo)   echo "$RESTIC_PASSWORD_FORGEJO" ;;
+        leantime)  echo "$RESTIC_PASSWORD_LEANTIME" ;;
     esac
 }
 
 # select_repository <name> <s3|pcloud>: points restic at the repository, either the one on the local S3
 # or its copy in pCloud (needs the rclone.conf mounted by the compose file)
 select_repository() {
-    repository_location=$(repository_path "$1") || { echo "Unknown repository: $1 (docker, databases, vault, netbird or forgejo)" >&2; return 1; }
+    repository_location=$(repository_path "$1") || { echo "Unknown repository: $1 (docker, databases, vault, netbird, forgejo or leantime)" >&2; return 1; }
     case "$2" in
         s3)     RESTIC_REPOSITORY="s3:$S3_ENDPOINT/$repository_location" ;;
         pcloud) RESTIC_REPOSITORY="rclone:$PCLOUD_REMOTE:$PCLOUD_ROOT/$repository_location" ;;

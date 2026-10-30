@@ -3,8 +3,8 @@
 # never fight over the repository lock:
 #   repository docker:        backup of the key files, forget, prune, check
 #   repository databases:     logical dumps of PostgreSQL and MariaDB, forget, prune, check
-#   repositories vault, netbird, forgejo: check only (vault-backup, netbird_backup.sh and the CronJob forgejo-backup
-#   in the cluster write and prune them)
+#   repositories vault, netbird, forgejo, leantime: check only (vault-backup, netbird_backup.sh and the CronJobs
+#   forgejo-backup and leantime-backup in the cluster write and prune them)
 #   every repository:         stats, its size and snapshots as metrics
 # Every step leaves its result for the node_exporter textfile collector, Prometheus alerts on it.
 set -u
@@ -18,6 +18,8 @@ apk add --no-cache restic rclone curl jq postgresql-client mariadb-client >/dev/
 KEY_FILES="/userdata/gitops /userdata/docker/offsite-sync/rclone/rclone.conf"
 GITOPS_GIT_DIRECTORY=/userdata/gitops/.git
 MAX_UNUSED=10%
+# The repositories that other jobs write can still be locked when this run reaches them (a CronJob started late)
+RETRY_LOCK=15m
 
 # Scratch folder of the dumps (a bind mount of the compose file), emptied after every backup
 DUMP_DIR=/dump
@@ -171,14 +173,14 @@ prune_unused_data() {
 }
 
 check_repository() {
-    restic check --read-data-subset "$CHECK_READ_DATA_SUBSET"
+    restic check --read-data-subset "$CHECK_READ_DATA_SUBSET" --retry-lock "$RETRY_LOCK"
 }
 
 # write_repository_metrics <repository>: the size in the S3 (after deduplication and compression), the number of
 # snapshots and the time of the newest one. Each value is read on its own, because /bin/sh has no pipefail
 write_repository_metrics() {
-    statistics=$(restic stats --mode raw-data --json) || return 1
-    snapshots=$(restic snapshots --json) || return 1
+    statistics=$(restic stats --mode raw-data --json --retry-lock "$RETRY_LOCK") || return 1
+    snapshots=$(restic snapshots --json --retry-lock "$RETRY_LOCK") || return 1
     size=$(printf '%s' "$statistics" | jq -er '.total_size') || return 1
     snapshot_count=$(printf '%s' "$snapshots" | jq -er 'length') || return 1
     newest_snapshot=$(printf '%s' "$snapshots" | jq -er "$NEWEST_SNAPSHOT_FILTER") || return 1
@@ -218,7 +220,7 @@ run_nightly() {
     run_step docker check check_repository
     run_step docker stats write_repository_metrics
     run_databases
-    for repository in vault netbird forgejo; do
+    for repository in vault netbird forgejo leantime; do
         select_repository "$repository" s3
         run_step "$repository" check check_repository
         run_step "$repository" stats write_repository_metrics
