@@ -257,7 +257,7 @@ data:
         <h1>Portal</h1>
         <input id="q" type="search" placeholder="Search  ( / )" autocomplete="off">
       </header>
-      <div id="content"></div>
+      <div id="content"><p class="desc">Loading…</p></div>
       <p class="info" id="info"></p>
     </main>
     <script>
@@ -359,11 +359,15 @@ data:
           data.generated ? "Updated: " + new Date(data.generated).toLocaleString("en-GB") : "";
       }
 
+      // services.json is missing until the generator has finished its first run after a restart
+      const RELOAD_INTERVAL_MS = 60000;
+      const FIRST_LOAD_RETRY_MS = 5000;
       async function load() {
         try {
           const r = await fetch("services.json", { cache: "no-store" });
           if (r.ok) { data = await r.json(); render(); }
         } catch (e) { /* keep showing the last list */ }
+        setTimeout(load, data.generated ? RELOAD_INTERVAL_MS : FIRST_LOAD_RETRY_MS);
       }
 
       q.addEventListener("input", render);
@@ -371,7 +375,6 @@ data:
         if (e.key === "/" && document.activeElement !== q) { e.preventDefault(); q.focus(); }
       });
       load();
-      setInterval(load, 60000);
     </script>
     </body>
     </html>
@@ -397,7 +400,7 @@ spec:
       # Raise it with every change of the ConfigMap portal-generator: the pod does not restart on its own,
       # the generator loop keeps the old script and the subPath mount of index.html never updates.
       annotations:
-        portal.rjst.de/config-revision: "4"
+        portal.rjst.de/config-revision: "5"
     spec:
       serviceAccountName: portal
       securityContext:
