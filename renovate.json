@@ -40,6 +40,23 @@
   ],
   "packageRules": [
     {
+      "description": "NetBird stays on plain tags: netbird_rollback.sh cannot tag an old image back onto a digest reference.",
+      "matchFileNames": [
+        "docker/netbird/docker-compose.yml"
+      ],
+      "pinDigests": false
+    },
+    {
+      "description": "Server, proxy and dashboard of NetBird go up together: a proxy newer than the server loses functions.",
+      "matchFileNames": [
+        "docker/netbird/docker-compose.yml"
+      ],
+      "matchPackageNames": [
+        "netbirdio/*"
+      ],
+      "groupName": "netbird"
+    },
+    {
       "description": "Merge digest and patch updates of these Docker images by themselves. The gitops-deploy timer rolls them out within 15 minutes. Every other image stays a manual review.",
       "matchManagers": [
         "docker-compose"

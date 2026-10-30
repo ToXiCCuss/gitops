@@ -14,19 +14,15 @@
 #   5. health check - on failure offers (or with --auto-rollback runs)
 #      netbird_rollback.sh
 #
-# Traefik and CrowdSec are not part of the NetBird release, their versions are
-# set in docker-compose.yml. --traefik, --crowdsec and --bouncer (the plugin
-# version, --experimental.plugins.bouncer.version in the traefik command) change
-# them: the new docker-compose.yml is prepared as a copy, used for the pull and
-# only written after the backup, so netbird_rollback.sh restores the old one.
-# --traefik v3.7.12 or newer also sets aliasHeadersStrategy=delete on the web and
-# websecure entrypoints and --providers.docker.network is set to the real network
-# of the container when it has exactly one.
+# The versions of all images are set in Git (docker/netbird/docker-compose.yml, also
+# for Traefik and CrowdSec, which are not part of the NetBird release). Pull the
+# repository first: the file is used for the pull and only copied to NETBIRD_DIR after
+# the backup, so netbird_rollback.sh restores the old one.
 #
-# Usage: sudo ./netbird_upgrade.sh [--yes] [--auto-rollback] [--keep N] [--traefik TAG] [--crowdsec TAG] [--bouncer VERSION]
+# Usage: sudo ./netbird_upgrade.sh [--yes] [--auto-rollback] [--keep N]
 #
 # Optional in /etc/netbird-backup.cred:
-#   NETBIRD_DIR, BACKUP_DIR,
+#   NETBIRD_DIR, BACKUP_DIR, GITOPS_DIR (checkout of this repository, default /root/gitops),
 #   HEALTH_URL (e.g. https://netbird.example.com - must answer with HTTP 2xx/3xx)
 #   HEALTH_TIMEOUT (seconds, default 120), ROLLBACK_KEEP (default 3)
 # =============================================================================
@@ -64,6 +60,8 @@ fi
 
 NETBIRD_DIR="${NETBIRD_DIR:-/opt/netbird}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/netbird}"
+GITOPS_DIR="${GITOPS_DIR:-/root/gitops}"
+GITOPS_COMPOSE="$GITOPS_DIR/docker/netbird/docker-compose.yml"
 HEALTH_URL="${HEALTH_URL:-}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-120}"
 ROLLBACK_KEEP="${ROLLBACK_KEEP:-3}"
@@ -71,31 +69,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EDGE_SERVICE_NAMES=(crowdsec traefik)
 COMPOSE_FILE_NAME="docker-compose.yml"
 UPGRADE_COMPOSE_NAME="docker-compose.upgrade.yml"
-VERSION_PATTERN='^[A-Za-z0-9._-]+$'
 
 ASSUME_YES=false
 AUTO_ROLLBACK=false
-declare -A NEW_TAG
-NEW_BOUNCER_VERSION=""
 UPGRADE_COMPOSE=""
 PULL_COMPOSE_FILE="$COMPOSE_FILE_NAME"
-
-require_version() {
-    if [[ ! "$2" =~ $VERSION_PATTERN ]]; then
-        error "$1 needs a version like v3.7.14, got '$2'"
-        exit 1
-    fi
-}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --yes|-y)        ASSUME_YES=true; shift ;;
         --auto-rollback) AUTO_ROLLBACK=true; shift ;;
         --keep)          ROLLBACK_KEEP="$2"; shift 2 ;;
-        --traefik)       require_version "$1" "${2:-}"; NEW_TAG[traefik]="$2"; shift 2 ;;
-        --crowdsec)      require_version "$1" "${2:-}"; NEW_TAG[crowdsec]="$2"; shift 2 ;;
-        --bouncer)       require_version "$1" "${2:-}"; NEW_BOUNCER_VERSION="$2"; shift 2 ;;
-        -h|--help)       sed -n '26p' "$0" | sed 's/^# //'; exit 0 ;;
+        -h|--help)       sed -n '22p' "$0" | sed 's/^# //'; exit 0 ;;
         *)               error "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -161,124 +146,28 @@ detect_services() {
     success "Services: ${SERVICES[*]}"
 }
 
-# ── New docker-compose.yml (only with --traefik/--crowdsec/--bouncer) ─────────
-# Image reference with the tag replaced; digest and untagged references are refused
-retag_reference() {
-    local reference="$1" tag="$2"
-    if [[ "$reference" == *@* || "${reference##*/}" != *:* ]]; then
-        error "Cannot change the tag of '$reference' (digest or untagged) - edit docker-compose.yml by hand."
-        exit 1
-    fi
-    echo "${reference%:*}:$tag"
-}
-
-# Sets image: of one service (2-space indented key under services:) in a compose file
-set_image_reference() {
-    local service="$1" reference="$2" file="$3" content
-    content=$(awk -v service="$service" -v reference="$reference" '
-        /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ { current = $1; sub(/:$/, "", current) }
-        current == service && !done && /^[[:space:]]+image:[[:space:]]/ { sub(/image:.*/, "image: " reference); done = 1 }
-        { print }
-        END { exit done ? 0 : 1 }' "$file") \
-        || { error "No 'image:' line found for service '$service' in $COMPOSE_FILE_NAME."; exit 1; }
-    printf '%s\n' "$content" > "$file"
-}
-
-set_bouncer_version() {
-    local version="$1" file="$2"
-    if ! grep -q 'experimental\.plugins\.bouncer\.version=' "$file"; then
-        error "No --experimental.plugins.bouncer.version flag in $COMPOSE_FILE_NAME - cannot set --bouncer."
-        exit 1
-    fi
-    sed -i -E "s/(experimental\.plugins\.bouncer\.version=)[^\"' ]+/\1$version/" "$file"
-}
-
-# True when version $1 is at least $2 (sort -V)
-is_version_at_least() {
-    [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]
-}
-
-# Traefik 3.7.12 fixes header-alias spoofing, but only with aliasHeadersStrategy=delete on the
-# entrypoints (default is keep). Older versions do not start with the flag.
-set_alias_headers_strategy() {
-    local file="$1" content
-    if grep -q 'underscoreHeadersStrategy' "$file"; then
-        error "$COMPOSE_FILE_NAME has underscoreHeadersStrategy flags - replace them with aliasHeadersStrategy by hand."
-        exit 1
-    fi
-    if ! grep -q 'aliasHeadersStrategy' "$file"; then
-        content=$(awk '
-            { print }
-            /entrypoints\.(web|websecure)\.address=/ {
-                line = $0
-                sub(/\.address=[^"\047[:space:]]*/, ".http.aliasHeadersStrategy=delete", line)
-                print line
-                added++
-            }
-            END { exit added == 2 ? 0 : 1 }' "$file") \
-            || { error "Expected one --entrypoints.web.address and one --entrypoints.websecure.address line in $COMPOSE_FILE_NAME."; exit 1; }
-        printf '%s\n' "$content" > "$file"
-    fi
-}
-
-# Traefik silently falls back to another network when the flag does not match the Compose network.
-# With exactly one network the right value is unambiguous: --traefik writes it (TRAEFIK_NETWORK_FIX).
-check_traefik_network() {
-    local configured actual
-    TRAEFIK_NETWORK_FIX=""
-    if [[ -n "${REF[traefik]:-}" ]]; then
-        configured=$(docker compose config | grep -oP $'providers\\.docker\\.network=\\K[^"\'\\s]+' | head -n1 || true)
-        actual=$(docker inspect -f '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' \
-            "$(docker compose ps -aq traefik)")
-        if [[ -n "$configured" ]] && ! grep -qx "$configured" <<< "$actual"; then
-            warn "Traefik has --providers.docker.network=$configured, but its networks are: $(tr '\n' ' ' <<< "$actual")"
-            if [[ "$actual" != *$'\n'* ]]; then
-                TRAEFIK_NETWORK_FIX="$actual"
-                info "Run with --traefik to set the flag to $actual."
-            else
-                warn "Set the flag to the real network name in $COMPOSE_FILE_NAME (see NetBird upgrade docs)."
-            fi
-        fi
-    fi
-}
-
-set_traefik_network() {
-    sed -i -E "s/(providers\.docker\.network=)[^\"' ]+/\1$1/" "$2"
-}
-
-prepare_traefik_changes() {
-    local file="$1"
-    if is_version_at_least "${NEW_TAG[traefik]}" "v3.7.12"; then
-        set_alias_headers_strategy "$file"
-    else
-        warn "Traefik ${NEW_TAG[traefik]} is older than v3.7.12 (header-alias spoofing, GHSA-rf44-j88r-hh8c)."
-    fi
-    [[ -z "$TRAEFIK_NETWORK_FIX" ]] || set_traefik_network "$TRAEFIK_NETWORK_FIX" "$file"
+# ── New docker-compose.yml from the repository ────────────────────────────────
+read_target_references() {
+    local compose_json svc
+    compose_json=$(COMPOSE_FILE="$UPGRADE_COMPOSE_NAME" docker compose config --format json)
+    for svc in "${SERVICES[@]}"; do
+        TARGET_REF[$svc]=$(jq -r --arg service "$svc" '.services[$service].image' <<< "$compose_json")
+    done
 }
 
 prepare_compose_changes() {
-    if [[ ${#NEW_TAG[@]} -gt 0 || -n "$NEW_BOUNCER_VERSION" ]]; then
-        step "Preparing $COMPOSE_FILE_NAME changes"
+    step "Comparing $COMPOSE_FILE_NAME with the repository"
+    [[ -f "$GITOPS_COMPOSE" ]] || { error "$GITOPS_COMPOSE not found (GITOPS_DIR)."; exit 1; }
+
+    if cmp -s "$GITOPS_COMPOSE" "$COMPOSE_FILE_NAME"; then
+        info "$COMPOSE_FILE_NAME matches the repository."
+    else
         UPGRADE_COMPOSE="$NETBIRD_DIR/$UPGRADE_COMPOSE_NAME"
-        cp -a "$COMPOSE_FILE_NAME" "$UPGRADE_COMPOSE"
-
-        for svc in "${!NEW_TAG[@]}"; do
-            [[ -n "${REF[$svc]:-}" ]] || { error "Service '$svc' is not in $COMPOSE_FILE_NAME."; exit 1; }
-            TARGET_REF[$svc]=$(retag_reference "${REF[$svc]}" "${NEW_TAG[$svc]}")
-            set_image_reference "$svc" "${TARGET_REF[$svc]}" "$UPGRADE_COMPOSE"
-        done
-        [[ -z "${NEW_TAG[traefik]:-}" ]] || prepare_traefik_changes "$UPGRADE_COMPOSE"
-        [[ -z "$NEW_BOUNCER_VERSION" ]] || set_bouncer_version "$NEW_BOUNCER_VERSION" "$UPGRADE_COMPOSE"
-
+        cp "$GITOPS_COMPOSE" "$UPGRADE_COMPOSE"
         COMPOSE_FILE="$UPGRADE_COMPOSE_NAME" docker compose config --quiet
-        if cmp -s "$COMPOSE_FILE_NAME" "$UPGRADE_COMPOSE"; then
-            info "$COMPOSE_FILE_NAME already has the requested versions."
-            rm -f "$UPGRADE_COMPOSE"
-            UPGRADE_COMPOSE=""
-        else
-            PULL_COMPOSE_FILE="$UPGRADE_COMPOSE_NAME"
-            diff -u "$COMPOSE_FILE_NAME" "$UPGRADE_COMPOSE" || true
-        fi
+        PULL_COMPOSE_FILE="$UPGRADE_COMPOSE_NAME"
+        read_target_references
+        diff -u "$COMPOSE_FILE_NAME" "$UPGRADE_COMPOSE" || true
     fi
 }
 
@@ -320,7 +209,7 @@ pull_images() {
     info "  https://github.com/netbirdio/netbird/releases"
     info "  https://github.com/netbirdio/dashboard/releases"
     if [[ ${#EDGE_SERVICES[@]} -gt 0 ]]; then
-        info "Traefik / CrowdSec follow the tags in docker-compose.yml, not the NetBird release:"
+        info "Traefik / CrowdSec follow the tags in Git, not the NetBird release:"
         info "  https://docs.netbird.io/selfhosted/maintenance/upgrade (validated versions)"
     fi
 }
@@ -423,7 +312,6 @@ main() {
     echo "NetBird Upgrade"
 
     detect_services
-    check_traefik_network
     prepare_compose_changes
     pull_images
 
