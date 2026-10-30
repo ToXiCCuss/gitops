@@ -4,9 +4,9 @@
 # Called by scripts/docker/deploy.sh before the project is started. Installs the files of this
 # folder to /root/netbird and renders the templates with the keys from Vault.
 #
-# The rendered config.yaml and proxy.env stay on the host (mode 600), unlike the vault.env of the
-# other projects: the server cannot read its secrets from the environment and /run is empty after a
-# reboot. NetBird must also start without Vault, because Vault is reached through NetBird. For the
+# The rendered files stay on the host (mode 600), unlike the vault.env of the other projects: the
+# server cannot read its secrets from the environment and /run is empty after a reboot. NetBird
+# must also start without Vault, because Vault is reached through NetBird. For the
 # same reason netbird_backup.sh, netbird_rollback.sh and netbird_restore.sh only work on /root/netbird.
 #
 # A deploy never changes an image: that goes through netbird_upgrade.sh and its rollback point.
@@ -18,7 +18,7 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SOURCE_DIR
 readonly NETBIRD_DIR="/root/netbird"
 readonly VAULT_ENV_FILE="/run/gitops/netbird/vault.env"
-readonly SECRET_NAMES=(NETBIRD_AUTH_SECRET NETBIRD_SESSION_COOKIE_ENCRYPTION_KEY NETBIRD_STORE_ENCRYPTION_KEY NB_PROXY_TOKEN NB_PROXY_CROWDSEC_API_KEY)
+readonly SECRET_NAMES=(NETBIRD_AUTH_SECRET NETBIRD_SESSION_COOKIE_ENCRYPTION_KEY NETBIRD_STORE_ENCRYPTION_KEY NB_PROXY_TOKEN NB_PROXY_CROWDSEC_API_KEY NETBIRD_DASHBOARD_BOUNCER_KEY)
 readonly PLACEHOLDER_PREFIX="__VAULT_"
 readonly PLAIN_FILE_MODE="644"
 readonly SECRET_FILE_MODE="600"
@@ -99,22 +99,27 @@ main() {
   # shellcheck source=/dev/null
   source "$VAULT_ENV_FILE"
 
-  mkdir -p "$NETBIRD_DIR"
+  mkdir -p "$NETBIRD_DIR/crowdsec/acquis.d"
   require_same_images
 
   work_dir=$(mktemp -d -p "$NETBIRD_DIR")
   trap cleanup EXIT
   render_template "$SOURCE_DIR/config.yaml.template" "$work_dir/config.yaml"
   render_template "$SOURCE_DIR/proxy.env.template" "$work_dir/proxy.env"
+  render_template "$SOURCE_DIR/crowdsec.env.template" "$work_dir/crowdsec.env"
+  render_template "$SOURCE_DIR/traefik-dynamic.yaml.template" "$work_dir/traefik-dynamic.yaml"
   require_same_encryption_key "$work_dir/config.yaml"
 
   ensure_file "$work_dir/config.yaml" "$NETBIRD_DIR/config.yaml" "$SECRET_FILE_MODE"
   ensure_file "$work_dir/proxy.env" "$NETBIRD_DIR/proxy.env" "$SECRET_FILE_MODE"
+  ensure_file "$work_dir/crowdsec.env" "$NETBIRD_DIR/crowdsec.env" "$SECRET_FILE_MODE"
+  ensure_file "$work_dir/traefik-dynamic.yaml" "$NETBIRD_DIR/traefik-dynamic.yaml" "$SECRET_FILE_MODE"
   ensure_file "$SOURCE_DIR/dashboard.env" "$NETBIRD_DIR/dashboard.env" "$PLAIN_FILE_MODE"
-  ensure_file "$SOURCE_DIR/traefik-dynamic.yaml" "$NETBIRD_DIR/traefik-dynamic.yaml" "$PLAIN_FILE_MODE"
+  ensure_file "$SOURCE_DIR/crowdsec-appsec.yaml" "$NETBIRD_DIR/crowdsec/acquis.d/appsec.yaml" "$PLAIN_FILE_MODE"
   ensure_file "$SOURCE_DIR/docker-compose.yml" "$NETBIRD_DIR/docker-compose.yml" "$PLAIN_FILE_MODE"
 
   restart_if_changed "$NETBIRD_DIR/config.yaml" netbird-server
+  restart_if_changed "$NETBIRD_DIR/crowdsec/acquis.d/appsec.yaml" netbird-crowdsec
   restart_if_changed "$NETBIRD_DIR/traefik-dynamic.yaml" netbird-traefik
 }
 

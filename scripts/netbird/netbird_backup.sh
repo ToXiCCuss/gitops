@@ -67,7 +67,7 @@ BACKUP_DIR="${BACKUP_DIR:-/var/backups/netbird}"
 STAGING_DIR="$BACKUP_DIR/latest"
 LOG_FILE="/var/log/netbird-backup.log"
 
-CONFIG_FILES=(docker-compose.yml config.yaml dashboard.env proxy.env traefik-dynamic.yaml
+CONFIG_FILES=(docker-compose.yml config.yaml dashboard.env proxy.env crowdsec.env traefik-dynamic.yaml
               management.json turnserver.conf relay.env zitadel.env .env)
 
 # Reports a failed run to the Discord webhook (optional). Successes are not reported.

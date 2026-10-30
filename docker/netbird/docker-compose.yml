@@ -40,6 +40,12 @@ services:
       - "--serverstransport.forwardingtimeouts.responseheadertimeout=0s"
       - "--serverstransport.forwardingtimeouts.idleconntimeout=0s"
       - "--providers.file.filename=/etc/traefik/dynamic.yaml"
+      # CrowdSec bouncer with AppSec for the dashboard and /api, the middleware is in traefik-dynamic.yaml. Not tracked by Renovate
+      - "--experimental.plugins.bouncer.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin"
+      - "--experimental.plugins.bouncer.version=v1.7.1"
+    depends_on:
+      crowdsec:
+        condition: service_healthy
     ports:
       - '443:443'
       - '80:80'
@@ -69,6 +75,7 @@ services:
       - traefik.http.routers.netbird-dashboard.tls.certresolver=letsencrypt
       - traefik.http.routers.netbird-dashboard.service=dashboard
       - traefik.http.routers.netbird-dashboard.priority=1
+      - traefik.http.routers.netbird-dashboard.middlewares=netbird-dashboard-crowdsec@file
       - traefik.http.services.dashboard.loadbalancer.server.port=80
     logging:
       driver: "json-file"
@@ -104,6 +111,15 @@ services:
       - traefik.http.routers.netbird-backend.tls.certresolver=letsencrypt
       - traefik.http.routers.netbird-backend.service=netbird-server
       - traefik.http.routers.netbird-backend.priority=100
+      # Dashboard API and login behind AppSec. It must keep its higher priority: without this router the protection fails open.
+      # The gRPC router and the relay stay outside, peers are not filtered
+      - traefik.http.routers.netbird-dashboard-api.rule=Host(`proxy.rjst.de`) && (PathPrefix(`/api`) || PathPrefix(`/oauth2`))
+      - traefik.http.routers.netbird-dashboard-api.entrypoints=websecure
+      - traefik.http.routers.netbird-dashboard-api.tls=true
+      - traefik.http.routers.netbird-dashboard-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.netbird-dashboard-api.service=netbird-server
+      - traefik.http.routers.netbird-dashboard-api.middlewares=netbird-dashboard-crowdsec@file
+      - traefik.http.routers.netbird-dashboard-api.priority=110
       # Services
       - traefik.http.services.netbird-server.loadbalancer.server.port=80
       - traefik.http.services.netbird-server-h2c.loadbalancer.server.port=80
@@ -153,16 +169,21 @@ services:
     restart: unless-stopped
     networks: [netbird]
     environment:
-      COLLECTIONS: crowdsecurity/linux
+      COLLECTIONS: "crowdsecurity/linux crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules"
+    # BOUNCER_KEY_netbird_dashboard registers the bouncer of Traefik, rendered by pre-deploy.sh
+    env_file:
+      - /root/netbird/crowdsec.env
     volumes:
-      # Stays on the host: CrowdSec writes its own credentials and the hub there
+      # Stays on the host: CrowdSec writes its own credentials and the hub there. pre-deploy.sh only adds acquis.d/appsec.yaml
       - /root/netbird/crowdsec:/etc/crowdsec
       - crowdsec_db:/var/lib/crowdsec/data
+    # Also waits for the AppSec listener: Traefik blocks the dashboard while it cannot reach it
     healthcheck:
-      test: [CMD, cscli, lapi, status]
+      test: ["CMD-SHELL", "cscli lapi status >/dev/null 2>&1 && bash -c '</dev/tcp/127.0.0.1/7422'"]
       interval: 10s
       timeout: 5s
       retries: 15
+      start_period: 30s
     labels:
       - traefik.enable=false
     logging:

@@ -334,7 +334,7 @@ Renovate (GitHub app, `renovate.json`) opens a pull request for every new versio
 - **Reviewed and merged by hand:** everything else. A merge to `master` is live in Argo CD (Kubernetes) or on the Docker host within minutes.
 - **k3s:** the pull request only raises `k3s_version`. The upgrade stays manual (dry run first, see [k3s](#k3s)). Release candidates are ignored.
 - **NetBird:** the images of `docker/netbird/docker-compose.yml` stay on plain tags without a digest (`netbird_rollback.sh` needs that), server, proxy and dashboard come in one pull request. Merging changes nothing on the host, the upgrade stays manual (see [Deploy NetBird](#deploy-netbird)). Check the validated Traefik and CrowdSec versions in the [upgrade docs](https://docs.netbird.io/selfhosted/maintenance/upgrade) before you merge.
-- **Not tracked by Renovate:** Istio (`istioctl`). Its version is passed to the scripts.
+- **Not tracked by Renovate:** Istio (`istioctl`), its version is passed to the scripts, and the Traefik bouncer plugin in `docker/netbird/docker-compose.yml` (`--experimental.plugins.bouncer.version`).
 
 ## Docker
 
@@ -786,7 +786,7 @@ Because the backups are plain archives, they can be restored without the Panel: 
 
 ### Deploy NetBird
 
-The self-hosted NetBird server is the project `docker/netbird/`. It is not in `ALL_PROJECTS`, so the timer never touches it: SSH to `docker01` and the way to Vault both run through NetBird, and a broken merge must not lock you out. `/root/netbird` stays the working folder. `pre-deploy.sh` installs the files of the project there and renders `config.yaml` and `proxy.env` (mode 600) with the keys of `docker/netbird` from Vault. They stay on the host, unlike the `vault.env` of the other projects: the server cannot read its secrets from the environment, `/run` is empty after a reboot and NetBird must start without Vault. `crowdsec/` and the named volumes are not in Git.
+The self-hosted NetBird server is the project `docker/netbird/`. It is not in `ALL_PROJECTS`, so the timer never touches it: SSH to `docker01` and the way to Vault both run through NetBird, and a broken merge must not lock you out. `/root/netbird` stays the working folder. `pre-deploy.sh` installs the files of the project there and renders `config.yaml`, `proxy.env`, `crowdsec.env` and `traefik-dynamic.yaml` (mode 600) with the keys of `docker/netbird` from Vault. They stay on the host, unlike the `vault.env` of the other projects: the server cannot read its secrets from the environment, `/run` is empty after a reboot and NetBird must start without Vault. The named volumes and `crowdsec/` are not in Git, only `crowdsec/acquis.d/appsec.yaml` is installed from there.
 
 | Change | What to do |
 | --- | --- |
@@ -796,6 +796,25 @@ The self-hosted NetBird server is the project `docker/netbird/`. It is not in `A
 `deploy.sh netbird` refuses a change of an image (that needs the rollback point of `netbird_upgrade.sh`) and a `NETBIRD_STORE_ENCRYPTION_KEY` that differs from `/root/netbird/config.yaml` (the database would become unreadable). After `netbird_rollback.sh` the host runs the old version while Git holds the new one: `git revert` the version change on `master`.
 
 The keys of `docker/netbird` are listed in `docker/netbird/vault.env.example`. A new server is restored with `netbird_restore.sh`, which needs no Vault.
+
+#### CrowdSec AppSec
+
+The dashboard and the routes `/api` and `/oauth2` run through the Traefik bouncer plugin and the CrowdSec AppSec WAF ([guide](https://docs.netbird.io/selfhosted/maintenance/crowdsec-dashboard)). The difference to the guide: the middleware is in `traefik-dynamic.yaml`, not in a label. `deploy.sh` starts Compose in the repository folder and does not see a `.env` of `/root/netbird`, and the key stays out of the Compose config. The gRPC router and the relay stay outside, so peers are not filtered. The Kubernetes operator uses `/api` and does pass through the WAF.
+
+With the `Block` flags a CrowdSec failure blocks the dashboard, `/api` and `/oauth2`, and Traefik only starts when CrowdSec is healthy.
+
+Check after every change of the labels, from an admin IP and only with these two paths (two different rules within a minute ban the IP for 4 hours):
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://proxy.rjst.de/.env       # 403
+curl -s -o /dev/null -w '%{http_code}\n' https://proxy.rjst.de/api/.env   # 403
+sudo docker exec netbird-crowdsec cscli bouncers list                     # netbird-proxy and netbird_dashboard
+sudo docker exec netbird-crowdsec cscli metrics show appsec
+```
+
+The protection fails open: with a detached middleware the probes answer `404` and nothing reports an error.
+
+Locked out: `cscli decisions list` shows an IP decision (`cscli decisions delete --ip <ip>`). Without one it is an AppSec match on the request, see `cscli alerts list`. Last resort: remove **both** `middlewares` labels (`netbird-dashboard` and `netbird-dashboard-api`) in `/root/netbird/docker-compose.yml` and run `docker compose up -d dashboard netbird-server` there. With only one removed the UI loads but cannot log in. Fix it in Git afterwards, `deploy.sh netbird` installs the file again.
 
 ### Setup NetBird backup
 
