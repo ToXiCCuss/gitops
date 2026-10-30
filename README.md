@@ -434,6 +434,7 @@ flowchart LR
     netbird["NetBird server (netbird_backup.sh, restic)"] -->|bucket netbird| s3
     s3 -->|read-only identity| sync["offsite-sync (rclone, 05:00 UTC)"]
   end
+  forgejobackup["forgejo-backup (CronJob in Kubernetes, restic)"] -->|bucket forgejo| s3
   sync -->|"rclone sync, deleted files go to Backups-deleted"| pcloud(["pCloud"])
 ```
 
@@ -443,9 +444,10 @@ flowchart LR
 | restic-backup | One nightly run: backs up a few static key files and the SQL dumps of all PostgreSQL and MariaDB databases, thins out and prunes both repositories and checks them, then checks the Vault and NetBird repositories | restic, repositories `backups/docker` and `databases/restic`. Reports every step to Prometheus. Restore with `scripts/docker/restore.sh` |
 | vault-backup | Daily Raft snapshot of Vault | Periodic token that may only read the snapshot, bucket `vault`, repository `vault/raft`, keeps its own retention |
 | NetBird backup | Config and database of the self-hosted NetBird server (`scripts/netbird/`) | bucket `netbird`, repository `netbird/restic`, keeps its own retention |
+| forgejo-backup | Nightly CronJob in the cluster: stops Forgejo, backs up its database dump and data volume in one snapshot, starts it again | bucket `forgejo`, repository `forgejo/restic`, keeps its own retention, see [Forgejo (package registry)](#forgejo-package-registry) |
 | Offsite sync | Copies the whole S3 to pCloud and verifies the copy | Keeps deleted or overwritten files 30 days in `Backups-deleted` |
 
-Everything writes to the S3 only, pCloud is written by the offsite sync alone. Not covered: the PVCs of the Kubernetes apps. MariaDB (`docker01`) is not backed up until `MARIADB_PASSWORD` of its backup login is in the Vault secret `docker/restic-backup`. MongoDB is not operated (`mongodb_hosts` is empty), if it is, `backup.sh` needs a dump step for it.
+Everything writes to the S3 only, pCloud is written by the offsite sync alone. Not covered: the PVCs of the Kubernetes apps, except the one of Forgejo. MariaDB (`docker01`) is not backed up until `MARIADB_PASSWORD` of its backup login is in the Vault secret `docker/restic-backup`. MongoDB is not operated (`mongodb_hosts` is empty), if it is, `backup.sh` needs a dump step for it.
 
 #### Retention, checks and schedule
 
@@ -455,19 +457,21 @@ Everything writes to the S3 only, pCloud is written by the offsite sync alone. N
 | SQL dumps (PostgreSQL, MariaDB) | 14 | 8 | 6 | `restic-backup` (`DATABASES_KEEP_*` in `default.env`, per engine) |
 | Key files | 7 | 4 | 6 | `restic-backup` (`KEEP_*` in `default.env`, `restic forget` after each backup) |
 | NetBird | 0 | 8 | 6 | `netbird_backup.sh` (`RESTIC_KEEP_*` in `/etc/netbird-backup.cred`) |
+| Forgejo (database and data volume) | 14 | 8 | 6 | CronJob `forgejo-backup` (`KEEP_*` in `kubernetes/cicd/kubectl/forgejo-backup.yaml`) |
 | Deleted files in pCloud | 30 days | | | `RETENTION_DAYS` of the offsite sync |
 
 | Check | How |
 |---|---|
-| Repository structure and a sample of the data | `restic-backup`, every night on the repositories `docker`, `databases`, `vault` and `netbird`: `restic check` with a 10% read-data subset (`CHECK_READ_DATA_SUBSET`), so the whole repository has been read after about ten nights |
+| Repository structure and a sample of the data | `restic-backup`, every night on the repositories `docker`, `databases`, `vault`, `netbird` and `forgejo`: `restic check` with a 10% read-data subset (`CHECK_READ_DATA_SUBSET`), so the whole repository has been read after about ten nights |
 | Offsite copy complete and intact | `rclone check --one-way --size-only` S3 -> pCloud after every sync (S3 and pCloud have no common hash, so it compares sizes). A mismatch fails the sync |
 | Failed jobs | Offsite sync, `vault-backup` and `netbird_backup.sh` (`DISCORD_WEBHOOK_URL`) post to a Discord webhook when a run fails. `restic-backup` does it too (optional, a failed step is named, a failed dump too). A job that does not run at all sends nothing itself. For `offsite-sync`, `vault-backup` and `restic-backup` Prometheus catches it, see [Backup age alerts](#backup-age-alerts) |
 | Backups can be restored | By hand once per quarter: restore the latest PostgreSQL dump into a scratch database and a Vault snapshot, both from **pCloud** |
 
 | Time (UTC) | Job |
 |---|---|
+| 02:00 | forgejo-backup (CronJob in the cluster, Forgejo is stopped for 1-2 minutes) |
 | 02:30 | vault-backup (Vault snapshot) |
-| 03:00 | restic-backup (backup of the key files and the SQL dumps, forget, prune, check of `docker` and `databases`, check of `vault` and `netbird`) |
+| 03:00 | restic-backup (backup of the key files and the SQL dumps, forget, prune, check of `docker` and `databases`, check of `vault`, `netbird` and `forgejo`) |
 | 05:00 | Offsite sync with check, runs when nothing writes to the S3 any more |
 
 #### Discord alerts
@@ -578,7 +582,7 @@ Keep these in the password manager, nothing can be read without them and they ar
 
 3. Copy the file back to its place (`/root/docker/offsite-sync/rclone/rclone.conf`), check the owner and mode (`600`) and deploy the project with `deploy.sh`.
 
-`restore.sh` takes the repositories `docker`, `databases`, `vault` and `netbird` (the Vault and NetBird snapshots can also be browsed this way, they are restored with their own scripts below). It needs the running container `restic-backup`. With the S3 gone use `--from pcloud`.
+`restore.sh` takes the repositories `docker`, `databases`, `vault`, `netbird` and `forgejo` (the Vault, NetBird and Forgejo snapshots can also be browsed this way, they are restored with their own scripts below). It needs the running container `restic-backup`. With the S3 gone use `--from pcloud`.
 
 After a total loss of RustFS deploy it and run `setup-rustfs.sh` again (the keys are in Vault), then fill it from pCloud (below). The key files and the dumps are also in the repositories `docker` and `databases` on pCloud, see the last section.
 
@@ -1151,7 +1155,26 @@ Build history lives only in the Jenkins volume, it is not backed up.
 - **NetBird:** the CNAME `forgejo` in the zone and the policy `forgejo-users` -> `k8s-forgejo` on TCP 443 (see step 5).
 - **Maven:** the packages belong to a user or an organization (e.g. an organization `rjst`). The repository URL is `https://forgejo.k8sdev.rjst.de/api/packages/<owner>/maven`, the same for `<distributionManagement>` (releases and snapshots) and `<repositories>`. Maven logs in with the Forgejo username and an access token with the scope `package` (**Settings > Applications**) in a `<server>` of `settings.xml`, never with the Keycloak password. Pods in the cluster reach the URL through the CoreDNS rewrite to the internal gateway.
 
-The packages live only in the Forgejo volume, it is not backed up. The database is dumped by `restic-backup` like every other on docker01.
+##### Backup and restore
+
+The CronJob `forgejo-backup` (`cicd/kubectl/forgejo-backup.yaml`) follows the [backup guide of Forgejo](https://forgejo.org/docs/latest/admin/setup/backup/): every night at 02:00 UTC it scales Forgejo to 0, dumps the database (`pg_dump --clean`), backs up the dump and the data volume in **one** restic snapshot (repository `forgejo/restic` in the RustFS S3, host `forgejo`) and starts Forgejo again, 1-2 minutes without registry. Then it thins out the snapshots (14 daily, 8 weekly, 6 monthly) and prunes. `restic-backup` on docker01 checks the repository at 03:00, the offsite sync copies it to pCloud at 05:00. `app.ini` is not in the backup: the chart builds it from Git and Vault at every start, `SECRET_KEY` is in Vault (`vault-backup`). The SQL dump of `restic-backup` (03:00) covers the database a second time.
+
+- The Application `forgejo` ignores `spec.replicas` of the Deployment (`ignoreDifferences` with `RespectIgnoreDifferences`), so Argo CD does not start Forgejo during the backup. The trap of the script starts it again when a step fails. If Forgejo stays at 0 anyway (the pod was killed), `ProbeFailed` on `https://forgejo.k8sdev.rjst.de` fires; start it with `kubectl -n forgejo scale deployment forgejo --replicas=1`.
+- Alerts: `ForgejoBackupFailed` (a failed job of the last day), `ForgejoBackupTooOld` (no success for 26 hours) and `ForgejoBackupNeverReported` (kube-state-metrics), plus `ResticStepFailed` of the nightly check.
+- Set up once, before the merge (Windows, with the root token): `create-s3-identities.ps1` (keys of the RustFS identity `forgejo`), `generate-secrets.ps1` (restic password `argocd/forgejo#backup.restic_password`, copies the S3 keys to `argocd/forgejo` and the restic password to `docker/restic-backup#RESTIC_PASSWORD_FORGEJO`). Keep the restic password in the password manager: without it the copy in pCloud cannot be read. The Secret `forgejo-backup` cannot be rendered without these values, and the `secrets` app would fail. After the merge, on docker01 once the checkout has the new `docker/rustfs/identities.json` (`git pull`): `sudo scripts/docker/setup-rustfs.sh` (bucket `forgejo`, identity `forgejo`, the rights of `restic-backup` and `offsite-sync`) and `sudo scripts/docker/deploy.sh restic-backup`, before the first run at 02:00 UTC.
+- The pods reach the S3 as `docker01.server.lan:9000` through NetBird, like the database on port 5432. Check after the sync that the first run went through: `kubectl -n forgejo create job forgejo-backup-test --from=cronjob/forgejo-backup`, then `kubectl -n forgejo logs -f job/forgejo-backup-test`.
+
+Restore (replaces the data volume and the database; if a step fails, Forgejo stays stopped on purpose, fix it and run the job again):
+
+1. Pick the snapshot on docker01: `sudo scripts/docker/restore.sh snapshots forgejo` (with the S3 gone: `--from pcloud`, the cluster job itself needs the S3).
+2. Restore the newest snapshot with the suspended CronJob `forgejo-restore`:
+
+   ```bash
+   kubectl -n forgejo create job forgejo-restore-$(date +%s) --from=cronjob/forgejo-restore
+   ```
+
+   An older snapshot: `kubectl -n forgejo create job forgejo-restore-1 --from=cronjob/forgejo-restore --dry-run=client -o yaml | kubectl set env --local -f - SNAPSHOT=<id> -o yaml | kubectl apply -f -`
+3. `kubectl -n forgejo logs -f job/<name>`, then log in and check a package. Run the cron jobs under **Site administration > Monitoring > Cron** if the search index looks wrong (the guide's last step).
 
 #### Leantime (project management)
 

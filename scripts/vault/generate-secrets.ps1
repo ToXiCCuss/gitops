@@ -5,7 +5,8 @@
 
 .DESCRIPTION
     - Freely generatable secrets (Harbor/Jenkins/Grafana/Forgejo admin passwords, the OIDC client secrets of Grafana, Harbor, Jenkins,
-      Vault, Forgejo and Leantime, the secret key and internal token of Forgejo, the session password of Leantime)
+      Vault, Forgejo and Leantime, the secret key, internal token and backup restic password of Forgejo,
+      the session password of Leantime)
       are generated locally and written to Vault, but never replace a value
       that already exists.
     - External values are prompted for interactively and written to Vault:
@@ -129,6 +130,8 @@ Set-VaultKV -Path "forgejo" -Data @{ "admin.password" = (New-RandomSecret) } -Sk
 Set-VaultKV -Path "forgejo" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "forgejo" -Data @{ "security.secret_key" = (New-RandomSecret -Length 64) } -SkipExisting
 Set-VaultKV -Path "forgejo" -Data @{ "security.internal_token" = (New-RandomSecret -Length 64) } -SkipExisting
+# Restic password of the repository forgejo/restic (the CronJob forgejo-backup): without it the backup cannot be read
+Set-VaultKV -Path "forgejo" -Data @{ "backup.restic_password" = (New-RandomSecret -Length 64) } -SkipExisting
 Set-VaultKV -Path "leantime" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "leantime" -Data @{ "session.password" = (New-RandomSecret -Length 64) } -SkipExisting
 
@@ -164,6 +167,20 @@ if ($leantimeDbUser) {
     $leantimeDbPass = Read-OptionalSecret "Leantime external DB password"
     Set-VaultKV -Path "leantime" -Data @{ "database.username" = $leantimeDbUser; "database.password" = $leantimeDbPass }
 }
+
+# ── 3. Copies between the KV engines ───────────────────────────────────────
+# The AVP plugin may only read argocd/, the Docker host only docker/. The backup of Forgejo needs the keys of the
+# RustFS identity forgejo (docker/s3/forgejo, scripts/vault/create-s3-identities.ps1) in the cluster, and the
+# nightly check of restic-backup on docker01 needs its restic password.
+Write-Step "Copying the Forgejo backup values between argocd/ and docker/"
+$forgejoS3 = Get-VaultKV -Path "s3/forgejo" -Engine "docker"
+if ($forgejoS3.ContainsKey("access_key")) {
+    Set-VaultKV -Path "forgejo" -Data @{ "backup.s3_access_key" = $forgejoS3["access_key"]; "backup.s3_secret_key" = $forgejoS3["secret_key"] }
+} else {
+    Write-Warn2 "docker/s3/forgejo does not exist yet: run create-s3-identities.ps1 first, then this script again."
+}
+$forgejo = Get-VaultKV -Path "forgejo"
+Set-VaultKV -Path "restic-backup" -Engine "docker" -Data @{ "RESTIC_PASSWORD_FORGEJO" = $forgejo["backup.restic_password"] }
 
 Write-Step "Done"
 Write-Ok "All generated/provided values are in Vault - nothing was printed to the console or saved to disk."

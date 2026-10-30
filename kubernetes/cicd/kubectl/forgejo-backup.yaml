@@ -1,0 +1,299 @@
+# Nightly backup of Forgejo after its official guide (forgejo.org/docs/latest/admin/setup/backup): Forgejo is stopped,
+# the database (pg_dump) and the data volume go into one restic snapshot, then Forgejo is started again (1-2 minutes).
+# Repository forgejo/restic on the RustFS S3 of docker01, the offsite sync copies it to pCloud. restic-backup on docker01
+# checks the repository every night. app.ini is not backed up: the chart builds it from Git and Vault at every start.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forgejo-backup
+  namespace: forgejo
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+
+---
+
+# Only what the stop needs: scale the Deployment forgejo and wait for its pod to be gone
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: forgejo-backup
+  namespace: forgejo
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale"]
+    resourceNames: ["forgejo"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: forgejo-backup
+  namespace: forgejo
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: forgejo-backup
+subjects:
+  - kind: ServiceAccount
+    name: forgejo-backup
+    namespace: forgejo
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: forgejo-backup
+  namespace: forgejo
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+data:
+  # Shared by backup.sh and restore.sh
+  common.sh: |
+    readonly DEPLOYMENT=forgejo
+    readonly POD_SELECTOR=app.kubernetes.io/instance=forgejo
+    # Forgejo is not HA ready, the chart runs one replica
+    readonly REPLICAS=1
+    readonly STOP_TIMEOUT=180s
+    readonly DUMP_DIR=/dump
+    readonly DUMP_FILE=/dump/forgejo.sql
+    # The nightly restic check of restic-backup on docker01 may hold the lock for a while
+    readonly RETRY_LOCK=30m
+
+    log() { echo "$*" >&2; }
+
+    install_tools() {
+        apk add --no-cache restic postgresql-client kubectl >/dev/null
+    }
+
+    start_forgejo() {
+        log "== start Forgejo"
+        kubectl scale deployment "$DEPLOYMENT" --replicas="$REPLICAS"
+    }
+
+    stop_forgejo() {
+        log "== stop Forgejo"
+        kubectl scale deployment "$DEPLOYMENT" --replicas=0
+        # Without a pod (Forgejo was already stopped) there is nothing to wait for
+        if [ -n "$(kubectl get pods --selector "$POD_SELECTOR" --output name)" ]; then
+            kubectl wait pods --selector "$POD_SELECTOR" --for=delete --timeout="$STOP_TIMEOUT"
+        fi
+    }
+
+  backup.sh: |
+    #!/bin/sh
+    # Stops Forgejo, backs up the database dump and the data volume in one snapshot, starts Forgejo again.
+    # The trap starts Forgejo also when a step fails or the job is stopped (activeDeadlineSeconds sends TERM).
+    set -eu
+    . /scripts/common.sh
+
+    # Retention like the SQL dumps of restic-backup
+    readonly KEEP_DAILY=14
+    readonly KEEP_WEEKLY=8
+    readonly KEEP_MONTHLY=6
+    readonly MAX_UNUSED=10%
+
+    main() {
+        install_tools
+        restic cat config >/dev/null 2>&1 || restic init
+
+        trap start_forgejo EXIT
+        trap 'exit 1' TERM INT
+        stop_forgejo
+
+        log "== dump the database"
+        # --clean: the restore loads the dump into the existing database
+        pg_dump --clean --if-exists --file "$DUMP_FILE"
+        log "== back up the database dump and the data volume"
+        restic backup /data "$DUMP_DIR" --host forgejo --tag forgejo --retry-lock "$RETRY_LOCK"
+        rm -f "$DUMP_FILE"
+
+        trap - EXIT TERM INT
+        start_forgejo
+
+        log "== thin out and prune"
+        restic forget --host forgejo --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY"             --keep-monthly "$KEEP_MONTHLY" --prune --max-unused "$MAX_UNUSED" --retry-lock "$RETRY_LOCK"
+        log "Backup finished"
+    }
+
+    main "$@"
+
+  restore.sh: |
+    #!/bin/sh
+    # Replaces the data volume and the database of Forgejo with a snapshot (SNAPSHOT, default latest) and starts
+    # Forgejo again. Started by hand only (the suspended CronJob forgejo-restore, see the README). If a step fails,
+    # Forgejo stays stopped on purpose: a half restored state must not be migrated. Fix it and run the job again.
+    set -eu
+    . /scripts/common.sh
+
+    readonly SNAPSHOT="${SNAPSHOT:-latest}"
+
+    main() {
+        install_tools
+        stop_forgejo
+
+        log "== restore the snapshot $SNAPSHOT over the data volume"
+        find /data -mindepth 1 -delete
+        restic restore "$SNAPSHOT" --host forgejo --target / --include /data --include "$DUMP_DIR"             --retry-lock "$RETRY_LOCK"
+        log "== load the database dump"
+        psql --set ON_ERROR_STOP=on --single-transaction --file "$DUMP_FILE"
+        rm -f "$DUMP_FILE"
+
+        start_forgejo
+        log "Restore of $SNAPSHOT finished"
+    }
+
+    main "$@"
+
+---
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: forgejo-backup
+  namespace: forgejo
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  # Before restic-backup on docker01 (03:00 UTC, checks this repository) and the offsite sync (05:00 UTC)
+  schedule: "0 2 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # No second try: every try stops Forgejo again. The alert ForgejoBackupTooOld reports a failed night
+      backoffLimit: 0
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          serviceAccountName: forgejo-backup
+          restartPolicy: Never
+          containers:
+            - name: backup
+              # The same image as restic-backup on docker01
+              image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+              command: ["/bin/sh", "/scripts/backup.sh"]
+              env:
+                - name: RESTIC_REPOSITORY
+                  value: s3:http://docker01.server.lan:9000/forgejo/restic
+                - name: RESTIC_CACHE_DIR
+                  value: /cache
+                - name: PGHOST
+                  value: docker01.server.lan
+                - name: PGDATABASE
+                  value: forgejo
+              # RESTIC_PASSWORD, the S3 keys and PGUSER/PGPASSWORD (kubernetes/secrets/forgejo-backup.yaml)
+              envFrom:
+                - secretRef:
+                    name: forgejo-backup
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: "1", memory: 512Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                # The volume of Forgejo (local-path: the pod runs on its node), read only
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+                - name: dump
+                  mountPath: /dump
+                - name: cache
+                  mountPath: /cache
+          volumes:
+            - name: scripts
+              configMap:
+                name: forgejo-backup
+            - name: data
+              persistentVolumeClaim:
+                claimName: gitea-shared-storage
+                readOnly: true
+            # The plain SQL dump lives only as long as the pod
+            - name: dump
+              emptyDir: {}
+            - name: cache
+              emptyDir: {}
+
+---
+
+# The restore: never scheduled (suspend), started by hand from the template, see "Forgejo (package registry)" in the README:
+#   kubectl -n forgejo create job forgejo-restore-$(date +%s) --from=cronjob/forgejo-restore
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: forgejo-restore
+  namespace: forgejo
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  suspend: true
+  schedule: "0 0 1 1 *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          serviceAccountName: forgejo-backup
+          restartPolicy: Never
+          containers:
+            - name: restore
+              image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+              command: ["/bin/sh", "/scripts/restore.sh"]
+              env:
+                - name: RESTIC_REPOSITORY
+                  value: s3:http://docker01.server.lan:9000/forgejo/restic
+                - name: RESTIC_CACHE_DIR
+                  value: /cache
+                - name: PGHOST
+                  value: docker01.server.lan
+                - name: PGDATABASE
+                  value: forgejo
+              envFrom:
+                - secretRef:
+                    name: forgejo-backup
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: "1", memory: 512Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                # Written: the restore replaces its content
+                - name: data
+                  mountPath: /data
+                - name: dump
+                  mountPath: /dump
+                - name: cache
+                  mountPath: /cache
+          volumes:
+            - name: scripts
+              configMap:
+                name: forgejo-backup
+            - name: data
+              persistentVolumeClaim:
+                claimName: gitea-shared-storage
+            - name: dump
+              emptyDir: {}
+            - name: cache
+              emptyDir: {}

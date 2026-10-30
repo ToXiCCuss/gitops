@@ -152,6 +152,31 @@ spec:
             severity: critical
           annotations:
             summary: "Step {{ $labels.step }} of the restic repository {{ $labels.repository }} failed"
+        # The backup of Forgejo is a CronJob in the cluster (kubernetes/cicd/kubectl/forgejo-backup.yaml), its result comes
+        # from kube-state-metrics. A failed job stays in the history, so only jobs of the last day count.
+        - alert: ForgejoBackupFailed
+          expr: |
+            kube_job_status_failed{namespace="forgejo", job_name=~"forgejo-backup-.*"} > 0
+              and on (namespace, job_name) time() - kube_job_created < 24 * 3600
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The Forgejo backup job {{ $labels.job_name }} failed (kubectl -n forgejo logs job/{{ $labels.job_name }})"
+        - alert: ForgejoBackupTooOld
+          expr: time() - kube_cronjob_status_last_successful_time{namespace="forgejo", cronjob="forgejo-backup"} > 26 * 3600
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "The Forgejo backup has no successful run for more than 26 hours"
+        - alert: ForgejoBackupNeverReported
+          expr: absent(kube_cronjob_status_last_successful_time{namespace="forgejo", cronjob="forgejo-backup"})
+          for: 26h
+          labels:
+            severity: critical
+          annotations:
+            summary: "The Forgejo backup never had a successful run"
 
 ---
 

@@ -81,7 +81,7 @@ spec:
                   DISABLE_GRAVATAR: true
                 packages:
                   ENABLED: true
-            # The packages live on this volume, it is not backed up (like the other PVCs)
+            # The packages live on this volume, the CronJob forgejo-backup (kubectl/forgejo-backup.yaml) backs it up
             persistence:
               size: 10Gi
             # Starting values without measurements: small requests, memory limit with headroom. Check the real
@@ -97,9 +97,19 @@ spec:
             # The test pod of the chart pulls busybox:latest
             test:
               enabled: false
+  # The nightly backup (kubernetes/cicd/kubectl/forgejo-backup.yaml) scales Forgejo to 0 for a few minutes: selfHeal and a
+  # sync in that time must not start it again. If it stays at 0, the probe of https://forgejo.k8sdev.rjst.de fires.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: forgejo
+      namespace: forgejo
+      jsonPointers:
+        - /spec/replicas
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true

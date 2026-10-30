@@ -28,6 +28,7 @@ spec:
         - https://prometheus.k8sdev.rjst.de
         - https://vault.k8sdev.rjst.de
         - https://auth.proxy.rjst.de
+        - https://forgejo.k8sdev.rjst.de
 
 ---
 
