@@ -27,14 +27,15 @@ spec:
 ---
 
 # Two volumes and no subPath: a directory the kubelet creates for a subPath is not writable for the non-root user.
-# They are not backed up (like the other PVCs).
+# They are not backed up (like the other PVCs). Same wave as the Deployment: local-path binds a volume only for a
+# pod, an earlier wave would wait for that forever.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: leantime-userfiles
   namespace: leantime
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   accessModes:
     - ReadWriteOnce
@@ -50,7 +51,7 @@ metadata:
   name: leantime-public-userfiles
   namespace: leantime
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   accessModes:
     - ReadWriteOnce
