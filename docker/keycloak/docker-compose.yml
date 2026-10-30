@@ -18,7 +18,7 @@ services:
       # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
       portal.name: "Keycloak"
       portal.url: "https://auth.proxy.rjst.de"
-      portal.group: "Platform"
+      portal.group: "Management"
       portal.public: "true"
       portal.description: "Login and identities"
       portal.icon: "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/keycloak.svg"

@@ -448,7 +448,7 @@ spec:
             # and external links.
             - name: STATIC_SERVICES
               value: |
-                [{"name": "NetBird", "url": "https://proxy.rjst.de", "group": "Platform",
+                [{"name": "NetBird", "url": "https://proxy.rjst.de", "group": "Management",
                   "description": "VPN and access management", "public": true,
                   "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/netbird.svg"},
                  {"name": "Hetzner", "url": "https://www.hetzner.com/de/", "group": "External",

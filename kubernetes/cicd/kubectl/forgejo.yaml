@@ -75,8 +75,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "3"
     portal.rjst.de/name: Forgejo
-    portal.rjst.de/group: Platform
-    portal.rjst.de/description: Package registry (Maven)
+    portal.rjst.de/group: Management
+    portal.rjst.de/description: Git and package registry
     portal.rjst.de/icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/forgejo.svg
 spec:
   hosts:

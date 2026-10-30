@@ -235,7 +235,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "3"
     portal.rjst.de/name: Leantime
-    portal.rjst.de/group: Platform
+    portal.rjst.de/group: Management
     portal.rjst.de/description: Project management
     portal.rjst.de/icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/leantime.svg
 spec:
