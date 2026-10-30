@@ -46,7 +46,8 @@ step()    { echo -e "\n${BOLD}${CYAN}▶ $*${RESET}"; }
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DOCKER_DIR="$REPO_DIR/docker"
 
-# Order: the S3 first, the services that write to it afterwards
+# Order: the S3 first, the services that write to it afterwards. netbird is left out on purpose, so the timer never
+# touches it: deploy it by name (docker/netbird/docker-compose.yml says why)
 ALL_PROJECTS=(rustfs restic-backup keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
 
 # Projects that need the keys of an S3 identity (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), as project:identity.

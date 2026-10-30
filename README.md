@@ -333,7 +333,8 @@ Renovate (GitHub app, `renovate.json`) opens a pull request for every new versio
 - **Merged by Renovate itself:** digest and patch updates of `gcr.io/cadvisor/cadvisor`, `rclone/rclone` and `alpine` in `docker/`, on weekdays between 9:00 and 17:00 (Europe/Berlin), so a failed deploy is seen the same day. There is no CI check in front of it. The Docker host deploys the merge within 15 minutes (see [Automatic deploy](#automatic-deploy)), a failure goes through the `DockerDeploy*` alerts to Discord, rollback is `git revert`. A new image is added to the list in the `packageRules` of `renovate.json` on purpose, nothing is merged by default.
 - **Reviewed and merged by hand:** everything else. A merge to `master` is live in Argo CD (Kubernetes) or on the Docker host within minutes.
 - **k3s:** the pull request only raises `k3s_version`. The upgrade stays manual (dry run first, see [k3s](#k3s)). Release candidates are ignored.
-- **Not tracked by Renovate:** Istio (`istioctl`), NetBird, Traefik and CrowdSec. Their versions are passed to the scripts or live outside the repository.
+- **NetBird:** the images of `docker/netbird/docker-compose.yml` stay on plain tags without a digest (`netbird_rollback.sh` needs that), server, proxy and dashboard come in one pull request. Merging changes nothing on the host, the upgrade stays manual (see [Deploy NetBird](#deploy-netbird)). Check the validated Traefik and CrowdSec versions in the [upgrade docs](https://docs.netbird.io/selfhosted/maintenance/upgrade) before you merge.
+- **Not tracked by Renovate:** Istio (`istioctl`). Its version is passed to the scripts.
 
 ## Docker
 
@@ -389,7 +390,7 @@ sudo scripts/docker/restart-host-network.sh
 
 Containers that mount `/var/run/docker.sock` (`pelican_wings`) need no manual step. Docker runs with `live-restore`, so a restart of `dockerd` (package update) keeps them running on the old socket and Wings fails with "dial unix /var/run/docker.sock: connect: connection refused". The role `docker` therefore adds a systemd drop-in (`docker.service.d/restart-socket-containers.conf`) that restarts the containers in `docker_socket_containers` after every start of `dockerd`.
 
-The secrets of a project are in Vault (KV engine `docker`, secret `docker/<project>`), never in a file of the repository or of the host: there is no `override.env`. The keys a project needs are named in `docker/<project>/vault.env.example` (`NAME=` is required, `#NAME=` is optional), `default.env` lists all variables of a project with empty secrets. `deploy.sh` reads the keys from Vault, checks the required ones before it touches a container and lists what is missing. Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `vault-backup`, `keycloak` and `keycloak-config`.
+The secrets of a project are in Vault (KV engine `docker`, secret `docker/<project>`), never in a file of the repository or of the host: there is no `override.env`. The keys a project needs are named in `docker/<project>/vault.env.example` (`NAME=` is required, `#NAME=` is optional), `default.env` lists all variables of a project with empty secrets. `deploy.sh` reads the keys from Vault, checks the required ones before it touches a container and lists what is missing. Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `vault-backup`, `keycloak`, `keycloak-config` and `netbird`.
 
 New or changed secret:
 
@@ -397,7 +398,7 @@ New or changed secret:
 2. `sudo scripts/docker/deploy.sh <project>`: Compose sees the changed environment and recreates the container within seconds. The data lives in folders on the host and stays.
 3. The S3 keys of `restic-backup`, `offsite-sync` and `vault-backup` are not in `docker/<project>`: `deploy.sh` adds them from the S3 identity (`docker/s3/<identity>`, see [Setup RustFS](#setup-rustfs); `vault-backup` uses the identity `vault`).
 
-NetBird is not part of this: it runs from its own folder (`/root/netbird`, created by the NetBird installer, with secrets), see [Setup NetBird backup](#setup-netbird-backup).
+NetBird is the one exception: it is not deployed by the timer and its secrets stay in rendered files on the host, see [Deploy NetBird](#deploy-netbird).
 
 #### Secrets from Vault
 
@@ -782,19 +783,26 @@ The Panel itself is deliberately not backed up. Its database is SQLite (not Mari
 
 Because the backups are plain archives, they can be restored without the Panel: download the `.tar.gz` of the server from the S3 or from pCloud (`Backups/s3/pelican/`) and unpack it into the data directory of the server.
 
+### Deploy NetBird
+
+The self-hosted NetBird server is the project `docker/netbird/`. It is not in `ALL_PROJECTS`, so the timer never touches it: SSH to `docker01` and the way to Vault both run through NetBird, and a broken merge must not lock you out. `/root/netbird` stays the working folder. `pre-deploy.sh` installs the files of the project there and renders `config.yaml` and `proxy.env` (mode 600) with the keys of `docker/netbird` from Vault. They stay on the host, unlike the `vault.env` of the other projects: the server cannot read its secrets from the environment, `/run` is empty after a reboot and NetBird must start without Vault. `crowdsec/` and the named volumes are not in Git.
+
+| Change | What to do |
+| --- | --- |
+| Config, labels, a secret | Merge, `git pull` in `/root/gitops`, `sudo scripts/docker/deploy.sh netbird` |
+| New image version (Renovate or by hand) | Merge, `git pull` in `/root/gitops`, `sudo scripts/netbird/netbird_upgrade.sh`, then `sudo scripts/docker/deploy.sh netbird` when the merge also changed a template |
+
+`deploy.sh netbird` refuses a change of an image (that needs the rollback point of `netbird_upgrade.sh`) and a `NETBIRD_STORE_ENCRYPTION_KEY` that differs from `/root/netbird/config.yaml` (the database would become unreadable). After `netbird_rollback.sh` the host runs the old version while Git holds the new one: `git revert` the version change on `master`.
+
+The keys of `docker/netbird` are listed in `docker/netbird/vault.env.example`. A new server is restored with `netbird_restore.sh`, which needs no Vault.
+
 ### Setup NetBird backup
 
-The self-hosted NetBird server runs as a Docker Compose project on `docker01` (default `/opt/netbird`). The scripts in `scripts/netbird/` back it up, restore it and upgrade it with a rollback point:
+The self-hosted NetBird server runs as a Docker Compose project on `docker01` (`/root/netbird`, `NETBIRD_DIR` in `/etc/netbird-backup.cred`). The scripts in `scripts/netbird/` back it up, restore it and upgrade it with a rollback point:
 
 - `netbird_backup.sh`: stops NetBird for a moment, copies the config files, `/var/lib/netbird` (SQLite store and keys), CrowdSec data and certificates, starts NetBird again (also on errors), writes everything with restic to the repository `netbird/restic` on the local RustFS S3 and applies the retention (8 weekly, 6 monthly). It has no schedule: it runs before every upgrade (`netbird_upgrade.sh`, tag `pre-upgrade`) and by hand, so everything changed since then is lost on a restore. A failed run is reported to Discord (`DISCORD_WEBHOOK_URL`). Connected through NetBird, use `sudo netbird_backup.sh --background`: the run stops NetBird, which drops that SSH session, so it detaches and writes to `/var/log/netbird-backup.log` (`tail -f` after reconnecting). A PostgreSQL or MySQL store would have to be backed up separately.
 - `netbird_restore.sh`, `netbird_upgrade.sh` (creates a pre-upgrade backup and a local rollback point), `netbird_rollback.sh`
-  - `netbird_upgrade.sh` also upgrades CrowdSec and Traefik (one at a time, `--no-deps`). They are not part of the NetBird release, so their versions are passed as options (validated versions: [upgrade docs](https://docs.netbird.io/selfhosted/maintenance/upgrade)):
-
-    ```bash
-    sudo netbird_upgrade.sh --traefik v3.7.14 --crowdsec v1.8.1 --bouncer v1.7.1
-    ```
-
-  - The script writes the tags and the bouncer plugin version (`--experimental.plugins.bouncer.version` in the `traefik` command) into `docker-compose.yml`, shows the diff and does that only after the backup, so `netbird_rollback.sh` restores the old file. From Traefik `v3.7.12` it also sets `aliasHeadersStrategy=delete` on the `web` and `websecure` entrypoints (the fix for header-alias spoofing does nothing without it). If `--providers.docker.network` does not match the Compose network (`netbird` instead of `netbird_netbird`), it warns and, with `--traefik`, sets the flag to the network of the container when that has exactly one.
+  - `netbird_upgrade.sh` takes all versions from `docker/netbird/docker-compose.yml` in `/root/gitops` (`GITOPS_DIR`), also those of CrowdSec and Traefik, which are not part of the NetBird release and are replaced one at a time (`--no-deps`). It shows the diff and copies the file to `/root/netbird` only after the backup, so `netbird_rollback.sh` restores the old one.
 - `netbird_backup_setup.sh` installs them to `/usr/local/bin`, writes `/etc/netbird-backup.cred` and removes the cron job of earlier versions.
 
 Set it up on `docker01`, the S3 is reached on `127.0.0.1:9000`, no NetBird is involved:
