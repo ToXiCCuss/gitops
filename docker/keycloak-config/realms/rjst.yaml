@@ -239,3 +239,19 @@ clients:
           id.token.claim: "true"
           access.token.claim: "true"
           userinfo.token.claim: "true"
+
+  # No client roles: Leantime reads no role claim, it matches the user by the verified email (kubernetes/management/kubectl/leantime.yaml)
+  - clientId: leantime
+    name: Leantime
+    protocol: openid-connect
+    enabled: true
+    publicClient: false
+    secret: $(env:LEANTIME_CLIENT_SECRET)
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    rootUrl: https://leantime.k8sdev.rjst.de
+    redirectUris:
+      - https://leantime.k8sdev.rjst.de/oidc/callback
+    webOrigins:
+      - https://leantime.k8sdev.rjst.de

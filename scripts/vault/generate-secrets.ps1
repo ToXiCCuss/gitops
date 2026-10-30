@@ -5,12 +5,12 @@
 
 .DESCRIPTION
     - Freely generatable secrets (Harbor/Jenkins/Grafana/Forgejo admin passwords, the OIDC client secrets of Grafana, Harbor, Jenkins,
-      Vault and Forgejo, the secret key and internal token of Forgejo)
+      Vault, Forgejo and Leantime, the secret key and internal token of Forgejo, the session password of Leantime)
       are generated locally and written to Vault, but never replace a value
       that already exists.
     - External values are prompted for interactively and written to Vault:
       the Hetzner and NetBird API tokens, the docker01 DB credentials for
-      Harbor and Forgejo. Leave blank to skip a value - existing Vault
+      Harbor, Forgejo and Leantime. Leave blank to skip a value - existing Vault
       data for that key is left untouched.
     - Safe to re-run: it asks before overwriting a value you provide if it
       already has one.
@@ -129,6 +129,8 @@ Set-VaultKV -Path "forgejo" -Data @{ "admin.password" = (New-RandomSecret) } -Sk
 Set-VaultKV -Path "forgejo" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "forgejo" -Data @{ "security.secret_key" = (New-RandomSecret -Length 64) } -SkipExisting
 Set-VaultKV -Path "forgejo" -Data @{ "security.internal_token" = (New-RandomSecret -Length 64) } -SkipExisting
+Set-VaultKV -Path "leantime" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
+Set-VaultKV -Path "leantime" -Data @{ "session.password" = (New-RandomSecret -Length 64) } -SkipExisting
 
 # ── 2. External values that must match reality - prompt, never generate ───
 Write-Step "External values (leave blank to skip / keep existing)"
@@ -153,6 +155,14 @@ $forgejoDbUser = Read-Host "Forgejo external DB username (blank to skip)"
 if ($forgejoDbUser) {
     $forgejoDbPass = Read-OptionalSecret "Forgejo external DB password"
     Set-VaultKV -Path "forgejo" -Data @{ "database.username" = $forgejoDbUser; "database.password" = $forgejoDbPass }
+}
+
+Write-Warn2 "For Leantime, run scripts/mariadb/db_create.sh leantime on docker01 first - the password of leantime_owner is in Vault databases/mariadb/leantime_owner."
+
+$leantimeDbUser = Read-Host "Leantime external DB username (blank to skip)"
+if ($leantimeDbUser) {
+    $leantimeDbPass = Read-OptionalSecret "Leantime external DB password"
+    Set-VaultKV -Path "leantime" -Data @{ "database.username" = $leantimeDbUser; "database.password" = $leantimeDbPass }
 }
 
 Write-Step "Done"

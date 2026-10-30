@@ -894,7 +894,7 @@ kubernetes/<domain>/
 1. infra (cert-manager, ClusterIssuer, Istio security policies, NetBird operator)
 2. monitoring (Prometheus, exporters, Istio dashboards)
 3. cicd (Harbor, Jenkins, Forgejo)
-4. management (Portal)
+4. management (Portal, Leantime)
 5. kafka (Strimzi, Apicurio Registry, AKHQ)
 6. spring
 
@@ -1086,6 +1086,7 @@ Every app is reached as `https://<app>.k8sdev.rjst.de` (see the next section): i
 | Portal | `portal.k8sdev.rjst.de` | `portal.portal:80` | 8451 |
 | Prometheus | `prometheus.k8sdev.rjst.de` | `prometheus-prometheus.prometheus:9090` | 8452 |
 | Forgejo | `forgejo.k8sdev.rjst.de` | `forgejo-http.forgejo:3000` | 8453 |
+| Leantime | `leantime.k8sdev.rjst.de` | `leantime.leantime:80` | 8454 |
 
 Each app needs the CNAME, the `<app>-users` distribution group and the policy from above. The nodes need access to pull from Harbor too (`harbor.k8sdev.rjst.de` has a valid certificate, so k3s needs no insecure-registry setting): put the node peers into `harbor-users`.
 
@@ -1151,6 +1152,19 @@ Build history lives only in the Jenkins volume, it is not backed up.
 - **Maven:** the packages belong to a user or an organization (e.g. an organization `rjst`). The repository URL is `https://forgejo.k8sdev.rjst.de/api/packages/<owner>/maven`, the same for `<distributionManagement>` (releases and snapshots) and `<repositories>`. Maven logs in with the Forgejo username and an access token with the scope `package` (**Settings > Applications**) in a `<server>` of `settings.xml`, never with the Keycloak password. Pods in the cluster reach the URL through the CoreDNS rewrite to the internal gateway.
 
 The packages live only in the Forgejo volume, it is not backed up. The database is dumped by `restic-backup` like every other on docker01.
+
+#### Leantime (project management)
+
+`management/kubectl/leantime.yaml` runs Leantime as plain manifests, there is no official Helm chart. The database is `leantime` on the MariaDB of docker01, the environment with the secrets is the Secret `leantime` (`secrets/leantime.yaml`).
+
+- **Before the first sync:** `scripts/mariadb/db_create.sh leantime` on docker01 (the password of `leantime_owner` goes to Vault `databases/mariadb/leantime_owner`), then `generate-secrets.ps1` (step 3): it generates `argocd/data/leantime` (`oidc.client_secret`, `session.password`) and asks for the database user and password. The node needs a NetBird policy that allows docker01 on TCP 3306, otherwise the pod does not get ready.
+- **Keycloak:** the client `leantime` in `docker/keycloak-config/realms/rjst.yaml`. Its secret goes into the Vault secret `docker/keycloak-config` as `LEANTIME_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/leantime`) before the merge (the variable is required, without it the deploy timer fails on `keycloak-config`), then `sudo scripts/docker/deploy.sh keycloak-config`.
+- **NetBird:** the CNAME `leantime` in the zone and the policy `leantime-users` -> `k8s-leantime` on TCP 443 (see step 5).
+- **First start:** open `https://leantime.k8sdev.rjst.de/install` as soon as the pod runs: the page creates the tables and the local admin, until then anyone in `leantime-users` can do that. Use the email address of your Keycloak user, then the Keycloak login works for this account too.
+- **Users:** Leantime creates no users at the Keycloak login and reads no roles. A user first gets an account in Leantime with the email address from Keycloak, and the role is set there. The address has to be verified in Keycloak, otherwise the login is refused. The login form stays on as the emergency login.
+- **Update:** a new image can bring database migrations. After the rollout log in as admin and confirm the update Leantime asks for.
+
+The uploads live only in the two Leantime volumes, they are not backed up. The database is dumped by `restic-backup` like every other on docker01. Deleting `leantime.yaml` deletes the volumes (`prune`).
 
 #### 6. Verify
 
