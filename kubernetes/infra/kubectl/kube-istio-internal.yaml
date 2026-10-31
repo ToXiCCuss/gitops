@@ -5,12 +5,12 @@
 # separates access per destination (resource + group), not per hostname. Each
 # listener only accepts its own hostname (SNI + Host), so reaching app A's
 # Service with app B's hostname is refused - that is what keeps the per-app
-# groups meaningful.
+# resources apart.
 #
 # Add an app: copy the "vault" block (Service, Gateway server, VirtualService,
-# NetworkResource), pick the next listener port, add two Group CRs in
-# kube-netbird-access.yaml, then in the NetBird dashboard: a CNAME in the zone
-# and a policy <app>-users -> k8s-<app> on TCP 443.
+# NetworkResource), pick the next listener port, add the Group CR k8s-<app>,
+# then in the NetBird dashboard: a CNAME in the zone. The policy
+# k8s-users -> kubernetes-services already covers the new app.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

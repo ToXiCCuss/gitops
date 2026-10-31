@@ -1,7 +1,7 @@
 # Leantime: https://leantime.k8sdev.rjst.de - project management. There is no official Helm chart, so the app is
 # plain manifests. The database is leantime on the MariaDB of docker01, the environment with the secrets is the Secret
 # leantime (kubernetes/secrets/leantime.yaml). Setup and updates: README.md, section Leantime.
-# NetBird groups exist only while this app is deployed (destination k8s-leantime, users leantime-users).
+# NetBird group exists only while this app is deployed (destination k8s-leantime).
 apiVersion: netbird.io/v1alpha1
 kind: Group
 metadata:
@@ -11,18 +11,6 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"
 spec:
   name: k8s-leantime
-
----
-
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: leantime-users
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: leantime-users
 
 ---
 

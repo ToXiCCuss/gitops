@@ -1,4 +1,4 @@
-# NetBird groups exist only while this app is deployed (destination k8s-forgejo, users forgejo-users).
+# NetBird group exists only while this app is deployed (destination k8s-forgejo).
 apiVersion: netbird.io/v1alpha1
 kind: Group
 metadata:
@@ -8,18 +8,6 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"
 spec:
   name: k8s-forgejo
-
----
-
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: forgejo-users
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: forgejo-users
 
 ---
 

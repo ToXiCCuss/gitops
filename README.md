@@ -537,7 +537,7 @@ After the first deploy check the metric: `curl -s localhost:9100/metrics | grep 
    .\scripts\vault\create-snapshot-token.ps1 -VaultToken <root-token>
    ```
 
-   The Docker host must reach `https://vault.k8sdev.rjst.de`: `docker01` is a NetBird peer, put it into the group `vault-users` (the policy `vault-users` -> `k8s-vault` exists, see NetBird configuration).
+   The Docker host must reach `https://vault.k8sdev.rjst.de`: `docker01` is a NetBird peer, put it into the group `k8s-users` (the policy `k8s-users` -> `kubernetes-services` exists, see NetBird configuration).
 
 6. Deploy them: `sudo scripts/docker/deploy.sh restic-backup vault-backup offsite-sync`.
 7. Prepare the database backup logins ([Database dumps](#database-dumps)), then run `restic-backup` once to test it: `docker exec restic-backup sh /backup.sh now`.
@@ -1082,12 +1082,12 @@ Watch `infra` reach Healthy in the ArgoCD UI/CLI before applying the rest — no
 
 What lives in Git, and what doesn't:
 
-- **In Git, via the NetBird operator**: the groups. `k8s-admins` (peers that may reach every app) and `kubernetes-services` (every `NetworkResource` is in it) live in `kubernetes/infra/kubectl/kube-netbird-access.yaml`, together with the groups of the apps deployed with `infra` (Vault, ArgoCD). Every other app declares its own destination group `k8s-<app>` and user group `<app>-users` next to its `NetworkResource`, so they exist only while that app's domain is deployed. Removing a domain deletes them again - delete the policy that uses them (and the zone's distribution-group entry) first, NetBird refuses to delete a group that is still referenced.
+- **In Git, via the NetBird operator**: the groups. `k8s-users` (peers that may reach every app) and `kubernetes-services` (every `NetworkResource` is in it) live in `kubernetes/infra/kubectl/kube-netbird-access.yaml`, together with the groups of the apps deployed with `infra` (Vault, ArgoCD). Every other app declares its own group `k8s-<app>` next to its `NetworkResource`, so it exists only while that app's domain is deployed. No policy refers to it, access is decided by `k8s-users` alone.
 - **By hand in the dashboard**:
-  1. `DNS > Zones > Add Zone`: name and domain `k8sdev.rjst.de` (a separate internal zone: `proxy.rjst.de` is the NetBird host's own public domain and must not be shadowed; a subdomain of `rjst.de` so Let's Encrypt DNS-01 can issue for it). **Distribution Groups**: `k8s-admins` and every `<app>-users` (only peers in these groups resolve the records; the zone is not a security boundary, the policies are). The zone must exist before the `NetworkRouter` syncs.
+  1. `DNS > Zones > Add Zone`: name and domain `k8sdev.rjst.de` (a separate internal zone: `proxy.rjst.de` is the NetBird host's own public domain and must not be shadowed; a subdomain of `rjst.de` so Let's Encrypt DNS-01 can issue for it). **Distribution Groups**: `k8s-users` (only peers in this group resolve the records; the zone is not a security boundary, the policies are). The zone must exist before the `NetworkRouter` syncs.
   2. Records in that zone: the operator creates `<service>.<namespace>.k8sdev.rjst.de` for every `NetworkResource`. Add a CNAME per app to that name, e.g. `vault.k8sdev.rjst.de` -> `gw-vault.istio-internal.k8sdev.rjst.de`.
-  3. `Access Control > Policies`, all TCP 443, one-way: `k8s-admins` -> `kubernetes-services` (every app), and per app `<app>-users` -> `k8s-<app>` (e.g. `vault-users` -> `k8s-vault`). NetBird is deny-by-default and the operator writes no policies (its `NBPolicy` resource creates nothing for `NetworkResource`s, so it is deliberately not used).
-  4. `Peers`: put each peer/user into `k8s-admins` and/or the matching `<app>-users`. Nothing is reachable until a peer is in a group with a policy.
+  3. `Access Control > Policies`, one policy, TCP 443, one-way: `k8s-users` -> `kubernetes-services` (every app, also the ones added later). NetBird is deny-by-default and the operator writes no policies (its `NBPolicy` resource creates nothing for `NetworkResource`s, so it is deliberately not used).
+  4. `Peers`: put each peer/user into `k8s-users`. Nothing is reachable until a peer is in a group with a policy. Machines count as well: the k3s nodes (Harbor pull) and `docker01` (Vault) are peers in `k8s-users` too.
 - Guide this follows: [Route to a Kubernetes service](https://docs.netbird.io/use-cases/kubernetes/route-to-a-kubernetes-service). The router runs a single routing peer (`workloadOverride.replicas: 1`, single-node cluster); raise it to 3+ for failover.
 
 Every app is reached as `https://<app>.k8sdev.rjst.de` (see the next section): its own Gateway, Service, VirtualService and `NetworkResource` live next to the app (`kube-gw-argocd.yaml` in `infra`, the others in their domain's `kubectl/` folder) and create the record `gw-<app>.istio-internal.k8sdev.rjst.de`.
@@ -1107,7 +1107,7 @@ Every app is reached as `https://<app>.k8sdev.rjst.de` (see the next section): i
 | Forgejo | `forgejo.k8sdev.rjst.de` | `forgejo-http.forgejo:3000` | 8453 |
 | Leantime | `leantime.k8sdev.rjst.de` | `leantime.leantime:80` | 8454 |
 
-Each app needs the CNAME, the `<app>-users` distribution group and the policy from above. The nodes need access to pull from Harbor too (`harbor.k8sdev.rjst.de` has a valid certificate, so k3s needs no insecure-registry setting): put the node peers into `harbor-users`.
+Each app needs the CNAME. The nodes need access to pull from Harbor too (`harbor.k8sdev.rjst.de` has a valid certificate, so k3s needs no insecure-registry setting): put the node peers into `k8s-users`.
 
 ##### HTTPS entry for internal apps (`istio-internal`)
 
@@ -1121,7 +1121,7 @@ Apps are reached as `https://<app>.k8sdev.rjst.de` (port 443, Let's Encrypt wild
 - **Docker**: every service in `docker/*/docker-compose.yml` that has the labels `portal.name` and `portal.url` (the NetBird reverse proxy address, `https://<app>.proxy.rjst.de`). Optional: `portal.group`, `portal.description`, `portal.icon` (Devicon name). The list comes from the Git repository (`master`), so a service appears once it is merged, not once its container runs.
 - **Static**: services that are neither a `VirtualService` nor in `docker/` (NetBird on its own host) and external links (group `External`: Hetzner, ZAP-Hosting, GitHub) are listed in the `STATIC_SERVICES` env var of the generator container, a JSON list of `{name, url, group, description, icon}`.
 
-Needs the usual NetBird steps by hand: a CNAME `portal` in the zone and the policy `portal-users` -> `k8s-portal` on TCP 443.
+Needs the usual NetBird steps by hand: a CNAME `portal` in the zone.
 
 ##### kubectl through NetBird (API server proxy)
 
@@ -1167,7 +1167,7 @@ Build history lives only in the Jenkins volume, it is not backed up.
 
 - **Before the first sync:** `scripts/postgresql/db_create.sh forgejo` on docker01 (the password of `forgejo_owner` goes to Vault `databases/postgresql/forgejo_owner`), then `generate-secrets.ps1` (step 3): it generates `argocd/data/forgejo` (`admin.password`, `oidc.client_secret`, `security.secret_key`, `security.internal_token`) and asks for the database user and password. `security.secret_key` encrypts the secrets in the database (the client secret of the auth source, 2FA): never change it.
 - **Keycloak:** the client `forgejo` in `docker/keycloak-config/realms/rjst.yaml`. Its secret goes into the Vault secret `docker/keycloak-config` as `FORGEJO_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/forgejo`) before the merge (the variable is required, without it the deploy timer fails on `keycloak-config`), then `sudo scripts/docker/deploy.sh keycloak-config`. Give the users the client role `forgejo` `user` or `admin`: a user without one is refused, `admin` makes a site admin. The first login creates the user, named after the Keycloak username (claim `nickname`).
-- **NetBird:** the CNAME `forgejo` in the zone and the policy `forgejo-users` -> `k8s-forgejo` on TCP 443 (see step 5).
+- **NetBird:** the CNAME `forgejo` in the zone (see step 5).
 - **Maven:** the packages belong to a user or an organization (e.g. an organization `rjst`). The repository URL is `https://forgejo.k8sdev.rjst.de/api/packages/<owner>/maven`, the same for `<distributionManagement>` (releases and snapshots) and `<repositories>`. Maven logs in with the Forgejo username and an access token with the scope `package` (**Settings > Applications**) in a `<server>` of `settings.xml`, never with the Keycloak password. Pods in the cluster reach the URL through the CoreDNS rewrite to the internal gateway.
 
 ##### Backup and restore
@@ -1197,8 +1197,8 @@ Restore (replaces the data volume and the database; if a step fails, Forgejo sta
 
 - **Before the first sync:** `scripts/mariadb/db_create.sh leantime` on docker01 (the password of `leantime_owner` goes to Vault `databases/mariadb/leantime_owner`), then `generate-secrets.ps1` (step 3): it generates `argocd/data/leantime` (`oidc.client_secret`, `session.password`) and asks for the database user and password. The node needs a NetBird policy that allows docker01 on TCP 3306, otherwise the pod does not get ready.
 - **Keycloak:** the client `leantime` in `docker/keycloak-config/realms/rjst.yaml`. Its secret goes into the Vault secret `docker/keycloak-config` as `LEANTIME_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/leantime`) before the merge (the variable is required, without it the deploy timer fails on `keycloak-config`), then `sudo scripts/docker/deploy.sh keycloak-config`.
-- **NetBird:** the CNAME `leantime` in the zone and the policy `leantime-users` -> `k8s-leantime` on TCP 443 (see step 5).
-- **First start:** open `https://leantime.k8sdev.rjst.de/install` as soon as the pod runs: the page creates the tables and the local admin, until then anyone in `leantime-users` can do that. Use the email address of your Keycloak user, then the Keycloak login works for this account too.
+- **NetBird:** the CNAME `leantime` in the zone (see step 5).
+- **First start:** open `https://leantime.k8sdev.rjst.de/install` as soon as the pod runs: the page creates the tables and the local admin, until then anyone in `k8s-users` can do that. Use the email address of your Keycloak user, then the Keycloak login works for this account too.
 - **Users:** Leantime creates no users at the Keycloak login and reads no roles. A user first gets an account in Leantime with the email address from Keycloak, and the role is set there. The address has to be verified in Keycloak, otherwise the login is refused. The login form stays on as the emergency login.
 - **Update:** a new image can bring database migrations. After the rollout log in as admin and confirm the update Leantime asks for.
 

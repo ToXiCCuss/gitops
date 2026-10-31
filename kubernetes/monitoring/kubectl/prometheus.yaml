@@ -1,5 +1,4 @@
-# NetBird groups exist only while this app is deployed (destination k8s-grafana, users grafana-users;
-# destination k8s-prometheus, users prometheus-users).
+# NetBird groups exist only while this app is deployed (destinations k8s-grafana and k8s-prometheus).
 apiVersion: netbird.io/v1alpha1
 kind: Group
 metadata:
@@ -9,20 +8,6 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"
 spec:
   name: k8s-grafana
-
----
-
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: grafana-users
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: grafana-users
-
----
 
 ---
 
@@ -126,21 +111,9 @@ spec:
 
 ---
 
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: prometheus-users
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: prometheus-users
-
----
-
 # prometheus: https://prometheus.k8sdev.rjst.de -> prometheus-prometheus.prometheus:9090
-# Prometheus has no login of its own: only members of prometheus-users reach it (NetBird policy
-# prometheus-users -> k8s-prometheus on TCP 443). The admin API is disabled (enableAdminAPI: false).
+# Prometheus has no login of its own: only members of k8s-users reach it (NetBird policy
+# k8s-users -> kubernetes-services on TCP 443). The admin API is disabled (enableAdminAPI: false).
 apiVersion: networking.istio.io/v1
 kind: Gateway
 metadata:
