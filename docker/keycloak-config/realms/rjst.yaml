@@ -54,6 +54,13 @@ roles:
         description: Forgejo site admin
       - name: user
         description: Forgejo user, publishes and reads packages
+    # admin may do everything, viewer only looks at the Applications (configs.rbac in kubernetes/argocd-values.yaml).
+    # Argo CD lets a user without a role log in, but shows nothing to him.
+    argocd:
+      - name: admin
+        description: Argo CD administrator
+      - name: viewer
+        description: Argo CD viewer, read only
 
 clients:
   - clientId: grafana
@@ -255,3 +262,30 @@ clients:
       - https://leantime.k8sdev.rjst.de/oidc/callback
     webOrigins:
       - https://leantime.k8sdev.rjst.de
+
+  - clientId: argocd
+    name: Argo CD
+    protocol: openid-connect
+    enabled: true
+    publicClient: false
+    secret: $(env:ARGOCD_CLIENT_SECRET)
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    rootUrl: https://argocd.k8sdev.rjst.de
+    redirectUris:
+      - https://argocd.k8sdev.rjst.de/auth/callback
+    webOrigins:
+      - https://argocd.k8sdev.rjst.de
+    protocolMappers:
+      - name: argocd-roles
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-client-role-mapper
+        config:
+          usermodel.clientRoleMapping.clientId: argocd
+          claim.name: roles
+          jsonType.label: String
+          multivalued: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"

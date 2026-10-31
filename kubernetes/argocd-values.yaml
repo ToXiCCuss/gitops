@@ -6,7 +6,23 @@ global:
 configs:
   params:
     server.insecure: true
+  # The roles of the client argocd in Keycloak arrive as the claim roles. The local admin stays as the emergency login.
+  rbac:
+    policy.csv: |
+      g, admin, role:admin
+      g, viewer, role:readonly
+    scopes: "[roles]"
   cm:
+    url: https://argocd.k8sdev.rjst.de
+    # Login with Keycloak (realm rjst, client argocd). The client secret comes from the Secret argocd-oidc (kubernetes/secrets).
+    # Keycloak tokens live 5 minutes: the threshold renews them before that, otherwise the UI logs out.
+    oidc.config: |
+      name: Keycloak
+      issuer: https://auth.proxy.rjst.de/realms/rjst
+      clientID: argocd
+      clientSecret: $argocd-oidc:clientSecret
+      refreshTokenThreshold: 2m
+      requestedScopes: ["openid", "profile", "email", "offline_access"]
     resource.exclusions: |
       ### Internal Kubernetes resources excluded reduce the number of watched events
       - apiGroups:

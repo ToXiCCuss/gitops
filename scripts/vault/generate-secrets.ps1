@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     - Freely generatable secrets (Harbor/Jenkins/Grafana/Forgejo admin passwords, the OIDC client secrets of Grafana, Harbor, Jenkins,
-      Vault, Forgejo and Leantime, the secret key, internal token and backup restic password of Forgejo,
+      Vault, Forgejo, Leantime and Argo CD, the secret key, internal token and backup restic password of Forgejo,
       the session password and backup restic password of Leantime)
       are generated locally and written to Vault, but never replace a value
       that already exists.
@@ -125,6 +125,7 @@ Set-VaultKV -Path "prometheus" -Data @{ "oidc.client_secret" = (New-RandomSecret
 Set-VaultKV -Path "harbor" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "jenkins" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "vault" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
+Set-VaultKV -Path "argocd" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
 # security.secret_key encrypts the secrets in the Forgejo database: SkipExisting keeps it, a new value would make them unreadable
 Set-VaultKV -Path "forgejo" -Data @{ "admin.password" = (New-RandomSecret) } -SkipExisting
 Set-VaultKV -Path "forgejo" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting

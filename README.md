@@ -882,6 +882,16 @@ What is **not** in the file: users, their passwords and their group membership. 
 
 A new app: one more client block with its roles and the mapper in the file, its secret in Vault and in the Vault secret `docker/keycloak-config` (with a new variable in `default.env` and `vault.env.example`), then `sudo scripts/docker/deploy.sh keycloak-config`. Check the result with `docker logs keycloak-config`.
 
+#### Argo CD login
+
+Argo CD is not rendered by AVP, so `oidc.config` in `kubernetes/argocd-values.yaml` only refers to the Secret `argocd-oidc` (`kubernetes/secrets/argocd-oidc.yaml`). Roles: `admin` is `role:admin`, `viewer` is `role:readonly`. A user without a role can log in, but sees nothing. The login works in the browser only: the client is confidential, so `argocd login --sso` does not work, use the local `admin` for the CLI.
+
+1. `generate-secrets.ps1` writes `argocd/data/argocd#oidc.client_secret`. Before the merge copy the value into the Vault secret `docker/keycloak-config` as `ARGOCD_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/argocd`). The variable is required: without it the deploy timer fails on `keycloak-config`.
+2. Merge, then `sudo scripts/docker/deploy.sh keycloak-config` creates the client and its roles.
+3. Hard refresh the app `secrets` in Argo CD, a plain refresh does not pick up the new Vault value.
+4. Apply `kubernetes/argocd-values.yaml` with the `helm upgrade` from [Bootstrap ArgoCD](#1-bootstrap-argocd).
+5. Keycloak UI: give your user the client role `admin` of the client `argocd`, then log in with the button **Log in via Keycloak**.
+
 The Pods fetch the token and the user info themselves from `https://auth.proxy.rjst.de`, so the cluster has to reach it. Test it from a Pod before the first login, e.g. `kubectl -n prometheus exec deploy/grafana -c grafana -- wget -qO- https://auth.proxy.rjst.de/realms/rjst/.well-known/openid-configuration`.
 
 ## Kubernetes
@@ -1008,6 +1018,7 @@ The scripts default to `-VaultAddr https://vault.k8sdev.rjst.de` (reachable over
 | `argocd/data/prometheus` | `password` (Grafana admin password), `oidc.client_secret` (secret of the Keycloak client `grafana`, generated, see Keycloak), `discord_webhook_url` (webhook of the alert channel for Alertmanager, see [Backup age alerts](#backup-age-alerts)) |
 | `argocd/data/harbor` | `admin.password`, `database.username`, `database.password` |
 | `argocd/data/jenkins` | `password` (Jenkins admin password), `github_app_private_key` (PKCS#8 PEM of the GitHub App, see Jenkins) |
+| `argocd/data/argocd` | `oidc.client_secret` (secret of the Keycloak client `argocd`, generated, see Keycloak) |
 
 > **Note:** Everything is in Vault except Vault's own unseal keys. Those aren't in the table above and aren't stored in Vault at all - they're circular on a *first* install (Vault must already be unsealed for AVP to read them back out of it). `init-vault.ps1` above creates them via `vault operator init`, unseals Vault, and applies the `vault-unsealer-config` Secret straight into the cluster with `kubectl` (bypassing AVP for that one bootstrap secret). The root token and unseal keys are only printed to the console, once - it waits for Enter so you can copy them into your password manager. They are not saved anywhere else.
 
