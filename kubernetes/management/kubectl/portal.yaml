@@ -7,7 +7,7 @@
 #               an https:// URL to an image for what devicon does not have, e.g. Keycloak and NetBird;
 #               anything else is shown as text, e.g. an emoji), /hidden: "true", /stage, /version,
 #               /public: "true" (reachable from the Internet, not only through NetBird: a "public" badge,
-#               all others a "vpn" badge; the group External gets none).
+#               all others a "vpn" badge; static entries without "public", e.g. the group External, get none).
 #               A VirtualService in one of the STAGE_NAMESPACES (dev, prod, ...) is an app with
 #               a stage: one card per app, one link per stage, name from the app label,
 #               version from app.kubernetes.io/version.
@@ -273,8 +273,8 @@ data:
         return box;
       }
 
-      // links to third-party sites: neither public nor behind the VPN in our sense
-      const EXTERNAL_GROUP = "External";
+      // entries without "public" (third-party sites, localhost links) are neither public nor behind the VPN
+      function hasAccessInfo(s) { return typeof s.public === "boolean"; }
       function accessBadge(s) {
         const access = s.public ? "public" : "vpn";
         const badge = el("span", "badge " + access, access);
@@ -310,7 +310,7 @@ data:
             card.append(iconEl(s));
             const text = el("div");
             const name = el("div", "name", s.name);
-            const showsAccess = s.group !== EXTERNAL_GROUP;
+            const showsAccess = hasAccessInfo(s);
             text.append(name);
             if (!staged) {
               if (showsAccess) text.append(accessBadge(s));
@@ -380,7 +380,7 @@ spec:
       # Raise it with every change of the ConfigMap portal-generator: the pod does not restart on its own,
       # the generator loop keeps the old script and the subPath mount of index.html never updates.
       annotations:
-        portal.rjst.de/config-revision: "5"
+        portal.rjst.de/config-revision: "6"
     spec:
       serviceAccountName: portal
       securityContext:
@@ -459,7 +459,24 @@ spec:
                   "icon": "https://cdn.simpleicons.org/github/8b95a1"},
                  {"name": "GitHub RJST-DEVELOP", "url": "https://github.com/orgs/RJST-DEVELOP/repositories", "group": "External",
                   "description": "Organization repositories",
-                  "icon": "https://cdn.simpleicons.org/github/8b95a1"}]
+                  "icon": "https://cdn.simpleicons.org/github/8b95a1"},
+                 {"name": "Swagger UI", "url": "http://localhost:8080/swagger-ui/index.html", "group": "Development",
+                  "description": "REST API of the local app",
+                  "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/swagger.svg"},
+                 {"name": "Springwolf UI", "url": "http://localhost:8080/springwolf/asyncapi-ui.html", "group": "Development",
+                  "description": "AsyncAPI of the local app"},
+                 {"name": "Microcks", "url": "http://localhost:8585/#/", "group": "Development",
+                  "description": "API mocking on the local machine"},
+                 {"name": "Arena", "url": "https://arena.ai/", "group": "AI",
+                  "description": "Compare and rank AI models"},
+                 {"name": "Claude", "url": "https://claude.ai/new", "group": "AI",
+                  "description": "Anthropic assistant",
+                  "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/claude-ai.svg"},
+                 {"name": "ChatGPT", "url": "https://chatgpt.com/", "group": "AI",
+                  "description": "OpenAI assistant",
+                  "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/chatgpt.svg"},
+                 {"name": "Meshy", "url": "https://www.meshy.ai/de/discover", "group": "AI",
+                  "description": "AI 3D model generation"}]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
