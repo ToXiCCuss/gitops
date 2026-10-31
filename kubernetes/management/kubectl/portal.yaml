@@ -230,7 +230,8 @@ data:
               font-weight: 600; font-size: 17px; }
       .icon.img { background: #fff; border: 1px solid var(--line); }
       .icon img { width: 22px; height: 22px; }
-      .name { font-weight: 600; }
+      .card > div { min-width: 0; }
+      .name { font-weight: 600; white-space: nowrap; }
       .badge { margin-left: 6px; padding: 0 7px; border: 1px solid var(--badge-color); border-radius: 999px;
                background: color-mix(in srgb, var(--badge-color) 16%, transparent);
                font-size: 11px; font-weight: 600; vertical-align: 1px; }
