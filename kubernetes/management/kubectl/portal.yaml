@@ -380,7 +380,7 @@ spec:
       # Raise it with every change of the ConfigMap portal-generator: the pod does not restart on its own,
       # the generator loop keeps the old script and the subPath mount of index.html never updates.
       annotations:
-        portal.rjst.de/config-revision: "7"
+        portal.rjst.de/config-revision: "8"
     spec:
       serviceAccountName: portal
       securityContext:
@@ -469,9 +469,6 @@ spec:
                  {"name": "Microcks", "url": "http://localhost:8585/#/", "group": "Development",
                   "description": "API mocking on the local machine",
                   "icon": "https://github.com/microcks.png"},
-                 {"name": "Arena", "url": "https://arena.ai/", "group": "AI",
-                  "description": "Compare and rank AI models",
-                  "icon": "https://arena.ai/apple-touch-icon.png"},
                  {"name": "Claude", "url": "https://claude.ai/new", "group": "AI",
                   "description": "Anthropic assistant",
                   "icon": "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/claude-ai.svg"},
