@@ -1,16 +1,3 @@
-# NetBird group exists only while this app is deployed (destination k8s-forgejo).
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: k8s-forgejo
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: k8s-forgejo
-
----
-
 # forgejo: https://forgejo.k8sdev.rjst.de -> forgejo-http.forgejo:3000
 # Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
 apiVersion: networking.istio.io/v1
@@ -94,5 +81,4 @@ spec:
   serviceRef:
     name: gw-forgejo
   groups:
-    - name: k8s-forgejo
     - name: kubernetes-services

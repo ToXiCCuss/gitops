@@ -8,9 +8,9 @@
 # resources apart.
 #
 # Add an app: copy the "vault" block (Service, Gateway server, VirtualService,
-# NetworkResource), pick the next listener port, add the Group CR k8s-<app>,
-# then in the NetBird dashboard: a CNAME in the zone. The policy
-# k8s-users -> kubernetes-services already covers the new app.
+# NetworkResource), pick the next listener port, then in the NetBird dashboard:
+# a CNAME in the zone. The policy k8s-users -> kubernetes-services already covers
+# the new app.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -110,5 +110,4 @@ spec:
   serviceRef:
     name: gw-vault
   groups:
-    - name: k8s-vault
     - name: kubernetes-services

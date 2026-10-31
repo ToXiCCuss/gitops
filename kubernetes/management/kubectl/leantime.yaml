@@ -1,19 +1,6 @@
 # Leantime: https://leantime.k8sdev.rjst.de - project management. There is no official Helm chart, so the app is
 # plain manifests. The database is leantime on the MariaDB of docker01, the environment with the secrets is the Secret
 # leantime (kubernetes/secrets/leantime.yaml). Setup and updates: README.md, section Leantime.
-# NetBird group exists only while this app is deployed (destination k8s-leantime).
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: k8s-leantime
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: k8s-leantime
-
----
-
 # Two volumes and no subPath: a directory the kubelet creates for a subPath is not writable for the non-root user.
 # The CronJob leantime-backup (leantime-backup.yaml) backs them up. Same wave as the Deployment: local-path binds a
 # volume only for a pod, an earlier wave would wait for that forever.
@@ -254,5 +241,4 @@ spec:
   serviceRef:
     name: gw-leantime
   groups:
-    - name: k8s-leantime
     - name: kubernetes-services

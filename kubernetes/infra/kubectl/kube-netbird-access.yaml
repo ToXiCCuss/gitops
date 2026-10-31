@@ -4,11 +4,6 @@
 #
 #   k8s-users           peers/users that may reach every app (policy -> kubernetes-services)
 #   kubernetes-services every NetworkResource is in this group
-#   k8s-<app>           group of one app's NetworkResource
-#
-# Only the groups of what is deployed with `infra` live here (vault, argocd). Every
-# other app declares its own group next to its NetworkResource, so it is created
-# when that app's domain is deployed and removed with it.
 apiVersion: netbird.io/v1alpha1
 kind: Group
 metadata:
@@ -33,27 +28,3 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"
 spec:
   name: k8s-users
-
----
-
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: k8s-vault
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: k8s-vault
-
----
-
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: k8s-argocd
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: k8s-argocd

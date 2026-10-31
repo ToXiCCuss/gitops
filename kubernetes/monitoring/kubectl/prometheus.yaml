@@ -1,16 +1,3 @@
-# NetBird groups exist only while this app is deployed (destinations k8s-grafana and k8s-prometheus).
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: k8s-grafana
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: k8s-grafana
-
----
-
 # grafana: https://grafana.k8sdev.rjst.de -> grafana.prometheus:80
 # Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
 apiVersion: networking.istio.io/v1
@@ -94,20 +81,7 @@ spec:
   serviceRef:
     name: gw-grafana
   groups:
-    - name: k8s-grafana
     - name: kubernetes-services
-
----
-
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: k8s-prometheus
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: k8s-prometheus
 
 ---
 
@@ -195,5 +169,4 @@ spec:
   serviceRef:
     name: gw-prometheus
   groups:
-    - name: k8s-prometheus
     - name: kubernetes-services

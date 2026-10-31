@@ -12,19 +12,6 @@ spec:
 
 ---
 
-# NetBird group exists only while this app is deployed (destination k8s-apicurio).
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: k8s-apicurio
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: k8s-apicurio
-
----
-
 # apicurio: https://apicurio.k8sdev.rjst.de -> example-apicurioregistry-mem-service.kafka:8080
 # Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
 apiVersion: networking.istio.io/v1
@@ -108,5 +95,4 @@ spec:
   serviceRef:
     name: gw-apicurio
   groups:
-    - name: k8s-apicurio
     - name: kubernetes-services

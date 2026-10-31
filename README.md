@@ -1082,7 +1082,7 @@ Watch `infra` reach Healthy in the ArgoCD UI/CLI before applying the rest — no
 
 What lives in Git, and what doesn't:
 
-- **In Git, via the NetBird operator**: the groups. `k8s-users` (peers that may reach every app) and `kubernetes-services` (every `NetworkResource` is in it) live in `kubernetes/infra/kubectl/kube-netbird-access.yaml`, together with the groups of the apps deployed with `infra` (Vault, ArgoCD). Every other app declares its own group `k8s-<app>` next to its `NetworkResource`, so it exists only while that app's domain is deployed. No policy refers to it, access is decided by `k8s-users` alone.
+- **In Git, via the NetBird operator**: the groups. `k8s-users` (peers that may reach every app) and `kubernetes-services` (every `NetworkResource` is in it) live in `kubernetes/infra/kubectl/kube-netbird-access.yaml`. There is no group per app: access is decided by the policy `k8s-users` -> `kubernetes-services` alone.
 - **By hand in the dashboard**:
   1. `DNS > Zones > Add Zone`: name and domain `k8sdev.rjst.de` (a separate internal zone: `proxy.rjst.de` is the NetBird host's own public domain and must not be shadowed; a subdomain of `rjst.de` so Let's Encrypt DNS-01 can issue for it). **Distribution Groups**: `k8s-users` (only peers in this group resolve the records; the zone is not a security boundary, the policies are). The zone must exist before the `NetworkRouter` syncs.
   2. Records in that zone: the operator creates `<service>.<namespace>.k8sdev.rjst.de` for every `NetworkResource`. Add a CNAME per app to that name, e.g. `vault.k8sdev.rjst.de` -> `gw-vault.istio-internal.k8sdev.rjst.de`.
