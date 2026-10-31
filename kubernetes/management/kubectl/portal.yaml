@@ -231,7 +231,8 @@ data:
       .icon.img { background: #fff; border: 1px solid var(--line); }
       .icon img { width: 22px; height: 22px; }
       .card > div { min-width: 0; }
-      .name { font-weight: 600; white-space: nowrap; }
+      .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .card .badge { display: inline-block; margin: 4px 0 0; }
       .badge { margin-left: 6px; padding: 0 7px; border: 1px solid var(--badge-color); border-radius: 999px;
                background: color-mix(in srgb, var(--badge-color) 16%, transparent);
                font-size: 11px; font-weight: 600; vertical-align: 1px; }
@@ -334,10 +335,12 @@ data:
             card.append(iconEl(s));
             const text = el("div");
             const name = el("div", "name", s.name);
-            if (s.group !== EXTERNAL_GROUP) name.append(accessBadge(s));
+            const showsAccess = s.group !== EXTERNAL_GROUP;
             text.append(name);
-            if (!staged) text.append(el("div", "desc", s.description || new URL(s.url).host));
-            else {
+            if (!staged) {
+              if (showsAccess) text.append(accessBadge(s));
+              text.append(el("div", "desc", s.description || new URL(s.url).host));
+            } else {
               if (s.description) text.append(el("div", "desc", s.description));
               const row = el("div", "stages");
               entries.sort((x, y) => stageRank(x.stage) - stageRank(y.stage) || x.stage.localeCompare(y.stage));
@@ -350,6 +353,7 @@ data:
                 row.append(chip);
               }
               text.append(row);
+              if (showsAccess) text.append(accessBadge(s));
             }
             card.append(text);
             grid.append(card);
