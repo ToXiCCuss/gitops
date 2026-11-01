@@ -23,6 +23,7 @@ spec:
         - https://grafana.k8sdev.rjst.de
         - https://harbor.k8sdev.rjst.de
         - https://jenkins.k8sdev.rjst.de
+        - https://developer-portal.k8sdev.rjst.de
         - https://leantime.k8sdev.rjst.de
         - https://portal.k8sdev.rjst.de
         - https://prometheus.k8sdev.rjst.de
