@@ -61,6 +61,13 @@ roles:
         description: Argo CD administrator
       - name: viewer
         description: Argo CD viewer, read only
+    # Both may sign in, the Developer Portal refuses a user without one of them (like Forgejo). What each may do inside is set
+    # in the Developer Portal itself (permission policy of Backstage).
+    developer-portal:
+      - name: admin
+        description: Developer Portal administrator
+      - name: user
+        description: Developer Portal user
 
 clients:
   - clientId: grafana
@@ -290,8 +297,6 @@ clients:
           access.token.claim: "true"
           userinfo.token.claim: "true"
 
-
-  # No client roles: the Developer Portal (Backstage) signs everyone in who exists in the realm, the permissions follow there
   - clientId: developer-portal
     name: Developer Portal
     protocol: openid-connect
@@ -306,3 +311,15 @@ clients:
       - https://developer-portal.k8sdev.rjst.de/api/auth/oidc/handler/frame
     webOrigins:
       - https://developer-portal.k8sdev.rjst.de
+    protocolMappers:
+      - name: developer-portal-roles
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-client-role-mapper
+        config:
+          usermodel.clientRoleMapping.clientId: developer-portal
+          claim.name: roles
+          jsonType.label: String
+          multivalued: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
