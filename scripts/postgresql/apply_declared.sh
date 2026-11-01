@@ -6,7 +6,8 @@
 # Idempotent: every part is reported as created, updated or unchanged, an aborted run can be started again.
 #   databases and their login <db>_owner     db_create.sh
 #   CREATE/TEMPORARY of <db>_role_owner      ownerPrivileges of a database (an app that makes its own schemas, e.g.
-#                                            Backstage; granted and, when no longer declared, revoked)
+#                                            Backstage; granted and, when no longer declared, revoked). With create
+#                                            the new schemas of the owner login get USAGE for the ro and rw roles.
 #   application logins <db>_<name>           user_create.sh
 #   personal logins and their access         person_grant.sh
 #   access that is no longer declared        person_revoke.sh (only if the file has the key "people": a personal
@@ -233,6 +234,22 @@ ensure_owner_privilege() {
   fi
 }
 
+# A schema made by the owner login gets USAGE for the ro and rw roles, like the tables in it get their privileges from
+# db_create.sh. Default privileges belong to one database, only reach schemas made afterwards and can be repeated,
+# so they are applied in the database on every run.
+ensure_schema_usage() {
+  local key="$1 CREATE"
+  if [[ -n ${DECLARED_OWNER_PRIVILEGE_SET[$key]+declared} ]]; then
+    if [[ $DRY_RUN == true ]]; then
+      log "[dry-run] applied: USAGE on new schemas of $1 for ${1}_role_ro and ${1}_role_rw (not executed)"
+    else
+      psql_admin -d "$1" -v owner_login="${1}_owner" -v role_ro="${1}_role_ro" -v role_rw="${1}_role_rw" \
+        <<<'ALTER DEFAULT PRIVILEGES FOR ROLE :"owner_login" GRANT USAGE ON SCHEMAS TO :"role_ro", :"role_rw"'
+      log "applied: USAGE on new schemas of $1 for ${1}_role_ro and ${1}_role_rw"
+    fi
+  fi
+}
+
 ensure_owner_privileges() {
   local database privilege
   for database in "${DECLARED_DATABASES[@]}"; do
@@ -240,6 +257,7 @@ ensure_owner_privileges() {
       for privilege in CREATE TEMPORARY; do
         ensure_owner_privilege "$database" "$privilege"
       done
+      ensure_schema_usage "$database"
     fi
   done
 }
