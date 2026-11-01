@@ -1230,7 +1230,7 @@ The uploads live only in the two Leantime volumes. Deleting `leantime.yaml` dele
 The Developer Portal is Backstage as our own build (repository `developer-portal` in RJST-DEVELOP) and is deployed by Jenkins like the Spring apps: the pipeline builds the image, pushes it to Harbor and runs `helm upgrade --install developer-portal` of the chart `ghcr.io/backstage/charts/backstage` into the namespace `developer-portal`. It replaces the Portal step by step, both run side by side until the Developer Portal shows everything. This repo only holds the frame:
 
 - `management/kubectl/developer-portal.yaml`: Gateway (port 8448), Service, VirtualService and NetBird resource, the groups `k8s-developer-portal` and `developer-portal-users`. The VirtualService points to the Service `developer-portal:7007`. The chart calls the Service `<release>-backstage` by default, so the values of the pipeline set `fullnameOverride: developer-portal`.
-- `secrets/namespaces.yaml` and `secrets/developer-portal.yaml`: the namespace and the environment (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `AUTH_OIDC_CLIENT_SECRET`, `BACKEND_SECRET`). The chart reads it with `extraEnvVarsSecrets`.
+- `secrets/namespaces.yaml` and `secrets/developer-portal.yaml`: the namespace and the environment (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `AUTH_OIDC_CLIENT_SECRET`, `BACKEND_SECRET` and the `GITHUB_APP_*` values of the GitHub App). The chart reads it with `extraEnvVarsSecrets`.
 - `cicd/kubectl/helm-deployer.yaml`: the Role of `helm-deployer` in the namespace `developer-portal`, namespaced and without RBAC.
 
 Before the first deploy:
