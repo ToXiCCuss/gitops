@@ -935,7 +935,7 @@ kubernetes/<domain>/
 1. infra (cert-manager, ClusterIssuer, Istio security policies, NetBird operator)
 2. monitoring (Prometheus, exporters, Istio dashboards)
 3. cicd (Harbor, Jenkins, Forgejo)
-4. management (Portal, Leantime)
+4. management (Portal, Leantime, frame of the Developer Portal)
 5. kafka (Strimzi, Apicurio Registry, AKHQ)
 6. spring
 
@@ -1088,14 +1088,12 @@ kubectl apply -f kubernetes/kube-app-management.yaml
 kubectl apply -f kubernetes/kube-app-spring.yaml
 ```
 
-Microcks and Backstage are parked in `kubernetes/parked/<name>/` and not deployed. Each is its own domain (Microcks with its own MongoDB inside the chart, no Vault secret needed; Backstage pulls its image from Harbor, so `cicd` has to be healthy first). To deploy or remove one, once `infra` is healthy:
+Microcks is parked in `kubernetes/parked/microcks/` and not deployed. It is its own domain with its own MongoDB inside the chart, no Vault secret needed. To deploy or remove it, once `infra` is healthy:
 
 ```bash
 kubectl apply -f kubernetes/parked/microcks/kube-app-microcks.yaml
 kubectl delete -f kubernetes/parked/microcks/kube-app-microcks.yaml
 ```
-
-The same with `backstage` instead of `microcks`.
 
 Why the secrets are a separate app that comes first: some Helm apps need their Secret at start (the NetBird operator needs `netbird-mgmt-api-key`), but `helm/` runs before `kubectl/`, so those Secrets can't wait for the domain's `kubectl/` folder. `secrets` holds them (plus the namespaces they live in) and is the only place that runs the AVP plugin, so **every** Secret that is filled from Vault lives there. Don't set the plugin on an app whose files contain no `<path` / `avp.kubernetes.io` marker: the plugin's discovery check finds nothing and ArgoCD fails with "could not find cmp-server plugin". Never put the AVP plugin on a `helm/` app: it would resolve every `<path:...>` in the child Applications' `HELM_VALUES` and write those passwords in plain text into the Application objects.
 
@@ -1122,7 +1120,7 @@ Every app is reached as `https://<app>.k8sdev.rjst.de` (see the next section): i
 | Grafana | `grafana.k8sdev.rjst.de` | `grafana.prometheus:80` | 8445 |
 | Harbor | `harbor.k8sdev.rjst.de` | `harbor.harbor:80` | 8446 |
 | Jenkins | `jenkins.k8sdev.rjst.de` | `jenkins.jenkins:8080` | 8447 |
-| Backstage (parked) | `backstage.k8sdev.rjst.de` | `backstage.backstage:7007` | 8448 |
+| Developer Portal | `developer-portal.k8sdev.rjst.de` | `developer-portal.developer-portal:7007` | 8448 |
 | AKHQ | `akhq.k8sdev.rjst.de` | `akhq.kafka:80` | 8449 |
 | Apicurio Registry | `apicurio.k8sdev.rjst.de` | `example-apicurioregistry-mem-service.kafka:8080` | 8450 |
 | Portal | `portal.k8sdev.rjst.de` | `portal.portal:80` | 8451 |
@@ -1227,25 +1225,20 @@ Restore (replaces the data volume and the database; if a step fails, Forgejo sta
 
 The uploads live only in the two Leantime volumes. Deleting `leantime.yaml` deletes the volumes (`prune`).
 
-##### Backup and restore
+#### Developer Portal (Backstage)
 
-The CronJob `leantime-backup` (`management/kubectl/leantime-backup.yaml`) backs up both volumes every night at 02:45 UTC into the repository `leantime/restic` in the RustFS S3 (host `leantime`), then it thins out the snapshots (14 daily, 8 weekly, 6 monthly) and prunes. Leantime keeps running, an upload is a new file. The database is not part of it: `restic-backup` dumps it at 03:00 like every other on docker01, so it is only saved once `MARIADB_PASSWORD` is in Vault. `restic-backup` then checks the repository, the offsite sync copies it to pCloud at 05:00. The secrets are in Vault (`vault-backup`).
+The Developer Portal is Backstage as our own build (repository `developer-portal` in RJST-DEVELOP) and is deployed by Jenkins like the Spring apps: the pipeline builds the image, pushes it to Harbor and runs `helm upgrade --install developer-portal` of the chart `ghcr.io/backstage/charts/backstage` into the namespace `developer-portal`. It replaces the Portal step by step, both run side by side until the Developer Portal shows everything. This repo only holds the frame:
 
-- Alerts: see [Forgejo](#forgejo-package-registry), `CronJobBackup*` and `ResticStepFailed`.
-- Set up once, before the merge (Windows, with the root token): `create-s3-identities.ps1` (keys of the RustFS identity `leantime`), `generate-secrets.ps1` (restic password `argocd/leantime#backup.restic_password`, copies the S3 keys to `argocd/leantime` and the restic password to `docker/restic-backup#RESTIC_PASSWORD_LEANTIME`). Keep the restic password in the password manager: without it the copy in pCloud cannot be read. The Secret `leantime-backup` cannot be rendered without these values, and the `secrets` app would fail. After the merge, on docker01 once the checkout has the new `docker/rustfs/identities.json` (`git pull`): `sudo scripts/docker/setup-rustfs.sh` and `sudo scripts/docker/deploy.sh restic-backup`, then `docker restart restic-backup` if `deploy.sh` left the container alone. All of this before the first run at 02:45 UTC.
-- The node needs the NetBird policy for docker01 on TCP 9000 (see Forgejo). Check after the sync that the first run went through: `kubectl -n leantime create job leantime-backup-test --from=cronjob/leantime-backup`, then `kubectl -n leantime logs -f job/leantime-backup-test`.
+- `management/kubectl/developer-portal.yaml`: Gateway (port 8448), Service, VirtualService and NetBird resource, the groups `k8s-developer-portal` and `developer-portal-users`. The VirtualService points to the Service `developer-portal:7007`. The chart calls the Service `<release>-backstage` by default, so the values of the pipeline set `fullnameOverride: developer-portal`.
+- `secrets/namespaces.yaml` and `secrets/developer-portal.yaml`: the namespace and the environment (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `AUTH_OIDC_CLIENT_SECRET`, `BACKEND_SECRET`). The chart reads it with `extraEnvVarsSecrets`.
+- `cicd/kubectl/helm-deployer.yaml`: the Role of `helm-deployer` in the namespace `developer-portal`, namespaced and without RBAC.
 
-Restore (Leantime keeps running, the volumes are shared on the node; files newer than the snapshot stay):
+Before the first deploy:
 
-1. Pick the snapshot on docker01: `sudo scripts/docker/restore.sh snapshots leantime` (with the S3 gone: `--from pcloud`, the cluster job itself needs the S3).
-2. Restore the newest snapshot with the suspended CronJob `leantime-restore`:
-
-   ```bash
-   kubectl -n leantime create job leantime-restore-$(date +%s) --from=cronjob/leantime-restore
-   ```
-
-   An older snapshot: `kubectl -n leantime create job leantime-restore-1 --from=cronjob/leantime-restore --dry-run=client -o yaml | kubectl set env --local -f - SNAPSHOT=<id> -o yaml | kubectl apply -f -`
-3. Restore the database of the same night with `sudo scripts/docker/restore.sh --tag mariadb restore databases <snapshot> --include /dump/mariadb/leantime.sql` (see the PostgreSQL and MariaDB restore above), then log in and open a file.
+- **Database:** `developer_portal` is declared in `databases/postgresql.yaml`, so `scripts/postgresql/apply_declared.sh` on docker01 creates it (`db_create.sh developer_portal` does the same alone; database names allow underscores only), then `generate-secrets.ps1` (step 3): it generates `argocd/data/developer-portal` (`oidc.client_secret`, `backend.secret`) and asks for the database user and password. Backstage creates one database per plugin unless `backend.database.pluginDivisionMode` is `schema`; set it, otherwise the login needs the right to create databases. The PostgreSQL subchart of the chart stays off.
+- **Keycloak:** the client `developer-portal` in `docker/keycloak-config/realms/rjst.yaml`. Its secret goes into the Vault secret `docker/keycloak-config` as `DEVELOPER_PORTAL_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/developer-portal`) before the merge, like for Leantime, then `sudo scripts/docker/deploy.sh keycloak-config`.
+- **NetBird:** the CNAME `developer-portal` in the zone (see step 5).
+- **Order:** the Gateway and the VirtualService exist after the merge, the app answers once Jenkins has deployed the release. A probe in `monitoring/kubectl/probes.yaml` is added with the first release, not before: it would alert until then.
 
 #### 6. Verify
 

@@ -289,3 +289,20 @@ clients:
           id.token.claim: "true"
           access.token.claim: "true"
           userinfo.token.claim: "true"
+
+
+  # No client roles: the Developer Portal (Backstage) signs everyone in who exists in the realm, the permissions follow there
+  - clientId: developer-portal
+    name: Developer Portal
+    protocol: openid-connect
+    enabled: true
+    publicClient: false
+    secret: $(env:DEVELOPER_PORTAL_CLIENT_SECRET)
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    rootUrl: https://developer-portal.k8sdev.rjst.de
+    redirectUris:
+      - https://developer-portal.k8sdev.rjst.de/api/auth/oidc/handler/frame
+    webOrigins:
+      - https://developer-portal.k8sdev.rjst.de

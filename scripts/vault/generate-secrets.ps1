@@ -5,13 +5,13 @@
 
 .DESCRIPTION
     - Freely generatable secrets (Harbor/Jenkins/Grafana/Forgejo admin passwords, the OIDC client secrets of Grafana, Harbor, Jenkins,
-      Vault, Forgejo, Leantime and Argo CD, the secret key, internal token and backup restic password of Forgejo,
-      the session password and backup restic password of Leantime)
+      Vault, Forgejo, Leantime, Developer Portal and Argo CD, the secret key, internal token and backup restic password of Forgejo,
+      the session password and backup restic password of Leantime, the backend secret of the Developer Portal)
       are generated locally and written to Vault, but never replace a value
       that already exists.
     - External values are prompted for interactively and written to Vault:
       the Hetzner and NetBird API tokens, the docker01 DB credentials for
-      Harbor, Forgejo and Leantime. Leave blank to skip a value - existing Vault
+      Harbor, Forgejo, Leantime and the Developer Portal. Leave blank to skip a value - existing Vault
       data for that key is left untouched.
     - Safe to re-run: it asks before overwriting a value you provide if it
       already has one.
@@ -137,6 +137,9 @@ Set-VaultKV -Path "leantime" -Data @{ "oidc.client_secret" = (New-RandomSecret) 
 Set-VaultKV -Path "leantime" -Data @{ "session.password" = (New-RandomSecret -Length 64) } -SkipExisting
 # Restic password of the repository leantime/restic (the CronJob leantime-backup): without it the backup cannot be read
 Set-VaultKV -Path "leantime" -Data @{ "backup.restic_password" = (New-RandomSecret -Length 64) } -SkipExisting
+Set-VaultKV -Path "developer-portal" -Data @{ "oidc.client_secret" = (New-RandomSecret) } -SkipExisting
+# Signs the service-to-service tokens inside the Developer Portal: a new value only invalidates the running tokens
+Set-VaultKV -Path "developer-portal" -Data @{ "backend.secret" = (New-RandomSecret -Length 64) } -SkipExisting
 
 # ── 2. External values that must match reality - prompt, never generate ───
 Write-Step "External values (leave blank to skip / keep existing)"
@@ -169,6 +172,14 @@ $leantimeDbUser = Read-Host "Leantime external DB username (blank to skip)"
 if ($leantimeDbUser) {
     $leantimeDbPass = Read-OptionalSecret "Leantime external DB password"
     Set-VaultKV -Path "leantime" -Data @{ "database.username" = $leantimeDbUser; "database.password" = $leantimeDbPass }
+}
+
+Write-Warn2 "For the Developer Portal, run scripts/postgresql/db_create.sh developer_portal on docker01 first - the password of developer_portal_owner is in Vault databases/postgresql/developer_portal_owner."
+
+$developerPortalDbUser = Read-Host "Developer Portal external DB username (blank to skip)"
+if ($developerPortalDbUser) {
+    $developerPortalDbPass = Read-OptionalSecret "Developer Portal external DB password"
+    Set-VaultKV -Path "developer-portal" -Data @{ "database.username" = $developerPortalDbUser; "database.password" = $developerPortalDbPass }
 }
 
 # ── 3. Copies between the KV engines ───────────────────────────────────────
