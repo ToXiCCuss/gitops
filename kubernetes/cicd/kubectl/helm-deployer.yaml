@@ -92,3 +92,44 @@ subjects:
   - kind: ServiceAccount
     name: helm-deployer
     namespace: jenkins
+
+
+---
+
+# developer-portal: the release of the chart ghcr.io/backstage/charts/backstage (Jenkins pipeline of the repository
+# developer-portal). The namespace and the Secret developer-portal come from kubernetes/secrets, the Gateway and the
+# VirtualService from kubernetes/management/kubectl/developer-portal.yaml. The chart's PostgreSQL subchart stays off, the database is on docker01.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: helm-deployer
+  namespace: developer-portal
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets", "services", "serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: helm-deployer
+  namespace: developer-portal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: helm-deployer
+subjects:
+  - kind: ServiceAccount
+    name: helm-deployer
+    namespace: jenkins

@@ -1,0 +1,122 @@
+# Developer Portal: https://developer-portal.k8sdev.rjst.de - the catalog of all apps and services (Backstage).
+#
+# This file only holds the frame around the app. The app itself is our own build (repository developer-portal in
+# RJST-DEVELOP) and is deployed by Jenkins like the Spring apps: the pipeline builds the image, pushes it to Harbor
+# and runs `helm upgrade --install developer-portal` of the chart ghcr.io/backstage/charts/backstage into the namespace
+# developer-portal (kubernetes/secrets/namespaces.yaml) with the ServiceAccount helm-deployer
+# (Role in kubernetes/cicd/kubectl/helm-deployer.yaml). The Service must be called developer-portal and listen on 7007:
+# the VirtualService below points to it. The chart names the Service <release>-backstage unless fullnameOverride is
+# set, so the values of the pipeline set fullnameOverride: developer-portal.
+#
+# The Secret developer-portal (kubernetes/secrets/developer-portal.yaml) holds the database login, the OIDC client
+# secret and the backend secret. The database developer_portal lives on docker01 (see scripts/postgresql).
+#
+# NetBird groups exist only while this frame is deployed (destination k8s-developer-portal, users developer-portal-users).
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: k8s-developer-portal
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: k8s-developer-portal
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: Group
+metadata:
+  name: developer-portal-users
+  namespace: netbird
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  name: developer-portal-users
+
+---
+
+# developer-portal: https://developer-portal.k8sdev.rjst.de -> developer-portal.developer-portal:7007
+# Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: developer-portal
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: internal-gateway
+  servers:
+    - port:
+        number: 8448
+        name: https-developer-portal
+        protocol: HTTPS
+      hosts:
+        - developer-portal.k8sdev.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: k8sdev-wildcard-tls
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gw-developer-portal
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  type: ClusterIP
+  selector:
+    app: internal-gateway
+    istio: internal-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8448
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: developer-portal
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: Developer Portal
+    portal.rjst.de/group: Platform
+    portal.rjst.de/description: Catalog of all apps and services
+spec:
+  hosts:
+    - developer-portal.k8sdev.rjst.de
+  gateways:
+    - developer-portal
+  http:
+    - route:
+        - destination:
+            host: developer-portal.developer-portal.svc.cluster.local
+            port:
+              number: 7007
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: gw-developer-portal
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: gw-developer-portal
+  groups:
+    - name: k8s-developer-portal
+    - name: kubernetes-services
