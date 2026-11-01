@@ -120,3 +120,44 @@ spec:
   groups:
     - name: k8s-developer-portal
     - name: kubernetes-services
+
+---
+
+# Read access of the Kubernetes plugin of the Developer Portal (versions and state of the deployed apps). The pod runs
+# with this ServiceAccount (serviceAccount.name in deploy/values.yaml of the repository developer-portal) and the plugin
+# uses its token, so no token is stored anywhere. Read-only, only what the plugin shows: no Secrets, no ConfigMaps, no
+# pod logs, no write verbs. The plugin asks for exactly these kinds (kubernetes.objectTypes in app-config.production.yaml).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: developer-portal
+  namespace: developer-portal
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: developer-portal-read
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: developer-portal-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: developer-portal-read
+subjects:
+  - kind: ServiceAccount
+    name: developer-portal
+    namespace: developer-portal
