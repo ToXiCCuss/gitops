@@ -90,6 +90,7 @@ metadata:
     portal.rjst.de/name: Developer Portal
     portal.rjst.de/group: Platform
     portal.rjst.de/description: Catalog of all apps and services
+    portal.rjst.de/icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/backstage.svg
 spec:
   hosts:
     - developer-portal.k8sdev.rjst.de
