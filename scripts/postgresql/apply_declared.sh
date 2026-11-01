@@ -5,6 +5,8 @@
 #
 # Idempotent: every part is reported as created, updated or unchanged, an aborted run can be started again.
 #   databases and their login <db>_owner     db_create.sh
+#   CREATE/TEMPORARY of <db>_role_owner      ownerPrivileges of a database (an app that makes its own schemas, e.g.
+#                                            Backstage; granted and, when no longer declared, revoked)
 #   application logins <db>_<name>           user_create.sh
 #   personal logins and their access         person_grant.sh
 #   access that is no longer declared        person_revoke.sh (only if the file has the key "people": a personal
@@ -32,6 +34,8 @@ readonly LOGIN_ROLE_PATTERN='^(.+)_role_(ro|rw|owner)$'
 # shellcheck disable=SC2016 # a jq program, the \( ) are jq string interpolation and must not expand in bash
 readonly RECORDS_FILTER='
   (.databases | to_entries[] | "database\t\(.key)\t-\t-"),
+  (.databases | to_entries[] | .key as $database | (.value.ownerPrivileges // [])[]
+    | "privilege\t\($database)\t\(. | ascii_upcase)\t-"),
   (.databases | to_entries[] | .key as $database | (.value.logins // {}) | to_entries[]
     | "login\t\($database)\t\(.key)\t\(.value)"),
   ((.people // {}) | to_entries[] | .key as $person | (.value // {}) as $access
@@ -49,6 +53,7 @@ DECLARED_DATABASES=()
 DECLARED_LOGINS=()
 DECLARED_PEOPLE=()
 declare -A DECLARED_DATABASE_SET=()
+declare -A DECLARED_OWNER_PRIVILEGE_SET=()
 declare -A DECLARED_LOGIN_ROLE=()
 declare -A DECLARED_PERSON_SET=()
 declare -A DECLARED_PERSON_ACCESS=()
@@ -111,6 +116,17 @@ require_declared_database() {
   [[ -n ${DECLARED_DATABASE_SET[$2]+declared} ]] || die "$1 refers to the database $2, which is not declared under 'databases:'"
 }
 
+# register_privilege <database> <PRIVILEGE>
+register_privilege() {
+  local key="$1 $2"
+  require_declared_database "ownerPrivileges" "$1"
+  case $2 in
+  CREATE | TEMPORARY) ;;
+  *) die "invalid ownerPrivileges entry '$2' of the database $1, use create or temporary" ;;
+  esac
+  DECLARED_OWNER_PRIVILEGE_SET["$key"]=1
+}
+
 # register_login <database> <name> <role>
 register_login() {
   validate_name "login name" "$2" "$MAX_NAME_LENGTH"
@@ -154,6 +170,7 @@ load_declared_state() {
   while IFS=$'\t' read -r kind first second third; do
     case $kind in
     database) register_database "$first" ;;
+    privilege) register_privilege "$first" "$second" ;;
     login) register_login "$first" "$second" "$third" ;;
     person) register_person "$first" "$second" "$third" ;;
     esac
@@ -174,6 +191,56 @@ ensure_databases() {
   local database
   for database in "${DECLARED_DATABASES[@]}"; do
     run_script db_create.sh "$database"
+  done
+}
+
+owner_has_privilege() {
+  local has_privilege
+  has_privilege=$(psql_admin --no-align --tuples-only -v database="$1" -v owner_role="${1}_role_owner" -v privilege="$2" <<<"SELECT coalesce((SELECT has_database_privilege(r.oid, d.oid, :'privilege') FROM pg_roles r, pg_database d WHERE r.rolname = :'owner_role' AND d.datname = :'database'), false)")
+  [[ $has_privilege == t ]]
+}
+
+# change_owner_privilege <GRANT|REVOKE> <database> <CREATE|TEMPORARY>: format() builds the statement, \gexec runs it
+change_owner_privilege() {
+  local preposition=TO
+  if [[ $1 == REVOKE ]]; then
+    preposition=FROM
+  fi
+  if [[ $DRY_RUN == true ]]; then
+    log "[dry-run] updated: $1 $3 on $2 for ${2}_role_owner (not executed)"
+  else
+    psql_admin -v verb="$1" -v preposition="$preposition" -v database="$2" -v owner_role="${2}_role_owner" -v privilege="$3" \
+      <<<"SELECT format('%s %s ON DATABASE %I %s %I', :'verb', :'privilege', :'database', :'preposition', :'owner_role') \gexec"
+    log "updated: $1 $3 on $2 for ${2}_role_owner"
+  fi
+}
+
+# The privileges follow the file: a declared one is granted, one that is not declared (any more) is revoked
+ensure_owner_privilege() {
+  local key="$1 $2" is_declared=false has_privilege=false
+  if [[ -n ${DECLARED_OWNER_PRIVILEGE_SET[$key]+declared} ]]; then
+    is_declared=true
+  fi
+  if owner_has_privilege "$1" "$2"; then
+    has_privilege=true
+  fi
+  if [[ $is_declared == true && $has_privilege == false ]]; then
+    change_owner_privilege GRANT "$1" "$2"
+  elif [[ $is_declared == false && $has_privilege == true ]]; then
+    change_owner_privilege REVOKE "$1" "$2"
+  elif [[ $is_declared == true ]]; then
+    log "unchanged: $2 on $1 for ${1}_role_owner"
+  fi
+}
+
+ensure_owner_privileges() {
+  local database privilege
+  for database in "${DECLARED_DATABASES[@]}"; do
+    if database_ready "$database" "privileges of ${database}_role_owner"; then
+      for privilege in CREATE TEMPORARY; do
+        ensure_owner_privilege "$database" "$privilege"
+      done
+    fi
   done
 }
 
@@ -291,6 +358,7 @@ main() {
   load_declared_state
 
   ensure_databases
+  ensure_owner_privileges
   ensure_logins
   ensure_people
   if [[ $HAS_PEOPLE_SECTION == true ]]; then

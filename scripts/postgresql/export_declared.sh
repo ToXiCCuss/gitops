@@ -17,6 +17,7 @@ readonly LOGIN_ROLE_PATTERN='^(.+)_role_(ro|rw|owner)$'
 
 declare -A OWNER_ROLE_EXISTS=()
 declare -A DATABASE_LOGINS=()
+declare -A DATABASE_PRIVILEGES=()
 declare -A DATABASE_NOTES=()
 declare -A PERSON_ACCESS=()
 PERSONS=()
@@ -54,13 +55,22 @@ add_membership() {
 }
 
 collect_state() {
-  local owner_roles memberships persons login role is_person
+  local owner_roles privileges memberships persons login role is_person database privilege
   owner_roles=$(query_lines "SELECT rolname FROM pg_roles WHERE rolname ~ '_role_owner\$'")
   while read -r role; do
     if [[ -n $role ]]; then
       OWNER_ROLE_EXISTS["${role%_role_owner}"]=1
     fi
   done <<<"$owner_roles"
+
+  privileges=$(query_lines "SELECT d.datname, p.privilege FROM pg_database d
+    JOIN pg_roles r ON r.rolname = d.datname || '_role_owner' CROSS JOIN (VALUES ('CREATE'), ('TEMPORARY')) AS p(privilege)
+    WHERE NOT d.datistemplate AND has_database_privilege(r.oid, d.oid, p.privilege) ORDER BY 1, 2")
+  while IFS=$'\t' read -r database privilege; do
+    if [[ -n $database ]]; then
+      DATABASE_PRIVILEGES["$database"]+="${privilege,,} "
+    fi
+  done <<<"$privileges"
 
   memberships=$(query_lines "SELECT r.rolname, b.rolname,
       coalesce(shobj_description(r.oid, 'pg_authid') = :'person_marker', false)
@@ -90,10 +100,21 @@ print_database() {
       [[ -z $entry ]] || echo "  $entry"
     done <<<"${DATABASE_NOTES[$1]}"
   fi
-  if [[ -z ${DATABASE_LOGINS[$1]+listed} ]]; then
+  if [[ -z ${DATABASE_LOGINS[$1]+listed} && -z ${DATABASE_PRIVILEGES[$1]+granted} ]]; then
     echo "  $1: {}"
   else
     echo "  $1:"
+    print_database_details "$1"
+  fi
+}
+
+print_database_details() {
+  local entry privileges
+  if [[ -n ${DATABASE_PRIVILEGES[$1]+granted} ]]; then
+    privileges=${DATABASE_PRIVILEGES[$1]% }
+    echo "    ownerPrivileges: [${privileges// /, }]"
+  fi
+  if [[ -n ${DATABASE_LOGINS[$1]+listed} ]]; then
     echo "    logins:"
     while read -r entry; do
       [[ -z $entry ]] || echo "      ${entry% *}: ${entry#* }"
