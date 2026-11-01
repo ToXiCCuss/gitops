@@ -166,6 +166,29 @@ Set up once (on Windows, with the root token):
 - Personal logins (PostgreSQL, `scripts/postgresql/`): `person_grant.sh <username> <database> <ro|rw>` ensures the login `<username>` (no database prefix, one login for all databases) and its membership in `<db>_role_ro` or `<db>_role_rw`. The database is optional: `person_grant.sh <username>` (or `user_create.sh <username>`, which forwards there; with `<database> <username> <role>` it creates the application login `<database>_<username>` as before) only creates the login without any access, a later run with a database adds it. Run it once per database, so `robert` can be `ro` in `shop` and `rw` in `billing`; a changed role type moves the login, `owner` is not possible (that is `<db>_owner` of `db_create.sh`). The password of a new login goes to Vault as `databases/postgresql/<username>` (`user_password.sh <username>` rotates it). The script only touches logins it created itself (marked by a role comment), so it refuses an application login like `shop_owner` or `postgres`. `person_revoke.sh <username> <database>` takes the access to one database away and keeps the login for the others; `person_revoke.sh <username>` terminates its sessions, deletes the Vault entry (needs the current policy of `configure-vault-databases.ps1`) and drops the login. Both support `--dry-run`, report an absent login or access as `unchanged` and refuse logins that `person_grant.sh` did not create (`user_delete.sh` expects `<database> <username>` and does not fit these logins). The rights of the two roles come from `db_create.sh` and `schema_create.sh`. MariaDB (`scripts/mariadb/`) has the same two scripts with the same arguments, `--dry-run` and Vault path (`databases/mariadb/<username>`). The difference: MariaDB enables only one default role per connection, so the login gets a role of its own, `<username>_role_person`, as default role, and `person_grant.sh` puts `<db>_role_ro` or `<db>_role_rw` into that role. The role is also the marker for a personal login (MariaDB has no comment on a user), and `person_revoke.sh <username>` drops it with the login. Open connections stay until they end, like with `user_delete.sh`.
 - Other scripts of the same family: `schema_create.sh <db> <schema>` (PostgreSQL schema with the privileges of the three roles), `copy_db.sh [source target]` (MariaDB: the target gets the tables of the source, default `fivem` to `fivem_dev`) and `list_user_roles.sh` (read only).
 
+### Declared database access (PostgreSQL)
+
+`databases/postgresql.yaml` says which databases, application logins and personal logins should exist on docker01. `scripts/postgresql/apply_declared.sh` makes the server match the file by calling the scripts above (`db_create.sh`, `user_create.sh`, `person_grant.sh`, `person_revoke.sh`), so the file works on its own, nothing else is needed to apply it. Needs `yq` (the apt package `yq`, a wrapper of `jq`, installed by the Ansible role `base`) and `jq`.
+
+```yaml
+databases:
+  forgejo: {}
+  developer_portal:
+    ownerPrivileges: [create, temporary]   # database privileges of <db>_role_owner beyond db_create.sh
+    logins:            # application logins <db>_<name>, role ro, rw or owner
+      reader: ro
+people:                # personal logins, ro or rw per database
+  robert:
+    forgejo: rw
+```
+
+- **First time:** `sudo scripts/postgresql/export_declared.sh > databases/postgresql.yaml` on docker01 prints the real state in this format (read only). A database without the roles of `db_create.sh` gets a comment: applying the file would change its privileges, check it first. Then commit the file.
+- **Apply:** `sudo scripts/postgresql/apply_declared.sh --dry-run`, then without `--dry-run`. Every part is reported as created, updated or unchanged, an aborted run is repeated.
+- **Removing access is automatic, but only with the key `people:`** in the file: a personal login that is not listed is dropped, a database that is not listed for it is taken away (`person_revoke.sh`). Without the key personal logins stay as they are.
+- **`ownerPrivileges`** gives the owner role of a database `create` (make schemas) and/or `temporary` (temporary tables) on it, which `db_create.sh` withholds. An app that manages its own schemas needs both: Backstage creates one schema per plugin and the catalog uses temporary tables. A privilege that is not listed is revoked again, like removed access. With `create` the script also lets every schema that the owner login makes later give `USAGE` to the roles `ro` and `rw` (default privileges), so the other logins of the database can read the tables of the new schemas as they can in `public`. A schema that exists before the first run stays closed to them.
+- **Deleting is not automatic:** a database or an application login that is not declared is only reported. `apply_declared.sh --prune` deletes the undeclared databases (`db_delete.sh`), it asks for the name of each one and needs a terminal, so no timer can run it. Application logins are removed with `user_delete.sh`.
+- Backstage (the Developer Portal) only reads this file to show the databases and never writes to the server. A change of the rights is a pull request on the file.
+
 ### MongoDB (scripts)
 
 MongoDB is not assigned to a host yet (`mongodb_hosts` is empty). The role `mongodb` starts it with `authorization: enabled`. The scripts in `scripts/mongodb/` use `mongosh` on the host.
