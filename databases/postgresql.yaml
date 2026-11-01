@@ -1,0 +1,18 @@
+# Declared state of the PostgreSQL on docker01. scripts/postgresql/apply_declared.sh makes the server match this
+# file (run it with --dry-run first), scripts/postgresql/export_declared.sh prints the real state in this format.
+#
+# databases:   every database with its roles <db>_role_ro, _rw, _owner and the login <db>_owner (db_create.sh)
+#   logins:    application logins <db>_<name> with the role ro, rw or owner (user_create.sh)
+# people:      personal logins, one login for many databases, with ro or rw per database (person_grant.sh).
+#              Only with this key the script removes access: a person or a database that is missing here is
+#              taken away from the login. Leave the key out and personal logins stay as they are. There is no
+#              personal login on docker01 yet, so the key is left out until the first one is declared.
+#
+# The state of docker01 as exported on 2026-11-01, plus the database of the Developer Portal.
+databases:
+  developer_portal: {}
+  forgejo: {}
+  fw_chaos: {}
+  fw_chaos_dev: {}
+  harbor: {}
+  keycloak: {}

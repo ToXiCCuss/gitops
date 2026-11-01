@@ -5,7 +5,7 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 ## Scope
 - This repo is only for **external (third-party) apps**, deployed via Argo CD (Kubernetes: Vault, Harbor, Jenkins, Kafka, Prometheus, cert-manager, NetBird, Argo itself), Ansible (hosts) or Docker Compose (Docker host).
 - **Own Spring applications** are never deployed from here: Jenkins deploys them with Helm (repos `cicd-library`, `kubernetes-values`, `spring-boot-chart`). Only the deployer's permissions live here (`kubernetes/spring/kubectl/helm-deployer.yaml`).
-- Layout: `kubernetes/` (Argo CD), `ansible/` (hosts, roles), `docker/` (Compose projects), `scripts/`, `tofu/` (OpenTofu: Proxmox VMs, state in PostgreSQL), `istio/` (input for a manual `istioctl install`, not synced by Argo CD).
+- Layout: `kubernetes/` (Argo CD), `ansible/` (hosts, roles), `docker/` (Compose projects), `databases/` (declared PostgreSQL access of docker01), `scripts/`, `tofu/` (OpenTofu: Proxmox VMs, state in PostgreSQL), `istio/` (input for a manual `istioctl install`, not synced by Argo CD).
 
 ## Core principle
 - Git is the source of truth. All Applications run with `automated` (`prune` and `selfHeal`) on `targetRevision: master`: **a merge to `master` is a live deployment.** Prepare changes on a branch; never commit, push or merge without a request.
@@ -35,6 +35,7 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 
 ## Ansible and Docker
 - Ansible: dry run first (see `README.adoc`, section "Dry Run"), apply only on explicit request. I do not touch the vault password.
+- Database access is declared in `databases/postgresql.yaml`; `scripts/postgresql/apply_declared.sh` applies it on docker01 (`--dry-run` first). I change the file, I do not run the script against the host unless asked.
 - Docker projects: defaults in `default.env`, overrides in `override.env` (not in Git, keep the template `override.env.example` up to date).
 
 ## Check before "done" (local, without cluster)

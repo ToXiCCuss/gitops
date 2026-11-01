@@ -5,6 +5,7 @@
       - unattended-upgrades
       - needrestart
       - jq
+      - yq
       - curl
       - btop
       - iotop-c
