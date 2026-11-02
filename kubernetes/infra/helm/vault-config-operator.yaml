@@ -28,11 +28,6 @@ spec:
                 limits:
                   cpu: 200m
                   memory: 512Mi
-    # The Issuer for the webhook certificates of the chart (certificate.issuerRef). It belongs to this Application and not to
-    # infra-kubectl: the Certificates of the chart are not Ready without it, so infra-helm would never be Healthy and wave 1 never started
-    - repoURL: https://github.com/ToXiCCuss/gitops.git
-      targetRevision: master
-      path: kubernetes/infra/vault-config-operator
   syncPolicy:
     automated:
       prune: true
