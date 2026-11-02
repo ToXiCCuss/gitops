@@ -1,30 +1,17 @@
 # ServiceAccount the Jenkins pipelines use to `helm upgrade` the Spring apps
-# (cicd-library: HelmInstallStep, kubeconfig from Vault jenkins/data/jenkins#KUBECONFIG).
+# (cicd-library: HelmInstallStep, HelmUpstreamInstallStep). The pod of a pipeline that deploys runs as this
+# ServiceAccount and helm logs in with the token of the pod: no kubeconfig and no long-lived token.
+# The Vault role jenkins must accept this ServiceAccount, the pipeline reads its secrets with the token of the pod.
 #
 # Instead of a personal admin kubeconfig it only has namespaced Roles:
 #   - dev / prod (Roles live in kubernetes/spring/kubectl/helm-deployer.yaml)
 #   - the few platform namespaces the spring-boot chart writes into (this file)
 # It cannot touch RBAC, nodes, namespaces or anything cluster-scoped.
-#
-# The token is created by the control plane, not stored in Git. Turn it into the
-# kubeconfig in Vault with scripts/vault/set-jenkins-kubeconfig.ps1.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: helm-deployer
   namespace: jenkins
-
----
-
-# Long-lived token for the ServiceAccount (needed because the kubeconfig sits in Vault).
-apiVersion: v1
-kind: Secret
-metadata:
-  name: helm-deployer-token
-  namespace: jenkins
-  annotations:
-    kubernetes.io/service-account.name: helm-deployer
-type: kubernetes.io/service-account-token
 
 ---
 

@@ -1005,7 +1005,7 @@ Run `scripts/vault/configure-vault-auth.ps1` once, after `init-vault.ps1` (it ne
 
 The `argocd` role matters most: ArgoCD's AVP plugin itself logs in to Vault through it (`AVP_AUTH_TYPE=k8s`, role `argocd`, see `argocd-values.yaml`), so nothing that uses AVP - including the `secrets` app - renders without it.
 
-Jenkins and Spring don't read from Vault at runtime yet; wiring them up (Vault Agent injector, Spring Cloud Vault, etc.) is a separate, later step, app by app.
+Jenkins reads `jenkins/data/jenkins` in every pipeline: `cicd-library` logs in through the role `jenkins` with the token of the pipeline pod. The role accepts the ServiceAccounts `default` and `helm-deployer`, because the pod of a pipeline that deploys runs as `helm-deployer` (`cicd/kubectl/helm-deployer.yaml`) and helm needs no kubeconfig. The Spring apps don't read from Vault at runtime yet; wiring them up (Vault Agent injector, Spring Cloud Vault, etc.) is a separate, later step, app by app.
 
 ```powershell
 .\scripts\vault\configure-vault-auth.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <token>

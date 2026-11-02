@@ -181,7 +181,7 @@ path "jenkins/data/*" {
   capabilities = ["read"]
 }
 '@
-Set-VaultK8sRole -Name "jenkins" -ServiceAccountNames "default" -ServiceAccountNamespaces "jenkins" -Policies "jenkins"
+Set-VaultK8sRole -Name "jenkins" -ServiceAccountNames "default,helm-deployer" -ServiceAccountNamespaces "jenkins" -Policies "jenkins"
 
 Write-Step "Spring (dev)"
 Set-VaultPolicy -Name "spring_dev" -Hcl @'
@@ -201,4 +201,4 @@ Set-VaultK8sRole -Name "spring_prod" -ServiceAccountNames "spring" -ServiceAccou
 
 Write-Step "Done"
 Write-Ok "Auth backend, 4 KV engines, and 4 policy/role pairs are in place."
-Write-Warn2 "Nothing reads from jenkins/dev/prod yet - that's app-side wiring (Vault Agent injector, Spring Cloud Vault, etc.) for a later step."
+Write-Warn2 "Nothing reads from dev/prod yet - that's app-side wiring (Vault Agent injector, Spring Cloud Vault, etc.) for a later step."
