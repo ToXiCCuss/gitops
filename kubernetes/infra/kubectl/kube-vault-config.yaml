@@ -189,11 +189,12 @@ spec:
 
 ---
 
-# Only the Raft snapshot, for the periodic token of docker/vault-backup
+# Only the Raft snapshot, for the periodic token of docker/vault-backup. The name in Vault has an underscore, which a Kubernetes
+# object name cannot have: spec.name is the name in Vault
 apiVersion: redhatcop.redhat.io/v1alpha1
 kind: Policy
 metadata:
-  name: vault_snapshot
+  name: vault-snapshot
   namespace: vault
 spec:
   authentication:
@@ -201,6 +202,7 @@ spec:
     role: vault-config
     serviceAccount:
       name: vault-config
+  name: vault_snapshot
   type: acl
   policy: |
     path "sys/storage/raft/snapshot" {
