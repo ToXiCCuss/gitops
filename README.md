@@ -1013,6 +1013,29 @@ Jenkins reads `jenkins/data/jenkins` in every pipeline: `cicd-library` logs in t
 
 Vault reaches the API server through `https://kubernetes.default.svc:443` (parameter `-KubernetesHost`), not through the address in your kubeconfig, so a new server IP does not break the login. The script is safe to re-run.
 
+##### Vault Config Operator
+
+The [vault-config-operator](https://github.com/redhat-cop/vault-config-operator) writes Vault configuration (mounts, policies, auth roles) from resources in Git, so that no script has to be run for it. `infra/helm/vault-config-operator.yaml` installs it, the resources are in `infra/kubectl/kube-vault-config.yaml`. Removing a resource from the file removes it in Vault. At the moment the file only holds a test (engine, policy and role `operator-test`); the roles `argocd` and `jenkins` follow once it works.
+
+Every resource names the ServiceAccount `vault/vault-config` and the Vault role `vault-config` to log in. Create the role once, **before** the first sync, with an admin token inside the Vault pod (`kubectl -n vault exec -it vault-0 -- sh`, then `vault login`). The policy is as powerful as an admin, because the operator may create policies:
+
+```bash
+vault policy write vault-config - <<'EOF'
+path "sys/policies/acl" { capabilities = ["list"] }
+path "sys/policies/acl/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "sys/mounts" { capabilities = ["read", "list"] }
+path "sys/mounts/*" { capabilities = ["create", "read", "update", "delete", "list", "sudo"] }
+path "sys/auth" { capabilities = ["read", "list"] }
+path "sys/auth/*" { capabilities = ["create", "read", "update", "delete", "list", "sudo"] }
+path "auth/+/config" { capabilities = ["create", "read", "update"] }
+path "auth/+/role/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "identity/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+EOF
+vault write auth/kubernetes/role/vault-config bound_service_account_names=vault-config bound_service_account_namespaces=vault policies=vault-config ttl=1h
+```
+
+Not in Git: the `secret_id` of an AppRole, tokens, and every secret value.
+
 ##### Login with Keycloak (OIDC)
 
 Besides the root token and the Kubernetes login, Vault can be used with a Keycloak login. The roles of the client `vault` (`docker/keycloak-config/realms/rjst.yaml`) are external groups in Vault with one policy each: `admin` (policy `keycloak_admin`, everything) and `developer` (policy `keycloak_developer`, read and write the secrets in `dev/` and `prod/`, no delete). A user without one of the roles is refused at the login. The configuration lives in Vault itself (it is part of the Raft snapshot), not in Git:

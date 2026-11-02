@@ -1,0 +1,70 @@
+# Vault configuration as resources, applied by the vault-config-operator (infra/helm/vault-config-operator.yaml).
+# The operator logs in with the token of the ServiceAccount named in spec.authentication and the Vault role vault-config,
+# which is created once by hand (README: Vault Config Operator). Removing a resource from this file removes it in Vault.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-config
+  namespace: vault
+
+---
+
+# Test of the operator: an unused KV engine with a read-only policy and a role for a ServiceAccount that does not exist.
+# Remove the three resources below once the operator has proven itself (the engine and its data go with them).
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: SecretEngineMount
+metadata:
+  name: operator-test
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  type: kv
+  options:
+    version: "2"
+  description: Test of the vault-config-operator
+
+---
+
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Policy
+metadata:
+  name: operator-test
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  type: acl
+  policy: |
+    path "operator-test/data/*" {
+      capabilities = ["read"]
+    }
+
+---
+
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: KubernetesAuthEngineRole
+metadata:
+  name: operator-test
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  path: kubernetes
+  policies:
+    - operator-test
+  targetNamespaces:
+    targetNamespaces:
+      - vault
+  targetServiceAccounts:
+    - operator-test
+  tokenTTL: 3600

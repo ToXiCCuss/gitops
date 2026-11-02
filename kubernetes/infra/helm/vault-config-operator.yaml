@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-config-operator
+  namespace: argocd
+spec:
+  destination:
+    namespace: vault-config-operator
+    server: https://kubernetes.default.svc
+  project: default
+  sources:
+    - repoURL: https://redhat-cop.github.io/vault-config-operator/
+      chart: vault-config-operator
+      targetRevision: v1.0.5
+      plugin:
+        name: argocd-vault-plugin-helm
+        env:
+          - name: HELM_VALUES
+            value: |
+              enableCertManager: true
+              env:
+                - name: VAULT_ADDR
+                  value: http://vault.vault:8200
+              resources:
+                requests:
+                  cpu: "0"
+                  memory: "0Mi"
+                limits:
+                  cpu: 200m
+                  memory: 512Mi
+    # The Issuer for the webhook certificates of the chart (certificate.issuerRef). It belongs to this Application and not to
+    # infra-kubectl: the Certificates of the chart are not Ready without it, so infra-helm would never be Healthy and wave 1 never started
+    - repoURL: https://github.com/ToXiCCuss/gitops.git
+      targetRevision: master
+      path: kubernetes/infra/vault-config-operator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
