@@ -6,7 +6,7 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 - This repo is only for **external (third-party) apps**, deployed via Argo CD (Kubernetes: Vault, Harbor, Jenkins, Kafka, Prometheus, cert-manager, NetBird, Argo itself), Ansible (hosts) or Docker Compose (Docker host).
 - **Own Spring applications** are never deployed from here: Jenkins deploys them with Helm (repos `cicd-library`, `kubernetes-values`, `spring-boot-chart`). Only the deployer's permissions live here (`kubernetes/spring/kubectl/helm-deployer.yaml`).
 - The **Developer Portal** (Backstage) is our own build and is deployed by Jenkins the same way. Only its frame lives here: Gateway/VirtualService/NetBird (`kubernetes/management/kubectl/developer-portal.yaml`), Secret, namespace, Keycloak client and the Role of the deployer in the namespace `developer-portal`.
-- Layout: `kubernetes/` (Argo CD), `ansible/` (hosts, roles), `docker/` (Compose projects), `databases/` (declared PostgreSQL access of docker01), `scripts/`, `tofu/` (OpenTofu: Proxmox VMs, state in PostgreSQL), `istio/` (input for a manual `istioctl install`, not synced by Argo CD).
+- Layout: `kubernetes/` (Argo CD), `ansible/` (hosts, roles), `docker/` (Compose projects), `databases/` (declared PostgreSQL access of docker01), `scripts/`, `istio/` (input for a manual `istioctl install`, not synced by Argo CD).
 
 ## Core principle
 - Git is the source of truth. All Applications run with `automated` (`prune` and `selfHeal`) on `targetRevision: master`: **a merge to `master` is a live deployment.** Prepare changes on a branch; never commit, push or merge without a request.

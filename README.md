@@ -7,14 +7,12 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 | `ansible/` | Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter, mysqld exporter, the deploy timer of the Docker host. Secrets in an ansible-vault file. |
 | `docker/` | One Docker Compose project per service on the Docker host (restic-backup, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`, on the Docker host hourly from 08:00 to 20:00 by a systemd timer. Images are pinned by digest and updated by Renovate. |
 | `istio/` | `IstioOperator` file for the manual `istioctl install` (outside ArgoCD). |
-| `tofu/` | OpenTofu: VMs on the Proxmox host (`tofu/proxmox/`), state in the RustFS S3 (bucket `tofu-state`). Cloud-init installs Ansible and checks out this repository on each VM. |
 | `kubernetes/` | ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, spring). |
 | `scripts/` | Helper scripts: Ansible secrets, backup host setup, Vault (PowerShell), database administration, Linux benchmarks. |
 
 ## Contents
 
 - [Ansible](#ansible)
-- [OpenTofu (Proxmox VMs)](#opentofu-proxmox-vms)
 - [Updates (Renovate)](#updates-renovate)
 - [Docker](#docker)
 - [Kubernetes](#kubernetes)
@@ -300,54 +298,6 @@ The script prints the scope it is about to write to, and warns when the detected
 4. Run the script - existing values are preserved.
 
 > **Note:** `ansible.cfg` sets `vault_password_file = .vault_pass`. If that file is missing, _every_ `ansible-playbook` run aborts with `The vault password file .vault_pass was not found` - run the script first. Tasks that use secrets already have `no_log: true`, so the values do not show up in the output or in `--check --diff`.
-
-## OpenTofu (Proxmox VMs)
-
-`tofu/proxmox/` creates the VMs on the Proxmox host with the `bpg/proxmox` provider. OpenTofu only creates the VM (CPU, RAM, disk, IP, SSH key). Cloud-init installs `git`, `ansible` and the QEMU guest agent and clones this repository to `/root/gitops`. Everything inside the VM is then configured by Ansible (see [Ansible](#ansible)), run on the VM itself.
-
-Run everything in this section from the `tofu/proxmox/` folder.
-
-### Prerequisites on the Proxmox host
-
-- Proxmox VE 8.4 or newer (disk import from a cloud image).
-- The datastore in `image_datastore_id` has the content type **Import**, the one in `snippet_datastore_id` has **Snippets** (Datacenter -> Storage -> Content).
-- An API token of a dedicated user with a minimal role. The provider additionally needs SSH access to the host (`proxmox_ssh_username`, key in the SSH agent).
-
-### Setup
-
-1. Create the S3 identity `tofu-state` (bucket `tofu-state`) for RustFS: run `scripts/vault/create-s3-identities.ps1` for its key in Vault (`docker/s3/tofu-state`), then `scripts/docker/setup-rustfs.sh` on the Docker host. The state is part of the local S3 and reaches pCloud with the offsite sync.
-2. Copy `backend.hcl.example` to `backend.hcl` (ignored by Git) and fill in the address of the Docker host (reached through NetBird).
-3. Replace every `CHANGE_ME` in `terraform.tfvars`.
-4. Set the secrets in the shell, never in a file. The S3 keys come from Vault (`docker/s3/tofu-state`, `access_key` and `secret_key`):
-
-   ```powershell
-   $env:PROXMOX_VE_ENDPOINT = "https://<proxmox-host>:8006/"
-   $env:PROXMOX_VE_API_TOKEN = "<user>@<realm>!<token-name>=<secret>"
-   $env:AWS_ACCESS_KEY_ID = "<access_key of docker/s3/tofu-state>"
-   $env:AWS_SECRET_ACCESS_KEY = "<secret_key of docker/s3/tofu-state>"
-   $env:TF_ENCRYPTION = 'key_provider "pbkdf2" "state" { passphrase = "<at least 16 characters>" }'
-   ```
-
-5. Initialise:
-
-   ```powershell
-   tofu init -backend-config=backend.hcl
-   ```
-
-The passphrase in `TF_ENCRYPTION` encrypts the state and the plan (they contain the cloud-init content). Keep it in the password manager: without it the state cannot be read. The `s3` backend locks the state with a lock file in the bucket (`use_lockfile`). The connection is plain HTTP because it runs through NetBird (WireGuard).
-
-### Add a VM
-
-Add an entry to `vms.auto.tfvars` (hostname as key, `vm_id` and IP must be unique). Optional per VM: `cores`, `memory_mebibytes`, `disk_gibibytes` (system disk), `cpu_type` (`host` for databases and game servers), `data_disk_gibibytes` (a second disk `scsi1` for the data, Ansible formats and mounts it), `gateway` and `network_prefix_length` (for routed additional IPs, otherwise the values of `terraform.tfvars` apply), `tags` and `startup_order` (lower starts first). The VMs are created on the datastore `disk_datastore_id` (default `local-zfs`, the ZFS pool of the Proxmox installation). The file contains the planned VMs of the dedicated server (`postgres01`, `mariadb01`, `mongodb01`, `games01`) as comments. Then check and apply:
-
-```powershell
-tofu plan
-tofu apply
-```
-
-After the first boot, check `cloud-init status` on the VM. Then add the host to the Ansible configuration (`ansible/group_vars/all/main.yml`) and run the playbook on the VM from `/root/gitops/ansible`. `tofu output vm_ip_addresses` lists the addresses.
-
-The VMs have `prevent_destroy` set. To remove one on purpose, delete that line in `modules/vm/main.tf` first.
 
 ## Updates (Renovate)
 

@@ -6,8 +6,3 @@
 # The secrets of the Docker projects are in Vault, there is no override.env any more. A leftover file must not be committed
 override.env
 
-# OpenTofu: downloaded providers, local state (the real state lives in the S3 backend) and backend settings
-.terraform/
-*.tfstate
-*.tfstate.*
-/tofu/proxmox/backend.hcl

@@ -1,5 +1,0 @@
-# Copy to backend.hcl (ignored by Git) and fill in. The keys are not part of it: set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the shell.
-# RustFS on the Docker host, reached through NetBird (WireGuard), so plain HTTP.
-endpoints = {
-  s3 = "http://<docker-host>:9000"
-}
