@@ -5,7 +5,7 @@
 # The secret is databases/<dbms>/<username> (KV v2 engine "databases", keys username and password). The host
 # logs in with the AppRole "dbadmin" (/etc/gitops/databases_role_id and _secret_id, mode 600), whose policy can
 # create, update and delete secrets of this engine: it cannot read a password back.
-# Setup: scripts/vault/configure-vault-databases.ps1, README section "Database passwords in Vault".
+# Setup: kubernetes/infra/kubectl/kube-vault-config.yaml (databases-write), README section "Database passwords in Vault".
 
 readonly VAULT_ADDR="${VAULT_ADDR:-https://vault.k8sdev.rjst.de}"
 readonly VAULT_DATABASES_MOUNT="databases"
@@ -71,7 +71,7 @@ vault_delete_password() {
   status=${response##*$'\n'}
   case $status in
   200 | 204 | 404) log "deleted: Vault entry $secret_path (an absent entry is fine)" ;;
-  *) die "Vault refused to delete $secret_path (HTTP $status): $(vault_errors "${response%$'\n'*}"). The policy databases-write needs delete on $VAULT_DATABASES_MOUNT/metadata/*: run scripts/vault/configure-vault-databases.ps1" ;;
+  *) die "Vault refused to delete $secret_path (HTTP $status): $(vault_errors "${response%$'\n'*}"). The policy databases-write needs delete on $VAULT_DATABASES_MOUNT/metadata/*: run kubernetes/infra/kubectl/kube-vault-config.yaml (databases-write)" ;;
   esac
 }
 

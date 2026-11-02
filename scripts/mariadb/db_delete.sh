@@ -5,7 +5,7 @@
 # Idempotent: parts that are already gone are reported as unchanged, so an aborted run can be repeated.
 # The data is deleted for good; use --dry-run first. The password of every login is deleted from Vault
 # (databases/mariadb/<login>) before the login is dropped, so a refused delete stops the script while the
-# login still exists. It needs the current policy of scripts/vault/configure-vault-databases.ps1.
+# login still exists. It needs the current policy of kubernetes/infra/kubectl/kube-vault-config.yaml (databases-write).
 #
 # A login belongs to the database if it has one of its roles (not by its name, so the logins of a
 # database called <db>_dev are not touched).

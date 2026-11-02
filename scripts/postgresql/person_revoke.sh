@@ -8,7 +8,7 @@
 # Idempotent: a missing login or missing access is reported as unchanged. The password in Vault
 # (databases/postgresql/<username>) is deleted first when the login goes, whether the login still exists
 # or not, so a repeated run also cleans up an old leftover. The delete needs the current policy of
-# scripts/vault/configure-vault-databases.ps1. The script only touches logins that person_grant.sh created
+# kubernetes/infra/kubectl/kube-vault-config.yaml (databases-write). The script only touches logins that person_grant.sh created
 # itself, so it cannot drop an application login like shop_owner or a role like postgres.
 #
 # Usage: person_revoke.sh [--dry-run] <username> [<database_name>]

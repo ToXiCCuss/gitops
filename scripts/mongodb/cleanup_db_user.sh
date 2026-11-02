@@ -5,7 +5,7 @@
 # Idempotent: a missing database without logins is reported as unchanged. The data is deleted for good;
 # use --dry-run first. The password of every login is deleted from Vault (databases/mongodb/<database_name>/<username>)
 # before the logins are dropped, so a refused delete stops the script while the logins still exist. It needs the
-# current policy of scripts/vault/configure-vault-databases.ps1.
+# current policy of kubernetes/infra/kubectl/kube-vault-config.yaml (databases-write).
 #
 # Usage: cleanup_db_user.sh [--dry-run] <database_name>
 #        --dry-run  only report what would be changed

@@ -149,19 +149,14 @@ The scripts in `scripts/postgresql/` (run them on the host with `sudo`) add the 
 
 `db_create.sh` and `user_create.sh` (PostgreSQL and MariaDB) are idempotent: a second run reports `unchanged` and changes nothing, an aborted run is finished by running it again. `--dry-run` shows the plan. The password of a **new** user is generated, stored in Vault as `databases/<dbms>/<user>` (keys `username`, `password`, e.g. `databases/postgresql/keycloak_owner`) and never printed; an existing user keeps its password. Vault is written first, so an unreachable Vault stops the script before anything is created. Names must match `^[a-z][a-z0-9_]*$` (52 characters at most).
 
-Set up once (on Windows, with the root token):
+Set up once: the policy `databases-write` (create and update on `databases/data/*`, delete on `databases/metadata/*`, no read) and the AppRole `dbadmin` (token lifetime 5 minutes) are in `infra/kubectl/kube-vault-config.yaml`. The KV engine `databases` and the files `/etc/gitops/databases_role_id` and `databases_secret_id` on the host are set up as in [AppRole logins of the hosts](#approle-logins-of-the-hosts). `curl` and `jq` are on every host through the Ansible role `base`. Like for `docker01`, the role is not bound to an address (Vault sees a pod address). Read a password: `vault kv get -field=password databases/postgresql/keycloak_owner`.
 
-1. `.\scripts\vault\configure-vault-databases.ps1 -VaultToken (Read-Host -AsSecureString "Vault token") -NewSecretId -DatabaseHost docker01.vpn.rjst.de` mounts the KV engine `databases`, writes the policy `databases-write` (create and update on `databases/data/*`, delete on `databases/metadata/*`, no read) and the AppRole `dbadmin` (token lifetime 5 minutes), and puts `/etc/gitops/databases_role_id` and `databases_secret_id` (mode 600) on the host over SSH (`-SshUser`, default `root`; `-SshArgument` for a port or key). The values go through the stdin of `ssh` and are not shown. `-WhatIf` shows the plan. Like for `docker01`, the role is not bound to an address (Vault sees a pod address).
-2. Without `-DatabaseHost` the `secret_id` is shown once and you create the two files yourself on the host as root: `install -d -m 700 /etc/gitops`, then `(umask 077; cat > /etc/gitops/databases_secret_id)` and the same for `databases_role_id` (paste, Ctrl-D).
-3. `curl` and `jq` are on every host through the Ansible role `base`.
-4. Read a password on Windows: `vault kv get -field=password databases/postgresql/keycloak_owner`.
-
-- The host can write and delete passwords but not read one back, so a leaked `secret_id` exposes no existing password. It can overwrite or delete one, though: a new `-NewSecretId` cuts a leaked file off. With `-DatabaseHost` the older `secret_id`s are destroyed only after both files are on the host, so a failed SSH login leaves the working one valid. Run the script again with `-NewSecretId` to rotate.
+- The host can write and delete passwords but not read one back, so a leaked `secret_id` exposes no existing password. It can overwrite or delete one, though: a new `secret_id` cuts a leaked file off (rotation: [AppRole logins of the hosts](#approle-logins-of-the-hosts)).
 - `user_password.sh <login>` (or `<database> <username>`) rotates a password: it sets a new random one in Vault and in the database, every run again, the older ones stay as versions in Vault. `backup_user_create.sh` stores the password of the backup login the same way. Both support `--dry-run` and never print a password.
 - Logins that existed before the scripts used Vault are not in Vault yet. Their first `user_password.sh` run puts them there. The backup login `backup` is created by `backup_user_create.sh`, so its password is in Vault from the start. After a `reset` or a new password put it into `docker/restic-backup` (`POSTGRES_PASSWORD`, `MARIADB_PASSWORD`) and deploy `restic-backup` again, the container keeps its own copy.
 - All scripts for PostgreSQL, MariaDB and MongoDB follow the same rules: an error stops the script, a second run reports what is `unchanged`, and everything that changes something has `--dry-run` (the read-only `list_user_roles.sh` and `audit_list.sh` have none). Tools: `sudo`, the client of the DBMS, `openssl`; the scripts that store a password also `curl` and `jq`.
-- `db_delete.sh`, `user_delete.sh`, `cleanup_db_user.sh` and `copy_db.sh` delete data for good, so run them with `--dry-run` first. `db_delete.sh` finds the logins of a database by their membership in its three roles, not by their name: a database `shop` and a database `shop_dev` do not take each other's logins along. They refuse system databases and, for MariaDB, `root`. The Vault entry of every login (`databases/<dbms>/<login>`, for MongoDB `databases/mongodb/<database>/<username>`) is deleted with all its versions **before** the login is dropped: if Vault refuses (an old policy: run `configure-vault-databases.ps1` again), the script stops while the login still exists and can be repeated. `user_delete.sh` deletes the entry even if the login is already gone, so it also cleans up the leftover of an earlier deletion.
-- Personal logins (PostgreSQL, `scripts/postgresql/`): `person_grant.sh <username> <database> <ro|rw>` ensures the login `<username>` (no database prefix, one login for all databases) and its membership in `<db>_role_ro` or `<db>_role_rw`. The database is optional: `person_grant.sh <username>` (or `user_create.sh <username>`, which forwards there; with `<database> <username> <role>` it creates the application login `<database>_<username>` as before) only creates the login without any access, a later run with a database adds it. Run it once per database, so `robert` can be `ro` in `shop` and `rw` in `billing`; a changed role type moves the login, `owner` is not possible (that is `<db>_owner` of `db_create.sh`). The password of a new login goes to Vault as `databases/postgresql/<username>` (`user_password.sh <username>` rotates it). The script only touches logins it created itself (marked by a role comment), so it refuses an application login like `shop_owner` or `postgres`. `person_revoke.sh <username> <database>` takes the access to one database away and keeps the login for the others; `person_revoke.sh <username>` terminates its sessions, deletes the Vault entry (needs the current policy of `configure-vault-databases.ps1`) and drops the login. Both support `--dry-run`, report an absent login or access as `unchanged` and refuse logins that `person_grant.sh` did not create (`user_delete.sh` expects `<database> <username>` and does not fit these logins). The rights of the two roles come from `db_create.sh` and `schema_create.sh`. MariaDB (`scripts/mariadb/`) has the same two scripts with the same arguments, `--dry-run` and Vault path (`databases/mariadb/<username>`). The difference: MariaDB enables only one default role per connection, so the login gets a role of its own, `<username>_role_person`, as default role, and `person_grant.sh` puts `<db>_role_ro` or `<db>_role_rw` into that role. The role is also the marker for a personal login (MariaDB has no comment on a user), and `person_revoke.sh <username>` drops it with the login. Open connections stay until they end, like with `user_delete.sh`.
+- `db_delete.sh`, `user_delete.sh`, `cleanup_db_user.sh` and `copy_db.sh` delete data for good, so run them with `--dry-run` first. `db_delete.sh` finds the logins of a database by their membership in its three roles, not by their name: a database `shop` and a database `shop_dev` do not take each other's logins along. They refuse system databases and, for MariaDB, `root`. The Vault entry of every login (`databases/<dbms>/<login>`, for MongoDB `databases/mongodb/<database>/<username>`) is deleted with all its versions **before** the login is dropped: if Vault refuses (an old policy: `databases-write` in `infra/kubectl/kube-vault-config.yaml` is not synced yet), the script stops while the login still exists and can be repeated. `user_delete.sh` deletes the entry even if the login is already gone, so it also cleans up the leftover of an earlier deletion.
+- Personal logins (PostgreSQL, `scripts/postgresql/`): `person_grant.sh <username> <database> <ro|rw>` ensures the login `<username>` (no database prefix, one login for all databases) and its membership in `<db>_role_ro` or `<db>_role_rw`. The database is optional: `person_grant.sh <username>` (or `user_create.sh <username>`, which forwards there; with `<database> <username> <role>` it creates the application login `<database>_<username>` as before) only creates the login without any access, a later run with a database adds it. Run it once per database, so `robert` can be `ro` in `shop` and `rw` in `billing`; a changed role type moves the login, `owner` is not possible (that is `<db>_owner` of `db_create.sh`). The password of a new login goes to Vault as `databases/postgresql/<username>` (`user_password.sh <username>` rotates it). The script only touches logins it created itself (marked by a role comment), so it refuses an application login like `shop_owner` or `postgres`. `person_revoke.sh <username> <database>` takes the access to one database away and keeps the login for the others; `person_revoke.sh <username>` terminates its sessions, deletes the Vault entry (needs the current policy `databases-write` of `infra/kubectl/kube-vault-config.yaml`) and drops the login. Both support `--dry-run`, report an absent login or access as `unchanged` and refuse logins that `person_grant.sh` did not create (`user_delete.sh` expects `<database> <username>` and does not fit these logins). The rights of the two roles come from `db_create.sh` and `schema_create.sh`. MariaDB (`scripts/mariadb/`) has the same two scripts with the same arguments, `--dry-run` and Vault path (`databases/mariadb/<username>`). The difference: MariaDB enables only one default role per connection, so the login gets a role of its own, `<username>_role_person`, as default role, and `person_grant.sh` puts `<db>_role_ro` or `<db>_role_rw` into that role. The role is also the marker for a personal login (MariaDB has no comment on a user), and `person_revoke.sh <username>` drops it with the login. Open connections stay until they end, like with `user_delete.sh`.
 - Other scripts of the same family: `schema_create.sh <db> <schema>` (PostgreSQL schema with the privileges of the three roles), `copy_db.sh [source target]` (MariaDB: the target gets the tables of the source, default `fivem` to `fivem_dev`) and `list_user_roles.sh` (read only).
 
 ### Declared database access (PostgreSQL)
@@ -378,13 +373,10 @@ NetBird is the one exception: it is not deployed by the timer and its secrets st
 
 Every project with a `vault.env.example` reads its secrets from Vault. `deploy.sh` logs in with an AppRole (`/etc/gitops/role_id`, `/etc/gitops/secret_id`, mode 600), reads the KV secret `docker/<project>`, writes its keys to `/run/gitops/<project>/vault.env` (tmpfs, mode 600) and removes the file as soon as Compose has started the container. The compose file reads `default.env` and `vault.env` (the later wins; `vault.env` is optional only so that `docker compose logs` works without it). `deploy.sh` checks the required variables of `vault.env.example` against the keys from Vault. It needs `curl` and `jq` on the host.
 
-Set up once (on Windows, with the root token):
+Set up once: the policy `docker` and the AppRole `docker01` are in `infra/kubectl/kube-vault-config.yaml`. The KV engine `docker` and the files `/etc/gitops/role_id` and `secret_id` on the Docker host are set up as in [AppRole logins of the hosts](#approle-logins-of-the-hosts). Do not bind the role to the address of the Docker host (`token_bound_cidrs`): Vault runs in the cluster and sees the address of a pod (`10.42.x.x`), so the login fails with "source address unauthorized by CIDR restrictions".
 
-1. `.\scripts\vault\configure-vault-docker.ps1 -VaultToken (Read-Host -AsSecureString "Vault token") -NewSecretId -DockerHost docker01.vpn.rjst.de` mounts the KV engine `docker`, writes the read-only policy `docker` and the AppRole `docker01` (token lifetime 5 minutes), and puts `/etc/gitops/role_id` and `secret_id` (mode 600) on the Docker host over SSH (`-SshUser`, default `root`; `-SshArgument` for a port or key). The values go through the stdin of `ssh` and are not shown. `-WhatIf` shows the plan; a second run reports `Unchanged`. Do not bind the role to the address of the Docker host (`-AllowedCidr`): Vault runs in the cluster and sees the address of a pod (`10.42.x.x`), so the login fails with "source address unauthorized by CIDR restrictions".
-2. Without `-DockerHost` the `secret_id` is shown once and you create the two files yourself on the Docker host as root: `install -d -m 700 /etc/gitops`, then `(umask 077; cat > /etc/gitops/secret_id)` and the same for `role_id` (paste, Ctrl-D).
-3. A new `secret_id` (`-NewSecretId`) destroys the old one, so a leaked file is cut off by running the script again. With `-DockerHost` the old one is destroyed only after both files are on the host, so a failed SSH login leaves the working one valid.
-3. Put the values of a project into Vault, e.g. `vault kv put docker/keycloak KC_DB_USERNAME=... KC_DB_PASSWORD=... KC_BOOTSTRAP_ADMIN_PASSWORD=...` (`vault kv patch` changes single keys). Values must not contain a single quote or a control character (a line break), `deploy.sh` refuses them.
-4. `sudo scripts/docker/deploy.sh keycloak`.
+1. Put the values of a project into Vault, e.g. `vault kv put docker/keycloak KC_DB_USERNAME=... KC_DB_PASSWORD=... KC_BOOTSTRAP_ADMIN_PASSWORD=...` (`vault kv patch` changes single keys). Values must not contain a single quote or a control character (a line break), `deploy.sh` refuses them.
+2. `sudo scripts/docker/deploy.sh keycloak`.
 
 - If Vault is not reachable (or the secret does not exist), that project is not deployed; running containers are not touched, and there is no fallback to a file on the host. Deploy the projects only with `deploy.sh`: a manual `docker compose up` does not create `vault.env` and would start the container without the secrets.
 - After a total loss of Vault restore it first (see [Restore](#restore)), then deploy the projects. The restic passwords of the Vault repository and the `rclone.conf` for pCloud are in your password manager, that is the way back (the backups on pCloud need no S3 and no Vault).
@@ -504,10 +496,11 @@ After the first deploy check the metric: `curl -s localhost:9100/metrics | grep 
    | `docker/offsite-sync` | `DISCORD_WEBHOOK_URL` |
    | `docker/vault-backup` | `VAULT_TOKEN` (see below), `RESTIC_PASSWORD` (the password of the Vault repository), optional `DISCORD_WEBHOOK_URL` |
 
-   `VAULT_TOKEN` is a periodic token that may only read the Raft snapshot. Create it once with the root token, the script prints it once, put it into `docker/vault-backup` (`vault kv patch docker/vault-backup VAULT_TOKEN=...`):
+   `VAULT_TOKEN` is a periodic token that may only read the Raft snapshot (the policy `vault_snapshot` is in `infra/kubectl/kube-vault-config.yaml`). Create it once with an admin token, it is shown once, and put it into `docker/vault-backup`:
 
-   ```powershell
-   .\scripts\vault\create-snapshot-token.ps1 -VaultToken <root-token>
+   ```bash
+   vault token create -policy=vault_snapshot -period=768h -orphan -field=token
+   vault kv patch docker/vault-backup VAULT_TOKEN=<token>
    ```
 
    The Docker host must reach `https://vault.k8sdev.rjst.de`: `docker01` is a NetBird peer, put it into the group `k8s-users` (the policy `k8s-users` -> `kubernetes-services` exists, see NetBird configuration).
@@ -824,7 +817,7 @@ Set it up on `docker01`, the S3 is reached on `127.0.0.1:9000`, no NetBird is in
 
 Daily at 02:30 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`) the container fetches the Raft snapshot of Vault (`sys/storage/raft/snapshot`), writes it with restic to the repository `vault/raft` on the RustFS S3, applies the retention (`KEEP_*`, default 14 daily, 8 weekly, 12 monthly) and reports a failed run to Discord. It runs in the host network, so that it uses the NetBird DNS of the host to reach Vault and the S3 on `127.0.0.1`.
 
-- Create the token with `scripts/vault/create-snapshot-token.ps1` (see above). The token is periodic and renewed by every run, so it stays valid as long as the backup runs at least once per period (32 days)
+- Create the token as described above (`vault token create`). The token is periodic and renewed by every run, so it stays valid as long as the backup runs at least once per period (32 days)
 - Put `VAULT_TOKEN`, `RESTIC_PASSWORD` and optionally `DISCORD_WEBHOOK_URL` into the Vault secret `docker/vault-backup`. The S3 keys of the identity `vault` are added from `docker/s3/vault`
 - `docker compose up -d` in the vault-backup folder
 - Restore with `scripts/vault/vault_restore.sh`. Snapshots from before the move are in `rclone:pCloud:/Backups/vault_pb` (set `RESTIC_REPOSITORY`)
@@ -1015,7 +1008,7 @@ Vault reaches the API server through `https://kubernetes.default.svc:443` (param
 
 ##### Vault Config Operator
 
-The [vault-config-operator](https://github.com/redhat-cop/vault-config-operator) writes Vault configuration (mounts, policies, auth roles) from resources in Git, so that no script has to be run for it. `infra/helm/vault-config-operator.yaml` installs it, the resources are in `infra/kubectl/kube-vault-config.yaml`. Removing a resource from the file removes it in Vault. The file holds the policies and roles `argocd` and `jenkins`; the other roles (`spring_dev`, `spring_prod`), the KV engines and the config of the kubernetes auth method are still written by `configure-vault-auth.ps1`. The engines are not in the file on purpose: removing one would delete its secrets.
+The [vault-config-operator](https://github.com/redhat-cop/vault-config-operator) writes Vault configuration (mounts, policies, auth roles) from resources in Git, so that no script has to be run for it. `infra/helm/vault-config-operator.yaml` installs it, the resources are in `infra/kubectl/kube-vault-config.yaml`. Removing a resource from the file removes it in Vault. The file holds the policies and roles `argocd` and `jenkins`, the AppRoles `docker01` and `dbadmin` with their policies, and the policy `vault_snapshot`. Still written by script: the roles `spring_dev` and `spring_prod`, the config of the kubernetes auth method (`configure-vault-auth.ps1`) and the Keycloak login (`configure-vault-oidc.ps1`). The KV engines and the auth methods are not in the file on purpose: removing one would delete everything below it.
 
 Every resource names the ServiceAccount `vault/vault-config` and the Vault role `vault-config` to log in. Create the role once, **before** the first sync, with an admin token inside the Vault pod (`kubectl -n vault exec -it vault-0 -- sh`, then `vault login`). The policy is as powerful as an admin, because the operator may create policies:
 
@@ -1036,6 +1029,36 @@ vault write auth/kubernetes/role/vault-config bound_service_account_names=vault-
 
 Not in Git: the `secret_id` of an AppRole, tokens, and every secret value.
 
+##### AppRole logins of the hosts
+
+The Docker host logs in with the AppRole `docker01` (reads `docker/data/*`, used by `deploy.sh`), the database scripts with `dbadmin` (writes `databases/data/*`). Policies and roles are in Git (above). By hand, with an admin token (inside the Vault pod, or on any machine that reaches Vault): the KV engines and the AppRole method, once on a fresh Vault, and the `secret_id` of each role.
+
+```bash
+vault secrets enable -path=docker -version=2 kv
+vault secrets enable -path=databases -version=2 kv
+vault auth enable approle
+```
+
+Then on the Docker host as root. The roles are `docker01` (files `role_id`, `secret_id`) and `dbadmin` (files `databases_role_id`, `databases_secret_id`). The token is read without echo and stays out of the process list; the files get mode 600. A new `secret_id` is created, the older ones are destroyed afterwards:
+
+```bash
+read -rsp 'Vault token: ' VAULT_TOKEN; echo
+export VAULT_ADDR=https://vault.k8sdev.rjst.de
+api() { printf 'X-Vault-Token: %s' "$VAULT_TOKEN" | curl -fsS -H @- "$@"; }
+role=docker01; prefix=            # for dbadmin: role=dbadmin; prefix=databases_
+base="$VAULT_ADDR/v1/auth/approle/role/$role"
+install -d -m 700 /etc/gitops
+api "$base/role-id" | jq -r .data.role_id | (umask 077; cat > "/etc/gitops/${prefix}role_id")
+response=$(api -X POST "$base/secret-id")
+jq -r .data.secret_id <<<"$response" | (umask 077; cat > "/etc/gitops/${prefix}secret_id")
+keep=$(jq -r .data.secret_id_accessor <<<"$response")
+for accessor in $(api "$base/secret-id?list=true" | jq -r '.data.keys[]'); do
+  [ "$accessor" = "$keep" ] || api -X POST -d "{\"secret_id_accessor\":\"$accessor\"}" "$base/secret-id-accessor/destroy"
+done
+```
+
+Do the destroy loop only after the new file works if the old one is still in use (`sudo scripts/docker/deploy.sh --list` logs in); without the loop both `secret_id`s stay valid.
+
 ##### Login with Keycloak (OIDC)
 
 Besides the root token and the Kubernetes login, Vault can be used with a Keycloak login. The roles of the client `vault` (`docker/keycloak-config/realms/rjst.yaml`) are external groups in Vault with one policy each: `admin` (policy `keycloak_admin`, everything) and `developer` (policy `keycloak_developer`, read and write the secrets in `dev/` and `prod/`, no delete). A user without one of the roles is refused at the login. The configuration lives in Vault itself (it is part of the Raft snapshot), not in Git:
@@ -1047,7 +1070,7 @@ Besides the root token and the Kubernetes login, Vault can be used with a Keyclo
 
 ##### Vault backups
 
-Vault is backed up from the Docker host, not from Kubernetes: see **Docker > Setup Vault backup**. It uses a periodic token with the policy `vault_snapshot` (created by `scripts/vault/create-snapshot-token.ps1`) and does not depend on anything inside the cluster.
+Vault is backed up from the Docker host, not from Kubernetes: see **Docker > Setup Vault backup**. It uses a periodic token with the policy `vault_snapshot` (created with `vault token create`, see above) and does not depend on anything inside the cluster.
 
 #### 4. Deploy the secrets, then the domains, in this order
 

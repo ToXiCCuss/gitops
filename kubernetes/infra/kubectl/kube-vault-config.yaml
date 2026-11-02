@@ -3,9 +3,12 @@
 # which is created once by hand (README: Vault Config Operator).
 #
 # Removing a resource from this file removes it in Vault. argocd is the login of the AVP plugin of Argo CD: without it no Secret
-# renders any more (a missing Secret does not fail the sync). jenkins is the login of every pipeline.
+# renders any more (a missing Secret does not fail the sync). jenkins is the login of every pipeline. The AppRoles docker01 and
+# dbadmin are the logins of the Docker host (deploy.sh) and of the database scripts; a role that is removed and created again
+# invalidates the secret_ids of the hosts.
 #
-# Deliberately not here: the KV engines (removing an engine deletes its secrets) and the config of the kubernetes auth method.
+# Deliberately not here: the KV engines and the auth methods (removing one deletes everything below it), the config of the
+# kubernetes auth method, the secret_ids, and the Keycloak login (auth/oidc, its groups).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -99,3 +102,107 @@ spec:
     - helm-deployer
   audience: https://kubernetes.default.svc.cluster.local
   tokenTTL: 86400
+
+---
+
+# Read-only on the secrets of the Docker projects (deploy.sh)
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Policy
+metadata:
+  name: docker
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  type: acl
+  policy: |
+    path "docker/data/*" {
+      capabilities = ["read"]
+    }
+
+---
+
+# Not bound to an address: Vault runs in the cluster and sees the address of a pod, a CIDR binding makes every login fail
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: AppRoleAuthEngineRole
+metadata:
+  name: docker01
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  path: approle
+  tokenPolicies:
+    - docker
+  tokenTTL: 5m
+  tokenMaxTTL: 10m
+
+---
+
+# Write and delete, no read: the database host can store and remove a password but not read one back
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Policy
+metadata:
+  name: databases-write
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  type: acl
+  policy: |
+    path "databases/data/*" {
+      capabilities = ["create", "update"]
+    }
+    # The delete scripts remove the entry of a dropped login with all its versions (KV v2 metadata delete)
+    path "databases/metadata/*" {
+      capabilities = ["delete"]
+    }
+
+---
+
+# Like docker01 not bound to an address
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: AppRoleAuthEngineRole
+metadata:
+  name: dbadmin
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  path: approle
+  tokenPolicies:
+    - databases-write
+  tokenTTL: 5m
+  tokenMaxTTL: 10m
+
+---
+
+# Only the Raft snapshot, for the periodic token of docker/vault-backup
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Policy
+metadata:
+  name: vault_snapshot
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  type: acl
+  policy: |
+    path "sys/storage/raft/snapshot" {
+      capabilities = ["read"]
+    }

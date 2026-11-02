@@ -4,7 +4,7 @@
 #
 # Idempotent: a missing login is reported as unchanged. The password in Vault (databases/postgresql/<login>) is
 # deleted first, whether the login still exists or not, so a repeated run also cleans up an old leftover.
-# The delete needs the current policy of scripts/vault/configure-vault-databases.ps1.
+# The delete needs the current policy of kubernetes/infra/kubectl/kube-vault-config.yaml (databases-write).
 #
 # Usage: user_delete.sh [--dry-run] <database_name> <username>
 #        --dry-run  only report what would be changed
