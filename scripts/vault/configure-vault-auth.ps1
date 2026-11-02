@@ -167,21 +167,8 @@ function Set-VaultK8sRole {
     Write-Ok "Role '$Name' written (SA '$ServiceAccountNames' in '$ServiceAccountNamespaces')."
 }
 
-Write-Step "ArgoCD"
-Set-VaultPolicy -Name "argocd" -Hcl @'
-path "argocd/data/*" {
-  capabilities = ["read"]
-}
-'@
-Set-VaultK8sRole -Name "argocd" -ServiceAccountNames "argocd-repo-server" -ServiceAccountNamespaces "argocd" -Policies "argocd"
-
-Write-Step "Jenkins"
-Set-VaultPolicy -Name "jenkins" -Hcl @'
-path "jenkins/data/*" {
-  capabilities = ["read"]
-}
-'@
-Set-VaultK8sRole -Name "jenkins" -ServiceAccountNames "default,helm-deployer" -ServiceAccountNamespaces "jenkins" -Policies "jenkins"
+# The policies and roles argocd and jenkins are no longer written here: the vault-config-operator owns them
+# (kubernetes/infra/kubectl/kube-vault-config.yaml). Writing them twice would only race the operator.
 
 Write-Step "Spring (dev)"
 Set-VaultPolicy -Name "spring_dev" -Hcl @'
@@ -200,5 +187,5 @@ path "prod/data/*" {
 Set-VaultK8sRole -Name "spring_prod" -ServiceAccountNames "spring" -ServiceAccountNamespaces "prod" -Policies "spring_prod"
 
 Write-Step "Done"
-Write-Ok "Auth backend, 4 KV engines, and 4 policy/role pairs are in place."
+Write-Ok "Auth backend, 4 KV engines, and 2 policy/role pairs are in place (argocd and jenkins come from the vault-config-operator)."
 Write-Warn2 "Nothing reads from dev/prod yet - that's app-side wiring (Vault Agent injector, Spring Cloud Vault, etc.) for a later step."

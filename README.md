@@ -1001,7 +1001,7 @@ Run `scripts/vault/configure-vault-auth.ps1` once, after `init-vault.ps1` (it ne
 
 - Enables Vault's `kubernetes` auth method and configures it for this cluster.
 - Creates the `argocd`, `jenkins`, `dev` and `prod` KV v2 engines.
-- Writes the policies and auth roles for ArgoCD, Jenkins, the Spring apps (`dev`/`prod` namespaces).
+- Writes the policies and auth roles for the Spring apps (`dev`/`prod` namespaces). Those of ArgoCD and Jenkins belong to the Vault Config Operator (below).
 
 The `argocd` role matters most: ArgoCD's AVP plugin itself logs in to Vault through it (`AVP_AUTH_TYPE=k8s`, role `argocd`, see `argocd-values.yaml`), so nothing that uses AVP - including the `secrets` app - renders without it.
 
@@ -1015,7 +1015,7 @@ Vault reaches the API server through `https://kubernetes.default.svc:443` (param
 
 ##### Vault Config Operator
 
-The [vault-config-operator](https://github.com/redhat-cop/vault-config-operator) writes Vault configuration (mounts, policies, auth roles) from resources in Git, so that no script has to be run for it. `infra/helm/vault-config-operator.yaml` installs it, the resources are in `infra/kubectl/kube-vault-config.yaml`. Removing a resource from the file removes it in Vault. At the moment the file only holds a test (engine, policy and role `operator-test`); the roles `argocd` and `jenkins` follow once it works.
+The [vault-config-operator](https://github.com/redhat-cop/vault-config-operator) writes Vault configuration (mounts, policies, auth roles) from resources in Git, so that no script has to be run for it. `infra/helm/vault-config-operator.yaml` installs it, the resources are in `infra/kubectl/kube-vault-config.yaml`. Removing a resource from the file removes it in Vault. The file holds the policies and roles `argocd` and `jenkins`; the other roles (`spring_dev`, `spring_prod`), the KV engines and the config of the kubernetes auth method are still written by `configure-vault-auth.ps1`. The engines are not in the file on purpose: removing one would delete its secrets.
 
 Every resource names the ServiceAccount `vault/vault-config` and the Vault role `vault-config` to log in. Create the role once, **before** the first sync, with an admin token inside the Vault pod (`kubectl -n vault exec -it vault-0 -- sh`, then `vault login`). The policy is as powerful as an admin, because the operator may create policies:
 
