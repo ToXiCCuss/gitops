@@ -22,7 +22,7 @@ services:
     ports:
       - "81:80"
     labels:
-      # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
+      # Catalog link (portal.* labels)
       portal.name: "Pelican Panel"
       portal.url: "https://webinterface.proxy.rjst.de"
       portal.group: "Management"

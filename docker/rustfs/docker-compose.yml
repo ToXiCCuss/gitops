@@ -27,7 +27,7 @@ services:
       - /root/docker/rustfs/data:/data
       - /root/docker/rustfs/logs:/app/logs
     labels:
-      # Link on the portal page (kubernetes/management/kubectl/portal.yaml). The NetBird reverse proxy s3-admin.proxy.rjst.de
+      # Catalog link (portal.* labels). The NetBird reverse proxy s3-admin.proxy.rjst.de
       # points to the console (9001)
       portal.name: "RustFS"
       portal.url: "https://s3-admin.proxy.rjst.de"

@@ -780,7 +780,7 @@ Buckets, users and policies come from `docker/rustfs/identities.json` (names and
 5. Keycloak UI: give your user the client role `consoleAdmin` of the client `rustfs` (**Users > Role mapping**).
 6. The Vault secret `docker/rustfs` (`vault kv put docker/rustfs ...`, names in `docker/rustfs/vault.env.example`): `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY` (root login, not `rustfsadmin`) and `RUSTFS_IDENTITY_OPENID_CLIENT_SECRET` (the same value as `RUSTFS_CLIENT_SECRET`).
 7. `sudo scripts/docker/deploy.sh rustfs`. `pre-deploy.sh` makes the data directories belong to the user `10001` of the image.
-8. NetBird dashboard: the reverse proxy service `s3-admin.proxy.rjst.de` points to port `9001` of the Docker host, restricted to your peers (the portal entry "RustFS" is a label of the container).
+8. NetBird dashboard: the reverse proxy service `s3-admin.proxy.rjst.de` points to port `9001` of the Docker host, restricted to your peers (the catalog entry "RustFS" is a label of the container).
 
 - The container cannot use `https://auth.proxy.rjst.de` (the NetBird proxy only serves peers and answers `403` for a container). RustFS therefore fetches the discovery document, the keys and the token from the published port of Keycloak (`RUSTFS_IDENTITY_OPENID_CONFIG_URL=http://host.docker.internal:8180/realms/rjst`) and checks the issuer against the public URL (`RUSTFS_IDENTITY_OPENID_ISSUER`). For that Keycloak needs `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` (`docker/keycloak/default.env`): a call to port 8180 then gets the token and key endpoints of the address it used, while issuer and login page stay public. Deploy it first: `sudo scripts/docker/deploy.sh keycloak` (a short restart of Keycloak, the apps keep their local logins). Check it before the first login, the token endpoint must be `http://host.docker.internal:8180/...` and the issuer public:
 
@@ -935,7 +935,7 @@ kubernetes/<domain>/
 1. infra (cert-manager, ClusterIssuer, Istio security policies, NetBird operator)
 2. monitoring (Prometheus, exporters, Istio dashboards)
 3. cicd (Harbor, Jenkins, Forgejo)
-4. management (Portal, Leantime, frame of the Developer Portal)
+4. management (Leantime, frame of the Developer Portal)
 5. kafka (Strimzi, Apicurio Registry, AKHQ)
 6. spring
 
@@ -1123,7 +1123,6 @@ Every app is reached as `https://<app>.k8sdev.rjst.de` (see the next section): i
 | Developer Portal | `developer-portal.k8sdev.rjst.de` | `developer-portal.developer-portal:7007` | 8448 |
 | AKHQ | `akhq.k8sdev.rjst.de` | `akhq.kafka:80` | 8449 |
 | Apicurio Registry | `apicurio.k8sdev.rjst.de` | `example-apicurioregistry-mem-service.kafka:8080` | 8450 |
-| Portal | `portal.k8sdev.rjst.de` | `portal.portal:80` | 8451 |
 | Prometheus | `prometheus.k8sdev.rjst.de` | `prometheus-prometheus.prometheus:9090` | 8452 |
 | Forgejo | `forgejo.k8sdev.rjst.de` | `forgejo-http.forgejo:3000` | 8453 |
 | Leantime | `leantime.k8sdev.rjst.de` | `leantime.leantime:80` | 8454 |
@@ -1133,16 +1132,6 @@ Each app needs the CNAME. The nodes need access to pull from Harbor too (`harbor
 ##### HTTPS entry for internal apps (`istio-internal`)
 
 Apps are reached as `https://<app>.k8sdev.rjst.de` (port 443, Let's Encrypt wildcard `*.k8sdev.rjst.de` via the `letsencrypt` ClusterIssuer, DNS-01 at Hetzner). `istio-internal-gateway` (`infra/helm`) is a second Istio ingress gateway, ClusterIP only - unlike the public `istio-ingressgateway`, nothing outside the cluster can reach it except through the NetBird routing peer. NetBird separates access per destination, not per hostname, so every app gets its own Service, its own listener port on the gateway and its own `NetworkResource` (`infra/kubectl/kube-istio-internal.yaml`). Each listener only accepts that app's hostname, so per-app groups stay meaningful.
-
-##### Portal (list of all apps and services)
-
-`management/kubectl/portal.yaml` serves `https://portal.k8sdev.rjst.de`, a page with a link to every app and service. Nothing is listed by hand; a sidecar rebuilds the list every minute:
-
-- **Kubernetes**: every Istio `VirtualService` (`https://<first host>`). A new app shows up as soon as its `VirtualService` is synced. Optional annotations on the `VirtualService` set the card: `portal.rjst.de/name`, `/group`, `/description`, `/icon` (a [Devicon](https://devicon.dev) name like `argocd` or `jenkins/plain`; other text, e.g. an emoji, is shown as is) and `/hidden: "true"` to leave it out. Without them the card is named after the first part of the host. A `VirtualService` in one of the stage namespaces (`STAGE_NAMESPACES` in the Deployment, default `dev,qa,test,stage,prod`) is shown as an app with a stage: one card per app (name from the `app` label), one link per stage with the version (`app.kubernetes.io/version`). `/stage` and `/version` set them explicitly for other namespaces.
-- **Docker**: every service in `docker/*/docker-compose.yml` that has the labels `portal.name` and `portal.url` (the NetBird reverse proxy address, `https://<app>.proxy.rjst.de`). Optional: `portal.group`, `portal.description`, `portal.icon` (Devicon name). The list comes from the Git repository (`master`), so a service appears once it is merged, not once its container runs.
-- **Static**: services that are neither a `VirtualService` nor in `docker/` (NetBird on its own host) and external links (group `External`: Hetzner, ZAP-Hosting, GitHub; group `AI`: Claude, ChatGPT, Meshy; group `Development`: `localhost` links to Swagger UI, Springwolf UI and Microcks, which only work on the machine running them) are listed in the `STATIC_SERVICES` env var of the generator container, a JSON list of `{name, url, group, description, icon}`.
-
-Needs the usual NetBird steps by hand: a CNAME `portal` in the zone.
 
 ##### kubectl through NetBird (API server proxy)
 

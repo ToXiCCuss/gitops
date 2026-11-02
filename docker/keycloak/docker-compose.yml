@@ -15,7 +15,7 @@ services:
     ports:
       - "8180:8080"
     labels:
-      # Link on the portal page (kubernetes/management/kubectl/portal.yaml)
+      # Catalog link (portal.* labels)
       portal.name: "Keycloak"
       portal.url: "https://auth.proxy.rjst.de"
       portal.group: "Management"
