@@ -1,13 +1,12 @@
 {
-  "buckets": ["backups", "databases", "vault", "pelican", "netbird", "tofu-state", "forgejo", "leantime"],
+  "buckets": ["backups", "databases", "vault", "pelican", "netbird", "forgejo", "leantime"],
   "identities": [
     { "name": "restic-backup", "access": "readwrite", "buckets": ["backups", "databases", "vault", "netbird", "forgejo", "leantime"] },
     { "name": "vault", "access": "readwrite", "buckets": ["vault"] },
     { "name": "pelican", "access": "readwrite", "buckets": ["pelican"] },
     { "name": "netbird", "access": "readwrite", "buckets": ["netbird"] },
-    { "name": "tofu-state", "access": "readwrite", "buckets": ["tofu-state"] },
     { "name": "forgejo", "access": "readwrite", "buckets": ["forgejo"] },
     { "name": "leantime", "access": "readwrite", "buckets": ["leantime"] },
-    { "name": "offsite-sync", "access": "read", "buckets": ["backups", "databases", "vault", "pelican", "netbird", "tofu-state", "forgejo", "leantime"] }
+    { "name": "offsite-sync", "access": "read", "buckets": ["backups", "databases", "vault", "pelican", "netbird", "forgejo", "leantime"] }
   ]
 }
