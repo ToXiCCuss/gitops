@@ -8,7 +8,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 | `docker/` | One Docker Compose project per service on the Docker host (restic-backup, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`, on the Docker host hourly from 08:00 to 20:00 by a systemd timer. Images are pinned by digest and updated by Renovate. |
 | `istio/` | `IstioOperator` file for the manual `istioctl install` (outside ArgoCD). |
 | `kubernetes/` | ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, spring). |
-| `scripts/` | Helper scripts: Ansible secrets, backup host setup, Vault (PowerShell), database administration, Linux benchmarks. |
+| `scripts/` | Helper scripts: Ansible secrets, backup host setup, Vault restore, database administration, Linux benchmarks. |
 
 ## Contents
 
@@ -363,7 +363,7 @@ The secrets of a project are in Vault (KV engine `docker`, secret `docker/<proje
 
 New or changed secret:
 
-1. Change the secret in Vault on Windows: `vault kv patch docker/<project> NAME=value` (`vault kv put` replaces the whole secret). A new variable in the example file after a `git pull` is reported by `deploy.sh` in the same way.
+1. Change the secret in Vault with an admin token: `vault kv patch docker/<project> NAME=value` (`vault kv put` replaces the whole secret). A new variable in the example file after a `git pull` is reported by `deploy.sh` in the same way.
 2. `sudo scripts/docker/deploy.sh <project>`: Compose sees the changed environment and recreates the container within seconds. The data lives in folders on the host and stays.
 3. The S3 keys of `restic-backup`, `offsite-sync` and `vault-backup` are not in `docker/<project>`: `deploy.sh` adds them from the S3 identity (`docker/s3/<identity>`, see [Setup RustFS](#setup-rustfs); `vault-backup` uses the identity `vault`).
 
@@ -488,7 +488,7 @@ After the first deploy check the metric: `curl -s localhost:9100/metrics | grep 
    ```
 
 4. Set up RustFS (section [Setup RustFS](#setup-rustfs)): create the keys of the identities in Vault, deploy `rustfs`, then `sudo scripts/docker/setup-rustfs.sh` creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird`, the users and the policies. `restic-backup` and `offsite-sync` read their keys, `vault-backup` those of the identity `vault`, all from Vault.
-5. Put the secrets of the projects into Vault (`vault kv put docker/<project> ...`, on Windows). `deploy.sh` stops and lists what is missing:
+5. Put the secrets of the projects into Vault (`vault kv put docker/<project> ...`, with an admin token). `deploy.sh` stops and lists what is missing:
 
    | Secret in Vault | Keys |
    |---|---|
@@ -521,7 +521,7 @@ Keep these in the password manager, nothing can be read without them and they ar
 
 - the restic passwords of the repositories `docker` and `databases` (project `restic-backup`), `vault` (project `vault-backup`) and `netbird` (`/root/restic`)
 - the `rclone.conf` of pCloud (the token)
-- the Vault unseal keys and the root token (printed once by `init-vault.ps1`) and the Ansible vault password (`ansible/.vault_pass`)
+- the Vault unseal keys and the root token (printed once by `vault operator init`) and the Ansible vault password (`ansible/.vault_pass`)
 
 | Data | Restore with |
 |---|---|
@@ -580,7 +580,7 @@ The dumps are plain SQL files, one per database, in the repository `databases`: 
 
 #### Vault
 
-1. Vault runs (Argo, `kube-vault.yaml`) and is initialised and unsealed (`init-vault.ps1` on a fresh Vault).
+1. Vault runs (Argo, `kube-vault.yaml`) and is initialised and unsealed (`vault operator init` on a fresh Vault, see [Initialize Vault](#3-initialize-vault-and-populate-secrets)).
 2. On a host with the `vault` CLI: `VAULT_ADDR` and `VAULT_TOKEN` (root token) set, and `/etc/vault-backup.cred` with the lines `S3_ENDPOINT=...`, `AWS_ACCESS_KEY_ID=...` and `AWS_SECRET_ACCESS_KEY=...` (identity `vault` or `restic-backup`).
 3. Put the restic password of the Vault repository into a file and run the script, it lists the snapshots and asks which one to restore:
 
@@ -686,12 +686,12 @@ The dumps are written to the scratch folder `/dump` (`/root/docker/restic-backup
    docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 9000
    ```
 
-4. The host cannot read a password from Vault, so copy them on Windows into the secret of the project (a new `RESTIC_PASSWORD_DATABASES` too, `openssl rand -base64 24`, also into the password manager). `vault kv patch` keeps the other keys:
+4. The host cannot read a password from Vault, so copy them into the secret of the project (a new `RESTIC_PASSWORD_DATABASES` too, `openssl rand -base64 24`, also into the password manager). `vault kv patch` keeps the other keys:
 
-   ```powershell
-   vault kv patch docker/restic-backup `
-     POSTGRES_PASSWORD=$(vault kv get -field=password databases/postgresql/backup) `
-     MARIADB_PASSWORD=$(vault kv get -field=password databases/mariadb/backup) `
+   ```bash
+   vault kv patch docker/restic-backup \
+     POSTGRES_PASSWORD=$(vault kv get -field=password databases/postgresql/backup) \
+     MARIADB_PASSWORD=$(vault kv get -field=password databases/mariadb/backup) \
      RESTIC_PASSWORD_DATABASES=<new password>
    ```
 
@@ -716,7 +716,7 @@ Nightly `rclone sync` of the RustFS S3 to pCloud (05:00 UTC, `SYNC_HOUR`), follo
 
 Buckets, users and policies come from `docker/rustfs/identities.json` (names and buckets, no keys). The keys are in Vault (`docker/s3/<name>`):
 
-1. On Windows: `.\scripts\vault\create-s3-identities.ps1 -VaultToken <token>` creates the missing keys. It never changes an existing one. Read a key with `vault kv get docker/s3/<name>` (for Pelican and NetBird).
+1. Create the missing keys once with the loop over `identities.json` in [Secrets](#secrets) (step 3). It never changes an existing key. Read a key with `vault kv get -field=secret_key docker/s3/<name>` (for Pelican and NetBird).
 2. On the Docker host (after the steps below, RustFS running, the AppRole files in place, see [Secrets from Vault](#secrets-from-vault)): `sudo scripts/docker/setup-rustfs.sh` creates the buckets with the root key of the secret `docker/rustfs` (read with the AppRole), then a policy and a user per identity through the admin API of RustFS (`add-canned-policy`, `add-user`, `set-user-or-group-policy`, signed with the root key by `curl --aws-sigv4`, so `curl` 7.75 or newer). The script names the identity and prints the answer of RustFS when a step is refused. Last it tests every identity with its own keys: it lists its buckets, writes (`readwrite`) or must not write (`read`), and can neither write nor list a bucket outside its list.
 3. The firewall rule for port `9000` from the Docker networks is in `ansible/group_vars/all/main.yml` (run the Ansible playbook for the host).
 4. Keycloak: set `RUSTFS_CLIENT_SECRET` in the Vault secret `docker/keycloak-config` (`openssl rand -base64 32`), then `sudo scripts/docker/deploy.sh keycloak-config`. That creates the client `rustfs` and its client roles `consoleAdmin`, `readwrite` and `readonly` (the names of the RustFS policies). The deploy of `keycloak-config` stops with an undefined variable until the secret is set.
@@ -843,7 +843,7 @@ What is **not** in the file: users, their passwords and their group membership. 
 - The issuer of every app is `https://auth.proxy.rjst.de/realms/rjst`. An app creates its own user at the first login and reads the roles from the token at every login.
 - The permissions are set per app: every app has its own client roles (Grafana: `admin`, `editor`, `viewer`). A user gets the roles of the apps he may use in the Keycloak UI (**Users > Role mapping > Client roles**). For many users create a group in the UI, give it the roles and put the users into it, the roles are inherited. A user without a role of an app is refused by that app, what the other apps do is not affected.
 - A changed role is effective at the next login. The client has a mapper that puts its roles into the token as the claim `roles`; the app turns them into its own roles (in `kubernetes/monitoring/helm/prometheus.yaml`: `role_attribute_path`).
-- The client secrets are generated by `generate-secrets.ps1` into Vault (Grafana: `argocd/data/prometheus#oidc.client_secret`). The same value goes into the Vault secret `docker/keycloak-config` (`GRAFANA_CLIENT_SECRET`), the file refers to it as `$(env:GRAFANA_CLIENT_SECRET)`.
+- The client secrets are generated into Vault ([Secrets](#secrets), step 3) (Grafana: `argocd/data/prometheus#oidc.client_secret`). The same value goes into the Vault secret `docker/keycloak-config` (`GRAFANA_CLIENT_SECRET`), the file refers to it as `$(env:GRAFANA_CLIENT_SECRET)`.
 - The Vault secret `docker/keycloak-config` also needs a user of the realm `master` with the role `admin` (`KEYCLOAK_USER`, `KEYCLOAK_PASSWORD`).
 
 A new app: one more client block with its roles and the mapper in the file, its secret in Vault and in the Vault secret `docker/keycloak-config` (with a new variable in `default.env` and `vault.env.example`), then `sudo scripts/docker/deploy.sh keycloak-config`. Check the result with `docker logs keycloak-config`.
@@ -852,7 +852,7 @@ A new app: one more client block with its roles and the mapper in the file, its 
 
 Argo CD is not rendered by AVP, so `oidc.config` in `kubernetes/argocd-values.yaml` only refers to the Secret `argocd-oidc` (`kubernetes/secrets/argocd-oidc.yaml`). Roles: `admin` is `role:admin`, `viewer` is `role:readonly`. A user without a role can log in, but sees nothing. The login works in the browser only: the client is confidential, so `argocd login --sso` does not work, use the local `admin` for the CLI.
 
-1. `generate-secrets.ps1` writes `argocd/data/argocd#oidc.client_secret`. Before the merge copy the value into the Vault secret `docker/keycloak-config` as `ARGOCD_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/argocd`). The variable is required: without it the deploy timer fails on `keycloak-config`.
+1. The client secret `argocd/data/argocd#oidc.client_secret` is one of the generated values ([Secrets](#secrets), step 3). Before the merge copy the value into the Vault secret `docker/keycloak-config` as `ARGOCD_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/argocd`). The variable is required: without it the deploy timer fails on `keycloak-config`.
 2. Merge, then `sudo scripts/docker/deploy.sh keycloak-config` creates the client and its roles.
 3. Hard refresh the app `secrets` in Argo CD, a plain refresh does not pick up the new Vault value.
 4. Apply `kubernetes/argocd-values.yaml` with the `helm upgrade` from [Bootstrap ArgoCD](#1-bootstrap-argocd).
@@ -958,24 +958,109 @@ kubectl apply -f kubernetes/kube-vault.yaml
 
 Vault is deliberately **not** part of a domain app: everything that needs AVP depends on Vault being up, unsealed and populated, so Vault is deployed on its own first and populated (next step) before any Secret is rendered.
 
-#### 3. Populate Vault secrets
+#### 3. Initialize Vault and populate secrets
 
 The `avp-helm`/`avp` ArgoCD CMP plugins read secrets from Vault at sync time — if a path is missing, that Application's manifests simply fail to render. Populate these **before** applying the `secrets` app in step 4 (paths are Vault KV v2, under `argocd/data/...`).
 
-Three PowerShell scripts in `scripts/vault/` automate this against the Vault from step 2 (port-forward it first: `kubectl port-forward -n vault svc/vault 8200:8200`):
+No script is needed, the commands below use the `vault` CLI and `kubectl`. On the very first setup nothing is deployed yet, so reach the Vault from step 2 through a port-forward (`kubectl port-forward -n vault svc/vault 8200:8200`) and `export VAULT_ADDR=http://127.0.0.1:8200`. Later `https://vault.k8sdev.rjst.de` works over NetBird.
 
-The scripts default to `-VaultAddr https://vault.k8sdev.rjst.de` (reachable over NetBird once `infra` is deployed). On the very first setup nothing is deployed yet, so the commands below pass the port-forward address explicitly (`init-vault.ps1` defaults to it).
+##### Initialize (fresh Vault only)
 
-```powershell
-# One-time only, right after step 2 deploys a fresh, uninitialized Vault:
-.\scripts\vault\init-vault.ps1 -VaultAddr http://127.0.0.1:8200
-
-# Generates the app-internal passwords, and prompts for the values that
-# can't be generated (Hetzner/NetBird tokens, docker01 DB credentials).
-# Safe to re-run - blank answers never overwrite
-# existing data. Writes nothing to disk.
-.\scripts\vault\generate-secrets.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <root-token-from-init>
+```bash
+vault operator init -key-shares=5 -key-threshold=3
 ```
+
+This prints the five unseal keys and the root token **once**: copy them into your password manager, they are saved nowhere else. Unseal with three of the keys (`vault operator unseal`, three times). The unsealer needs all five keys. They cannot come from Vault itself (circular on a first install: Vault must be unsealed for AVP to read them back), so the Secret `vault-unsealer-config` is applied straight into the cluster. The keys are typed without echo and stay out of the process list:
+
+```bash
+{
+  printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: vault-unsealer-config\n  namespace: vault\n  labels:\n    vault-unsealer.bakito.net/stateful-set: vault\ntype: Opaque\nstringData:\n'
+  for i in 1 2 3 4 5; do read -rsp "Unseal key $i: " key </dev/tty; echo >&2; printf '  unsealKey%s: "%s"\n' "$i" "$key"; done
+} | kubectl apply -f -
+```
+
+Then `vault login` with the root token.
+
+##### KV engines and Kubernetes auth (required)
+
+```bash
+for engine in argocd jenkins dev prod; do vault secrets enable -path=$engine -version=2 kv; done
+```
+
+The engines `docker` and `databases` and the AppRole method are in [AppRole logins of the hosts](#approle-logins-of-the-hosts). The Kubernetes auth method lets workloads log in to Vault with their own ServiceAccount. It needs `kubectl` against the cluster:
+
+```bash
+kubectl -n vault create serviceaccount vault-auth
+kubectl create clusterrolebinding vault-auth-delegator --clusterrole=system:auth-delegator --serviceaccount=vault:vault-auth
+vault auth enable kubernetes
+vault write auth/kubernetes/config \
+  token_reviewer_jwt="$(kubectl -n vault create token vault-auth --duration=87600h)" \
+  kubernetes_host=https://kubernetes.default.svc:443 \
+  kubernetes_ca_cert="$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' | base64 -d)" \
+  disable_local_ca_jwt=true
+```
+
+Vault reaches the API server through `https://kubernetes.default.svc:443`, not through the address in your kubeconfig, so a new server IP does not break the login.
+
+The `argocd` role matters most: ArgoCD's AVP plugin itself logs in to Vault through it (`AVP_AUTH_TYPE=k8s`, role `argocd`, see `argocd-values.yaml`), so nothing that uses AVP renders without it, **including the Vault Config Operator** that would otherwise create it. On a fresh Vault create this one policy and role by hand, the operator takes them over later with the same values (the roles `jenkins`, `spring_dev` and `spring_prod` come from the operator, [below](#vault-config-operator)):
+
+```bash
+vault policy write argocd - <<'EOF'
+path "argocd/data/*" {
+  capabilities = ["read"]
+}
+EOF
+vault write auth/kubernetes/role/argocd bound_service_account_names=argocd-repo-server bound_service_account_namespaces=argocd policies=argocd ttl=24h audience=https://kubernetes.default.svc.cluster.local
+```
+
+Jenkins reads `jenkins/data/jenkins` in every pipeline: `cicd-library` logs in through the role `jenkins` with the token of the pipeline pod. The role accepts the ServiceAccounts `default` and `helm-deployer`, because the pod of a pipeline that deploys runs as `helm-deployer` (`cicd/kubectl/helm-deployer.yaml`) and helm needs no kubeconfig. The Spring apps don't read from Vault at runtime yet; wiring them up (Vault Agent injector, Spring Cloud Vault, etc.) is a separate, later step, app by app.
+
+##### Secrets
+
+Generated values are 32 or 64 alphanumeric characters. `kv_set` changes single keys of a secret and keeps the others, and it creates the secret when it does not exist yet (`vault kv patch` alone fails on a missing secret, and `-cas=0` never overwrites). `put_new` creates a key only when it is missing, so the block can be run again. The generated keys are listed once, in `scripts/vault/generated-secrets.txt` (`<secret> <key> <length>`): a new app adds its lines there. Never replace `security.secret_key` of Forgejo, it encrypts the database (`put_new` does not):
+
+```bash
+gen() { openssl rand -base64 300 | tr -dc "${2:-A-Za-z0-9}" | head -c "${1:-32}"; }
+kv_set() { vault kv patch -method=rw "$@" 2>/dev/null || vault kv put -cas=0 "$@"; }
+put_new() { vault kv get -mount=argocd -field="$2" "$1" >/dev/null 2>&1 || kv_set -mount=argocd "$1" "$2=$(gen "${3:-32}")"; }
+grep -vE '^(#|$)' scripts/vault/generated-secrets.txt | while read -r secret key length; do put_new "$secret" "$key" "$length"; done
+```
+
+The S3 keys of the RustFS identities (`docker/rustfs/identities.json`, run on the Docker host or anywhere with the checkout and `jq`). A key that exists is never changed (`-cas=0` writes only when the secret does not exist yet):
+
+```bash
+for name in $(jq -r '.identities[].name' docker/rustfs/identities.json); do
+  vault kv get -mount=docker -field=access_key "s3/$name" >/dev/null 2>&1 && continue
+  vault kv put -mount=docker -cas=0 "s3/$name" "access_key=$(gen 20 A-Z0-9)" "secret_key=$(gen 40)"
+done
+```
+
+The backup of Forgejo and Leantime needs the S3 keys of its identity in the cluster, and the nightly check of `restic-backup` needs the restic passwords. The AVP plugin may only read `argocd/` and the Docker host only `docker/`, so these values are copied (run it again after a change):
+
+```bash
+for app in forgejo leantime; do
+  kv_set -mount=argocd "$app" "backup.s3_access_key=$(vault kv get -mount=docker -field=access_key s3/$app)" "backup.s3_secret_key=$(vault kv get -mount=docker -field=secret_key s3/$app)"
+done
+kv_set -mount=docker restic-backup "RESTIC_PASSWORD_FORGEJO=$(vault kv get -mount=argocd -field=backup.restic_password forgejo)" "RESTIC_PASSWORD_LEANTIME=$(vault kv get -mount=argocd -field=backup.restic_password leantime)"
+```
+
+Values that must match reality are typed, never generated (`read -s` keeps them out of the history and the process list):
+
+```bash
+read -rsp 'Hetzner Cloud API token (DNS read/write): ' token; echo; kv_set -mount=argocd hetzner token="$token"
+read -rsp 'NetBird Management API token: ' token; echo; kv_set -mount=argocd netbird api_key="$token"
+```
+
+The database logins come from the scripts on docker01 (`db_create.sh <name>` first, it stores the password of the owner in `databases/...`):
+
+```bash
+kv_set -mount=argocd forgejo database.username=forgejo_owner "database.password=$(vault kv get -mount=databases -field=password postgresql/forgejo_owner)"
+kv_set -mount=argocd leantime database.username=leantime_owner "database.password=$(vault kv get -mount=databases -field=password mariadb/leantime_owner)"
+kv_set -mount=argocd developer-portal database.username=developer_portal_owner "database.password=$(vault kv get -mount=databases -field=password postgresql/developer_portal_owner)"
+kv_set -mount=argocd harbor database.username=<owner> "database.password=$(vault kv get -mount=databases -field=password postgresql/<owner>)"
+```
+
+Overview of the keys per path (the generated ones come from `scripts/vault/generated-secrets.txt`, the others are typed or copied):
 
 | Vault path | Keys |
 |---|---|
@@ -986,29 +1071,9 @@ The scripts default to `-VaultAddr https://vault.k8sdev.rjst.de` (reachable over
 | `argocd/data/jenkins` | `password` (Jenkins admin password), `github_app_private_key` (PKCS#8 PEM of the GitHub App, see Jenkins) |
 | `argocd/data/argocd` | `oidc.client_secret` (secret of the Keycloak client `argocd`, generated, see Keycloak) |
 
-> **Note:** Everything is in Vault except Vault's own unseal keys. Those aren't in the table above and aren't stored in Vault at all - they're circular on a *first* install (Vault must already be unsealed for AVP to read them back out of it). `init-vault.ps1` above creates them via `vault operator init`, unseals Vault, and applies the `vault-unsealer-config` Secret straight into the cluster with `kubectl` (bypassing AVP for that one bootstrap secret). The root token and unseal keys are only printed to the console, once - it waits for Enter so you can copy them into your password manager. They are not saved anywhere else.
-
-##### Kubernetes auth (required)
-
-Run `scripts/vault/configure-vault-auth.ps1` once, after `init-vault.ps1` (it needs `kubectl` against the cluster and a Vault token with admin rights, e.g. the root token from init). It sets up everything that lets workloads authenticate to Vault directly with their own ServiceAccount:
-
-- Enables Vault's `kubernetes` auth method and configures it for this cluster.
-- Creates the `argocd`, `jenkins`, `dev` and `prod` KV v2 engines.
-- Writes the policies and auth roles for the Spring apps (`dev`/`prod` namespaces). Those of ArgoCD and Jenkins belong to the Vault Config Operator (below).
-
-The `argocd` role matters most: ArgoCD's AVP plugin itself logs in to Vault through it (`AVP_AUTH_TYPE=k8s`, role `argocd`, see `argocd-values.yaml`), so nothing that uses AVP - including the `secrets` app - renders without it.
-
-Jenkins reads `jenkins/data/jenkins` in every pipeline: `cicd-library` logs in through the role `jenkins` with the token of the pipeline pod. The role accepts the ServiceAccounts `default` and `helm-deployer`, because the pod of a pipeline that deploys runs as `helm-deployer` (`cicd/kubectl/helm-deployer.yaml`) and helm needs no kubeconfig. The Spring apps don't read from Vault at runtime yet; wiring them up (Vault Agent injector, Spring Cloud Vault, etc.) is a separate, later step, app by app.
-
-```powershell
-.\scripts\vault\configure-vault-auth.ps1 -VaultAddr http://127.0.0.1:8200 -VaultToken <token>
-```
-
-Vault reaches the API server through `https://kubernetes.default.svc:443` (parameter `-KubernetesHost`), not through the address in your kubeconfig, so a new server IP does not break the login. The script is safe to re-run.
-
 ##### Vault Config Operator
 
-The [vault-config-operator](https://github.com/redhat-cop/vault-config-operator) writes Vault configuration (mounts, policies, auth roles) from resources in Git, so that no script has to be run for it. `infra/helm/vault-config-operator.yaml` installs it, the resources are in `infra/kubectl/kube-vault-config.yaml`. Removing a resource from the file removes it in Vault. The file holds the policies and roles `argocd` and `jenkins`, the AppRoles `docker01` and `dbadmin` with their policies, and the policy `vault_snapshot`. Still written by script: the roles `spring_dev` and `spring_prod` and the config of the kubernetes auth method (`configure-vault-auth.ps1`). The Keycloak login is in `infra/kubectl/kube-vault-config-oidc.yaml`. The KV engines and the auth methods are not in the file on purpose: removing one would delete everything below it.
+The [vault-config-operator](https://github.com/redhat-cop/vault-config-operator) writes Vault configuration (mounts, policies, auth roles) from resources in Git, so that no script has to be run for it. `infra/helm/vault-config-operator.yaml` installs it, the resources are in `infra/kubectl/kube-vault-config.yaml`. Removing a resource from the file removes it in Vault. The file holds the policies and roles `argocd`, `jenkins`, `spring_dev` and `spring_prod`, the AppRoles `docker01` and `dbadmin` with their policies, and the policy `vault_snapshot`. Still by hand (step 3): the config of the kubernetes auth method and, on a fresh Vault, the policy and role `argocd` that the operator itself needs to be rendered. The Keycloak login is in `infra/kubectl/kube-vault-config-oidc.yaml`. The KV engines and the auth methods are not in the file on purpose: removing one would delete everything below it.
 
 Every resource names the ServiceAccount `vault/vault-config` and the Vault role `vault-config` to log in. Create the role once, **before** the first sync, with an admin token inside the Vault pod (`kubectl -n vault exec -it vault-0 -- sh`, then `vault login`). The policy is as powerful as an admin, because the operator may create policies:
 
@@ -1070,7 +1135,7 @@ for group in admin developer; do
 done
 ```
 
-- `generate-secrets.ps1` writes the client secret to `argocd/data/vault#oidc.client_secret`. The same value goes into the Vault secret `docker/keycloak-config` as `VAULT_CLIENT_SECRET`, then `sudo scripts/docker/deploy.sh keycloak-config`.
+- The client secret `argocd/data/vault#oidc.client_secret` is one of the generated values ([Secrets](#secrets), step 3). The same value goes into the Vault secret `docker/keycloak-config` as `VAULT_CLIENT_SECRET`, then `sudo scripts/docker/deploy.sh keycloak-config`.
 - Argo CD renders the client secret as the Secret `vault/vault-oidc` (`kubernetes/secrets/vault-oidc.yaml`) and the operator reads it there, so the operator needs no right on `argocd/data/vault`.
 - Log in in the UI with the method **OIDC** and type `default` into the field **Role** (the UI does not fill it in by itself, empty gives "Invalid role"), or with `vault login -method=oidc`. Give the users the role `vault` in Keycloak (**Role mapping, client roles**).
 - Vault reads the discovery of Keycloak when the configuration is written and the Pod needs `auth.proxy.rjst.de` at the login. If it fails, look at the DNS of the cluster first.
@@ -1166,11 +1231,15 @@ The proxy service account may impersonate any user and group, so the proxy pod i
 - **Global shared library `cicd-library`** (`https://github.com/RJST-DEVELOP/cicd-library.git`, version `master`, not loaded implicitly, fetched with the credential `github-app`).
 - **By hand, once:** the job `RJST-DEVELOP`: New Item, GitHub Organization, owner `RJST-DEVELOP`, credentials `github-app`.
 
-A new private key (for example when the old file is lost): generate one in the settings of the GitHub App (**Generate a private key**, several can exist at the same time, GitHub offers no API for this) and let the script do the rest. It converts the key to the unencrypted PKCS#8 PEM that Jenkins needs, writes it into Vault (the other keys of the secret stay), deletes the downloaded file and restarts Jenkins, which does not notice a changed Secret while it runs:
+A new private key (for example when the old file is lost): generate one in the settings of the GitHub App (**Generate a private key**, several can exist at the same time, GitHub offers no API for this) and convert it to the unencrypted PKCS#8 PEM that Jenkins needs. Write it into Vault (the other keys of the secret stay), delete the downloaded file and restart Jenkins, which does not notice a changed Secret while it runs:
 
-```powershell
-.\scripts\vault\set-jenkins-github-app-key.ps1 -VaultToken <token> -PemPath <downloaded>.pem -DeletePem -RestartJenkins
+```bash
+openssl pkcs8 -topk8 -nocrypt -in <downloaded>.pem | kv_set -mount=argocd jenkins github_app_private_key=-
+rm <downloaded>.pem
+kubectl -n jenkins rollout restart statefulset jenkins
 ```
+
+(`kv_set` is defined under [Secrets](#secrets) in step 3.)
 
 Build history lives only in the Jenkins volume, it is not backed up.
 
@@ -1178,7 +1247,7 @@ Build history lives only in the Jenkins volume, it is not backed up.
 
 `cicd/helm/forgejo.yaml` runs Forgejo (the LTS line, rootless image) as the package registry of the own libraries: Maven, and npm or Helm if needed. Container images stay in Harbor (its pull-through cache feeds k3s), Git stays on GitHub, so SSH and Actions are off. The chart creates everything at every start of the pod: the config, the local admin `localadmin` (the emergency login, password from Vault) and the auth source `keycloak`. Users log in with Keycloak only, there is no registration form and no anonymous access.
 
-- **Before the first sync:** `scripts/postgresql/db_create.sh forgejo` on docker01 (the password of `forgejo_owner` goes to Vault `databases/postgresql/forgejo_owner`), then `generate-secrets.ps1` (step 3): it generates `argocd/data/forgejo` (`admin.password`, `oidc.client_secret`, `security.secret_key`, `security.internal_token`) and asks for the database user and password. `security.secret_key` encrypts the secrets in the database (the client secret of the auth source, 2FA): never change it.
+- **Before the first sync:** `scripts/postgresql/db_create.sh forgejo` on docker01 (the password of `forgejo_owner` goes to Vault `databases/postgresql/forgejo_owner`), then the commands of [Secrets](#secrets) (step 3): `put_new` creates `argocd/data/forgejo` (`admin.password`, `oidc.client_secret`, `security.secret_key`, `security.internal_token`) and the last block copies the database user and password. `security.secret_key` encrypts the secrets in the database (the client secret of the auth source, 2FA): never change it.
 - **Keycloak:** the client `forgejo` in `docker/keycloak-config/realms/rjst.yaml`. Its secret goes into the Vault secret `docker/keycloak-config` as `FORGEJO_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/forgejo`) before the merge (the variable is required, without it the deploy timer fails on `keycloak-config`), then `sudo scripts/docker/deploy.sh keycloak-config`. Give the users the client role `forgejo` `user` or `admin`: a user without one is refused, `admin` makes a site admin. The first login creates the user, named after the Keycloak username (claim `nickname`).
 - **NetBird:** the CNAME `forgejo` in the zone (see step 5).
 - **Maven:** the packages belong to a user or an organization (e.g. an organization `rjst`). The repository URL is `https://forgejo.k8sdev.rjst.de/api/packages/<owner>/maven`, the same for `<distributionManagement>` (releases and snapshots) and `<repositories>`. Maven logs in with the Forgejo username and an access token with the scope `package` (**Settings > Applications**) in a `<server>` of `settings.xml`, never with the Keycloak password. Pods in the cluster reach the URL through the CoreDNS rewrite to the internal gateway.
@@ -1189,7 +1258,7 @@ The CronJob `forgejo-backup` (`cicd/kubectl/forgejo-backup.yaml`) follows the [b
 
 - The Application `forgejo` ignores `spec.replicas` of the Deployment (`ignoreDifferences` with `RespectIgnoreDifferences`), so Argo CD does not start Forgejo during the backup. The trap of the script starts it again when a step fails. If Forgejo stays at 0 anyway (the pod was killed), `ProbeFailed` on `https://forgejo.k8sdev.rjst.de` fires; start it with `kubectl -n forgejo scale deployment forgejo --replicas=1`.
 - Alerts: `CronJobBackupFailed` (a failed job of the last day), `CronJobBackupTooOld` (no success for 26 hours) and `CronJobBackupNeverReported` (kube-state-metrics), plus `ResticStepFailed` of the nightly check. They also cover `leantime-backup`.
-- Set up once, before the merge (Windows, with the root token): `create-s3-identities.ps1` (keys of the RustFS identity `forgejo`), `generate-secrets.ps1` (restic password `argocd/forgejo#backup.restic_password`, copies the S3 keys to `argocd/forgejo` and the restic password to `docker/restic-backup#RESTIC_PASSWORD_FORGEJO`). Keep the restic password in the password manager: without it the copy in pCloud cannot be read. The Secret `forgejo-backup` cannot be rendered without these values, and the `secrets` app would fail. After the merge, on docker01 once the checkout has the new `docker/rustfs/identities.json` (`git pull`): `sudo scripts/docker/setup-rustfs.sh` (bucket `forgejo`, identity `forgejo`, the rights of `restic-backup` and `offsite-sync`) and `sudo scripts/docker/deploy.sh restic-backup`, before the first run at 02:00 UTC.
+- Set up once, before the merge (with an admin token): the S3 keys of the RustFS identity `forgejo`, the restic password `argocd/forgejo#backup.restic_password` and the copies (the S3 keys to `argocd/forgejo`, the restic password to `docker/restic-backup#RESTIC_PASSWORD_FORGEJO`) come with [Secrets](#secrets) (step 3). Keep the restic password in the password manager: without it the copy in pCloud cannot be read. The Secret `forgejo-backup` cannot be rendered without these values, and the `secrets` app would fail. After the merge, on docker01 once the checkout has the new `docker/rustfs/identities.json` (`git pull`): `sudo scripts/docker/setup-rustfs.sh` (bucket `forgejo`, identity `forgejo`, the rights of `restic-backup` and `offsite-sync`) and `sudo scripts/docker/deploy.sh restic-backup`, before the first run at 02:00 UTC.
 - The pods reach the S3 as `docker01.server.lan:9000` through NetBird, like the database on port 5432: the node needs a NetBird policy that allows docker01 on TCP 9000. Check after the sync that the first run went through: `kubectl -n forgejo create job forgejo-backup-test --from=cronjob/forgejo-backup`, then `kubectl -n forgejo logs -f job/forgejo-backup-test`.
 
 Restore (replaces the data volume and the database; if a step fails, Forgejo stays stopped on purpose, fix it and run the job again):
@@ -1208,7 +1277,7 @@ Restore (replaces the data volume and the database; if a step fails, Forgejo sta
 
 `management/kubectl/leantime.yaml` runs Leantime as plain manifests, there is no official Helm chart. The database is `leantime` on the MariaDB of docker01, the environment with the secrets is the Secret `leantime` (`secrets/leantime.yaml`).
 
-- **Before the first sync:** `scripts/mariadb/db_create.sh leantime` on docker01 (the password of `leantime_owner` goes to Vault `databases/mariadb/leantime_owner`), then `generate-secrets.ps1` (step 3): it generates `argocd/data/leantime` (`oidc.client_secret`, `session.password`) and asks for the database user and password. The node needs a NetBird policy that allows docker01 on TCP 3306, otherwise the pod does not get ready.
+- **Before the first sync:** `scripts/mariadb/db_create.sh leantime` on docker01 (the password of `leantime_owner` goes to Vault `databases/mariadb/leantime_owner`), then the commands of [Secrets](#secrets) (step 3): `put_new` creates `argocd/data/leantime` (`oidc.client_secret`, `session.password`) and the last block copies the database user and password. The node needs a NetBird policy that allows docker01 on TCP 3306, otherwise the pod does not get ready.
 - **Keycloak:** the client `leantime` in `docker/keycloak-config/realms/rjst.yaml`. Its secret goes into the Vault secret `docker/keycloak-config` as `LEANTIME_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/leantime`) before the merge (the variable is required, without it the deploy timer fails on `keycloak-config`), then `sudo scripts/docker/deploy.sh keycloak-config`.
 - **NetBird:** the CNAME `leantime` in the zone (see step 5).
 - **First start:** open `https://leantime.k8sdev.rjst.de/install` as soon as the pod runs: the page creates the tables and the local admin, until then anyone in `k8s-users` can do that. Use the email address of your Keycloak user, then the Keycloak login works for this account too.
@@ -1227,7 +1296,7 @@ The Developer Portal is Backstage as our own build (repository `developer-portal
 
 Before the first deploy:
 
-- **Database:** `developer_portal` is declared in `databases/postgresql.yaml`, so `scripts/postgresql/apply_declared.sh` on docker01 creates it (`db_create.sh developer_portal` does the same alone; database names allow underscores only), then `generate-secrets.ps1` (step 3): it generates `argocd/data/developer-portal` (`oidc.client_secret`, `backend.secret`) and asks for the database user and password. Backstage creates one database per plugin unless `backend.database.pluginDivisionMode` is `schema`; set it, otherwise the login needs the right to create databases. The PostgreSQL subchart of the chart stays off.
+- **Database:** `developer_portal` is declared in `databases/postgresql.yaml`, so `scripts/postgresql/apply_declared.sh` on docker01 creates it (`db_create.sh developer_portal` does the same alone; database names allow underscores only), then the commands of [Secrets](#secrets) (step 3): `put_new` creates `argocd/data/developer-portal` (`oidc.client_secret`, `backend.secret`) and the last block copies the database user and password. Backstage creates one database per plugin unless `backend.database.pluginDivisionMode` is `schema`; set it, otherwise the login needs the right to create databases. The PostgreSQL subchart of the chart stays off.
 - **Keycloak:** the client `developer-portal` with the client roles `admin` and `user` in `docker/keycloak-config/realms/rjst.yaml`. The Developer Portal refuses a user without one of them, so give the roles in the Keycloak UI (**Users > Role mapping**) before the first login. Its secret goes into the Vault secret `docker/keycloak-config` as `DEVELOPER_PORTAL_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/developer-portal`) before the merge, like for Leantime, then `sudo scripts/docker/deploy.sh keycloak-config`.
 - **NetBird:** the CNAME `developer-portal` in the zone (see step 5).
 - **Order:** the Gateway and the VirtualService exist after the merge, the app answers once Jenkins has deployed the release. A probe in `monitoring/kubectl/probes.yaml` is added with the first release, not before: it would alert until then.

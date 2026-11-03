@@ -209,3 +209,95 @@ spec:
     path "sys/storage/raft/snapshot" {
       capabilities = ["read"]
     }
+
+---
+
+# Read-only on the secrets of the Spring apps in dev. Nothing reads them yet, the apps are wired up app by app later.
+# The names in Vault have an underscore, which a Kubernetes object name cannot have: spec.name is the name in Vault
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Policy
+metadata:
+  name: spring-dev
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  name: spring_dev
+  type: acl
+  policy: |
+    path "dev/data/*" {
+      capabilities = ["read"]
+    }
+
+---
+
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: KubernetesAuthEngineRole
+metadata:
+  name: spring-dev
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  name: spring_dev
+  path: kubernetes
+  policies:
+    - spring_dev
+  targetNamespaces:
+    targetNamespaces:
+      - dev
+  targetServiceAccounts:
+    - spring
+  audience: https://kubernetes.default.svc.cluster.local
+  tokenTTL: 86400
+
+---
+
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Policy
+metadata:
+  name: spring-prod
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  name: spring_prod
+  type: acl
+  policy: |
+    path "prod/data/*" {
+      capabilities = ["read"]
+    }
+
+---
+
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: KubernetesAuthEngineRole
+metadata:
+  name: spring-prod
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  name: spring_prod
+  path: kubernetes
+  policies:
+    - spring_prod
+  targetNamespaces:
+    targetNamespaces:
+      - prod
+  targetServiceAccounts:
+    - spring
+  audience: https://kubernetes.default.svc.cluster.local
+  tokenTTL: 86400

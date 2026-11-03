@@ -2,7 +2,7 @@
 # =============================================================================
 # setup-rustfs.sh
 # Creates the buckets, users and policies in RustFS from docker/rustfs/identities.json. The S3 keys
-# of the identities are read from Vault (docker/s3/<name>, created by scripts/vault/create-s3-identities.ps1),
+# of the identities are read from Vault (docker/s3/<name>, created as in the README, Secrets, step 3),
 # the root key of RustFS from the secret docker/rustfs (RUSTFS_ACCESS_KEY, RUSTFS_SECRET_KEY). Idempotent: run it again after a change of
 # identities.json or after a new RustFS.
 #
@@ -105,7 +105,7 @@ identity_keys() {
     response=$(vault_header | curl -sS -m "$VAULT_TIMEOUT_SECONDS" -H @- "$VAULT_ADDR/v1/$VAULT_KV_MOUNT/data/s3/$1") \
         || { error "$1: $VAULT_ADDR is not reachable"; return 1; }
     jq -er '.data.data | select(.access_key and .secret_key) | "\(.access_key) \(.secret_key)"' <<<"$response" 2>/dev/null \
-        || { error "$1: no keys in $VAULT_KV_MOUNT/s3/$1 ($(vault_errors "$response")). Run scripts/vault/create-s3-identities.ps1"; return 1; }
+        || { error "$1: no keys in $VAULT_KV_MOUNT/s3/$1 ($(vault_errors "$response")). Create the keys as in the README, Secrets, step 3"; return 1; }
 }
 
 # ── Root key and tools ────────────────────────────────────────────────────────

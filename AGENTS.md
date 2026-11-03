@@ -51,6 +51,5 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 <!-- file-type-rules:start -->
 ## File-type rules
 Before creating or editing a file that matches a pattern, read the rule file and follow it.
-- `**/*.ps1`, `**/*.psm1`, `**/*.psd1`: `.claude/rules/powershell.md`
 - `**/*.sh`, `**/*.bash`: `.claude/rules/shell.md`
 <!-- file-type-rules:end -->

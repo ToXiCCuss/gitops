@@ -51,7 +51,7 @@ DOCKER_DIR="$REPO_DIR/docker"
 ALL_PROJECTS=(rustfs restic-backup keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
 
 # Projects that need the keys of an S3 identity (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), as project:identity.
-# The keys are docker/s3/<identity> in Vault (scripts/vault/create-s3-identities.ps1)
+# The keys are docker/s3/<identity> in Vault (README: Secrets, step 3)
 S3_IDENTITIES=(restic-backup:restic-backup offsite-sync:offsite-sync vault-backup:vault)
 VAULT_ADDR="${VAULT_ADDR:-https://vault.k8sdev.rjst.de}"
 VAULT_KV_MOUNT="docker"
@@ -228,7 +228,7 @@ append_s3_keys() {
         .data.data | select(.access_key and .secret_key)
         | "AWS_ACCESS_KEY_ID=\($quote)\(.access_key)\($quote)", "AWS_SECRET_ACCESS_KEY=\($quote)\(.secret_key)\($quote)"' \
         <<<"$response" >> "$3") \
-        || { error "$1: $VAULT_KV_MOUNT/s3/$2 holds no access_key and secret_key (scripts/vault/create-s3-identities.ps1)"; return 1; }
+        || { error "$1: $VAULT_KV_MOUNT/s3/$2 holds no access_key and secret_key (README: Secrets, step 3)"; return 1; }
 }
 
 # write_vault_env <project>: the secrets of the project from Vault to /run/gitops/<project>/vault.env
