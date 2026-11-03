@@ -1,0 +1,143 @@
+# The Keycloak login of Vault (auth/oidc), written by the vault-config-operator: the config with the client, the role, the two
+# policies and the two external groups. The client secret reaches the config through the Secret vault-oidc
+# (kubernetes/secrets/vault-oidc.yaml), so the operator needs no read right on that path in Vault.
+#
+# Deliberately not here: the auth method itself and the group aliases (admin, developer on the mount oidc). Removing the
+# method would delete the login, an alias cannot be taken over once it exists (the operator would create it again and fail).
+# README: Login with Keycloak (OIDC).
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: JWTOIDCAuthEngineConfig
+metadata:
+  name: oidc
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  path: oidc
+  OIDCDiscoveryURL: https://auth.proxy.rjst.de/realms/rjst
+  OIDCClientID: vault
+  OIDCCredentials:
+    secret:
+      name: vault-oidc
+    passwordKey: clientSecret
+  defaultRole: default
+
+---
+
+# A user without one of the roles is refused at the login (boundClaims). The roles come from the Keycloak client vault
+# (docker/keycloak-config/realms/rjst.yaml) in the claim roles.
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: JWTOIDCAuthEngineRole
+metadata:
+  name: oidc
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  path: oidc
+  name: default
+  roleType: oidc
+  userClaim: preferred_username
+  groupsClaim: roles
+  boundClaims:
+    roles:
+      - admin
+      - developer
+  allowedRedirectURIs:
+    - https://vault.k8sdev.rjst.de/ui/vault/auth/oidc/oidc/callback
+    - http://localhost:8250/oidc/callback
+  OIDCScopes:
+    - openid
+    - profile
+    - email
+  tokenTTL: 8h
+
+---
+
+# The names in Vault have an underscore, which a Kubernetes object name cannot have: spec.name is the name in Vault
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Policy
+metadata:
+  name: keycloak-admin
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  name: keycloak_admin
+  type: acl
+  policy: |
+    path "*" {
+      capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+    }
+
+---
+
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Policy
+metadata:
+  name: keycloak-developer
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  name: keycloak_developer
+  type: acl
+  policy: |
+    path "dev/data/*" {
+      capabilities = ["create", "read", "update", "list"]
+    }
+    path "dev/metadata/*" {
+      capabilities = ["read", "list"]
+    }
+    path "prod/data/*" {
+      capabilities = ["create", "read", "update", "list"]
+    }
+    path "prod/metadata/*" {
+      capabilities = ["read", "list"]
+    }
+
+---
+
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Group
+metadata:
+  name: admin
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  type: external
+  policies:
+    - keycloak_admin
+
+---
+
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Group
+metadata:
+  name: developer
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  type: external
+  policies:
+    - keycloak_developer

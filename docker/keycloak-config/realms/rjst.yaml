@@ -27,7 +27,7 @@ roles:
       - name: developer
         description: Harbor group developer
     # Vault: admin may do everything, developer may read and write the secrets in dev/ and prod/. The roles are external groups
-    # with a policy each in Vault (scripts/vault/configure-vault-oidc.ps1).
+    # with a policy each in Vault (kubernetes/infra/kubectl/kube-vault-config-oidc.yaml).
     vault:
       - name: admin
         description: Vault administrator

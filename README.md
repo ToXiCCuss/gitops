@@ -1008,7 +1008,7 @@ Vault reaches the API server through `https://kubernetes.default.svc:443` (param
 
 ##### Vault Config Operator
 
-The [vault-config-operator](https://github.com/redhat-cop/vault-config-operator) writes Vault configuration (mounts, policies, auth roles) from resources in Git, so that no script has to be run for it. `infra/helm/vault-config-operator.yaml` installs it, the resources are in `infra/kubectl/kube-vault-config.yaml`. Removing a resource from the file removes it in Vault. The file holds the policies and roles `argocd` and `jenkins`, the AppRoles `docker01` and `dbadmin` with their policies, and the policy `vault_snapshot`. Still written by script: the roles `spring_dev` and `spring_prod`, the config of the kubernetes auth method (`configure-vault-auth.ps1`) and the Keycloak login (`configure-vault-oidc.ps1`). The KV engines and the auth methods are not in the file on purpose: removing one would delete everything below it.
+The [vault-config-operator](https://github.com/redhat-cop/vault-config-operator) writes Vault configuration (mounts, policies, auth roles) from resources in Git, so that no script has to be run for it. `infra/helm/vault-config-operator.yaml` installs it, the resources are in `infra/kubectl/kube-vault-config.yaml`. Removing a resource from the file removes it in Vault. The file holds the policies and roles `argocd` and `jenkins`, the AppRoles `docker01` and `dbadmin` with their policies, and the policy `vault_snapshot`. Still written by script: the roles `spring_dev` and `spring_prod` and the config of the kubernetes auth method (`configure-vault-auth.ps1`). The Keycloak login is in `infra/kubectl/kube-vault-config-oidc.yaml`. The KV engines and the auth methods are not in the file on purpose: removing one would delete everything below it.
 
 Every resource names the ServiceAccount `vault/vault-config` and the Vault role `vault-config` to log in. Create the role once, **before** the first sync, with an admin token inside the Vault pod (`kubectl -n vault exec -it vault-0 -- sh`, then `vault login`). The policy is as powerful as an admin, because the operator may create policies:
 
@@ -1061,10 +1061,17 @@ Do the destroy loop only after the new file works if the old one is still in use
 
 ##### Login with Keycloak (OIDC)
 
-Besides the root token and the Kubernetes login, Vault can be used with a Keycloak login. The roles of the client `vault` (`docker/keycloak-config/realms/rjst.yaml`) are external groups in Vault with one policy each: `admin` (policy `keycloak_admin`, everything) and `developer` (policy `keycloak_developer`, read and write the secrets in `dev/` and `prod/`, no delete). A user without one of the roles is refused at the login. The configuration lives in Vault itself (it is part of the Raft snapshot), not in Git:
+Besides the root token and the Kubernetes login, Vault can be used with a Keycloak login. The roles of the client `vault` (`docker/keycloak-config/realms/rjst.yaml`) are external groups in Vault with one policy each: `admin` (policy `keycloak_admin`, everything) and `developer` (policy `keycloak_developer`, read and write the secrets in `dev/` and `prod/`, no delete). A user without one of the roles is refused at the login. The configuration is in Git (`infra/kubectl/kube-vault-config-oidc.yaml`, written by the Vault Config Operator): the client, the role, the two policies and the two groups. Not in Git are the auth method and the group aliases, because removing the method would delete the login and an alias cannot be taken over once it exists. On a fresh Vault create them once with an admin token, the aliases only after the first sync (they need the groups):
+
+```bash
+vault auth enable -path=oidc oidc
+for group in admin developer; do
+  vault write identity/group-alias name=$group mount_accessor=$(vault read -field=accessor sys/auth/oidc) canonical_id=$(vault read -field=id identity/group/name/$group)
+done
+```
 
 - `generate-secrets.ps1` writes the client secret to `argocd/data/vault#oidc.client_secret`. The same value goes into the Vault secret `docker/keycloak-config` as `VAULT_CLIENT_SECRET`, then `sudo scripts/docker/deploy.sh keycloak-config`.
-- `.\scripts\vault\configure-vault-oidc.ps1 -VaultToken <root token>` sets up the auth method, the policies and the groups. It can be run again.
+- Argo CD renders the client secret as the Secret `vault/vault-oidc` (`kubernetes/secrets/vault-oidc.yaml`) and the operator reads it there, so the operator needs no right on `argocd/data/vault`.
 - Log in in the UI with the method **OIDC** and type `default` into the field **Role** (the UI does not fill it in by itself, empty gives "Invalid role"), or with `vault login -method=oidc`. Give the users the role `vault` in Keycloak (**Role mapping, client roles**).
 - Vault reads the discovery of Keycloak when the configuration is written and the Pod needs `auth.proxy.rjst.de` at the login. If it fails, look at the DNS of the cluster first.
 

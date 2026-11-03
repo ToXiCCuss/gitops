@@ -8,7 +8,8 @@
 # invalidates the secret_ids of the hosts.
 #
 # Deliberately not here: the KV engines and the auth methods (removing one deletes everything below it), the config of the
-# kubernetes auth method, the secret_ids, and the Keycloak login (auth/oidc, its groups).
+# kubernetes auth method, the secret_ids, and the group aliases of the Keycloak login. The rest of that login (config, role,
+# policies, groups) is in kube-vault-config-oidc.yaml.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
