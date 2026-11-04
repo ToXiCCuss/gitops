@@ -5,7 +5,7 @@
 Description=Deploy the Docker Compose projects from the gitops repository
 Wants=network-online.target
 After=network-online.target docker.service
-# Without the AppRole of Vault no project with secrets can be deployed (README: Secrets from Vault)
+# Without the AppRole of Vault no project with secrets can be deployed (docs/docker.md: Secrets from Vault)
 ConditionPathExists=/etc/gitops/role_id
 
 [Service]

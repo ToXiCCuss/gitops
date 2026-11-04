@@ -22,7 +22,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "k3s version of the Ansible role (the upgrade itself stays manual, see README)",
+      "description": "k3s version of the Ansible role (the upgrade itself stays manual, see docs/updates.md)",
       "managerFilePatterns": [
         "/^ansible/roles/k3s/defaults/main\\.yml$/"
       ],

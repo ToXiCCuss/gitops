@@ -1,1203 +1,170 @@
 # GitOps
 
-Infrastructure as code for the two servers (a Docker host and a k3s node).
+Infrastructure as code for two servers: a Docker host (`docker01`) and a k3s node (`k8sdev01`). Only **third-party apps**; own Spring apps are deployed by Jenkins (Helm), not from here.
 
-| Folder | Content |
-|---|---|
-| `ansible/` | Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter, mysqld exporter, the deploy timer of the Docker host. No secrets in Ansible. |
-| `docker/` | One Docker Compose project per service on the Docker host (restic-backup, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`, on the Docker host hourly from 08:00 to 20:00 by a systemd timer. Images are pinned by digest and updated by Renovate. |
-| `istio/` | `IstioOperator` file for the manual `istioctl install` (outside ArgoCD). |
-| `kubernetes/` | ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, spring). |
-| `scripts/` | Helper scripts: Ansible secrets, backup host setup, Vault restore, database administration, Linux benchmarks. |
+> **A merge to `master` is a live deployment.** Prepare changes on a branch. Agent rules: [AGENTS.md](AGENTS.md).
 
 ## Contents
 
-- [Ansible](#ansible)
-- [Updates (Renovate)](#updates-renovate)
-- [Docker](#docker)
-- [Kubernetes](#kubernetes)
+| Folder | Content | Docs |
+|---|---|---|
+| `kubernetes/` | Argo CD app-of-apps, one folder per domain | [kubernetes.md](docs/kubernetes.md) |
+| `docker/` | one Compose project per service on `docker01` | [docker.md](docs/docker.md) |
+| `ansible/` | host setup: base, firewall, Docker, NetBird client, k3s, databases, exporters, timers | [ansible.md](docs/ansible.md) |
+| `databases/` | declared PostgreSQL access of `docker01` | [databases.md](docs/databases.md) |
+| `scripts/` | `docker`, `postgresql`, `mariadb`, `netbird`, `vault`, `lib` | per topic |
+| `istio/` | `IstioOperator` for the manual `istioctl install` (not synced by Argo CD) | [kubernetes.md](docs/kubernetes.md#istio-installation) |
 
-## Ansible
+## Architecture
 
-Run everything in this section from the `ansible/` folder.
-
-### Install Ansible
-
-Install Ansible and Git on Debian:
-
-```bash
-sudo apt update
-sudo apt install -y ansible git && git clone https://github.com/ToXiCCuss/gitops.git
+```mermaid
+flowchart TB
+  you["You / Renovate"] -->|"PR, merge"| git[("GitHub: gitops, branch master")]
+  peers["Your devices (NetBird peers)"] -->|"VPN, HTTPS"| mesh
+  internet(["Internet"]) -->|"status.rjst.de"| mesh
+  subgraph k8s["k8sdev01 (k3s)"]
+    argocd["Argo CD"]
+    vault[("Vault")]
+    mesh["Istio gateways (public + internal)"]
+    apps["Harbor, Jenkins, Forgejo, Leantime, Kafka, Developer Portal"]
+    obs["Prometheus, Grafana, Loki, Tempo, Gatus"]
+    nbop["NetBird operator + router"]
+  end
+  subgraph docker01["docker01"]
+    timer["gitops-deploy timer"]
+    nb["NetBird server"]
+    kc["Keycloak"]
+    db[("PostgreSQL, MariaDB")]
+    s3[("RustFS S3")]
+    pel["Pelican game servers"]
+  end
+  git --> argocd
+  git --> timer
+  argocd -->|"sync"| apps
+  argocd --> obs
+  argocd -->|"AVP reads secrets"| vault
+  mesh --> apps
+  mesh --> obs
+  apps -->|"OIDC login"| kc
+  apps --> db
+  timer -->|"Compose projects"| nb
+  timer --> kc
+  timer --> s3
+  timer --> pel
+  nbop --- nb
+  s3 -->|"offsite sync"| pcloud(["pCloud"])
 ```
 
-Then switch to the repository and install the required collections:
-
-```bash
-cd gitops/ansible
-ansible-galaxy collection install -r requirements.yml
-```
-
-### Dry Run
-
-Before the actual execution, check the playbook in check mode. This does not make any changes:
-
-```bash
-ansible-playbook -i inventory.ini site.yml --check --diff
-```
-
-### Apply Changes
-
-If the dry run completes without unexpected errors, run the playbook:
-
-```bash
-ansible-playbook -i inventory.ini site.yml
-```
-
-### Firewall
-
-The role `firewall` runs on the hosts in `firewall_hosts` (`group_vars/all/main.yml`). It allows the ports listed in `host_config.<host>.firewall_rules`, denies all other incoming traffic and enables UFW. Each rule needs a `comment`; `port` and `proto` are optional (without them the rule opens every port for `from_ip`), `from_ip` is optional (default: any):
-
-```yaml
-host_config:
-  docker01:
-    firewall_rules:
-      - { port: 9000, proto: tcp, from_ip: 172.16.0.0/12, comment: "RustFS S3 from the Docker networks" }
-```
-
-- UFW only filters traffic to host processes (sshd, PostgreSQL, node_exporter, the NetBird client). Ports published by Docker bypass it (FORWARD chain), a rule here neither opens nor closes them.
-- There is no UFW rule for SSH: `docker01` is reached through NetBird and port 22 is closed to the Internet. So on the hosts in `netbird_hosts` the role only sets the default to deny and enables UFW while `netbird status` reports `Management: Connected`. Otherwise it prints a warning and leaves the policy untouched (a firewall that is already active stays as it is). Join NetBird first (see [NetBird client](#netbird-client)), then run the playbook again.
-- The role never removes rules. A rule that is no longer wanted is removed by hand once (`ufw delete ...`) after it is deleted from `firewall_rules`.
-- Run only this role with `--tags firewall`. Do a dry run (`ansible-playbook -i inventory.ini site.yml --tags firewall --check --diff`) before the first real run and compare it with `ufw status verbose` on the host. Adding a comment to an existing rule counts as a change once.
-
-### NetBird client
-
-The role `netbird` runs on the hosts in `netbird_hosts` and installs the client from the NetBird repository. The join is a manual step, because the setup key is a one-time secret and no secret lives in Git. Create a one-time setup key in the NetBird dashboard (Setup Keys) and run once on the host:
-
-```bash
-netbird up --setup-key <key> --management-url <url of the self-hosted server>
-```
-
-Without a connection the playbook only prints a warning, and the [firewall](#firewall) stays off.
-
-### k3s
-
-The role `k3s` runs on the hosts in `k3s_hosts` (`group_vars/all/main.yml`). It installs the pinned `k3s_version` with the official install script, writes `/etc/rancher/k3s/config.yaml` and keeps the service running. The server flags are the keys of `host_config.<host>.k3s_config` (`node-ip` defaults to the primary IPv4 address), the registry mirror stays in the role `k3s_registries`. It writes `/etc/rancher/k3s/registries.yaml` with the Harbor pull-through mirrors for `docker.io` and `ghcr.io`; these Harbor projects must be public, the file holds no credentials.
-
-- Change a flag: edit `k3s_config`, run `ansible-playbook -i inventory.ini site.yml --tags k3s`. k3s is restarted once (the API server is gone for a moment, the pods keep running).
-- Upgrade: change `k3s_version` (a release from https://github.com/k3s-io/k3s/releases) and run the same command. Do a dry run (`--tags k3s --check --diff`) first.
-- A node that was installed with the flags in the systemd unit is migrated by the first run: the install script rewrites the unit without flags, they move to `config.yaml`, and k3s restarts once.
-- The cluster uses embedded etcd (`cluster-init`). Its snapshots are only local (`/var/lib/rancher/k3s/server/db/snapshots`), they are not part of the backups yet.
-- The role also writes the kernel parameters the kubelet expects (`/etc/sysctl.d/90-kubelet.conf`, variable `k3s_kernel_sysctls`). Without `protect-kernel-defaults` the kubelet would set them itself, the file makes them persistent.
-- `k8sdev01` has a UFW rule for the pod CIDR `10.42.0.0/16` and the service CIDR `10.43.0.0/16`, so pods can reach the host (for example the API server through the service address). Everything else stays closed, the node is reached through NetBird.
-- Istio is installed by hand after k3s with `istioctl` and `istio/istio-operator.yaml` (see [Istio installation](#istio-installation-istioctl-by-hand)).
-
-### Node exporter and update monitoring
-
-Every host in `node_exporter_hosts` (`docker01` and `k8sdev01`) runs the Debian package `prometheus-node-exporter` with the textfile collector (`/var/lib/prometheus/node-exporter`). The Prometheus stack has no node-exporter pod: it would use the same port 9100, and the textfile metrics (backups, deploy, updates) only exist on the host. Prometheus scrapes both hosts in the job `node-exporter` (`kubernetes/monitoring/helm/prometheus.yaml`). The exporter leaves out the mounts of the kubelet and k3s (`node_exporter_mount_points_exclude`).
-
-The timer `node-update-status.timer` (hourly) runs `/usr/local/bin/node-update-status.sh`, which writes `node-update-status.prom`:
-
-| Metric | Meaning |
-|---|---|
-| `node_reboot_required_since_timestamp_seconds` | Since when a reboot is needed, `0` if none is: `/var/run/reboot-required`, or (Debian does not create that file) the arrival of a kernel image that is newer than the running kernel |
-| `node_pending_updates{type="all\|security"}` | Packages that `apt-get --simulate dist-upgrade` would install or upgrade |
-| `node_unattended_upgrades_last_run_timestamp_seconds` | The last run of unattended-upgrades |
-
-`unattended-upgrades` installs the security updates by itself and never reboots (`unattended_upgrades_reboot: false`), because a reboot of `k8sdev01` stops all Applications for a moment. The alerts in `kubernetes/monitoring/kubectl/alert-rules-os-updates.yaml` go to Discord: `RebootRequired` (more than 7 days), `UnattendedUpgradesStalled` (no run for 3 days) and `SecurityUpdatesPending` (3 days). Reboot `k8sdev01` yourself in a quiet moment (`sudo reboot`, the pods start again by themselves).
-
-Rollout on `k8sdev01` (it had the node-exporter pod before):
-
-1. Merge to `master`. Argo CD removes the pod (the port is free) and Prometheus has a new target `89.144.46.204:9100`, which is down until step 2. `TargetDown` waits 5 minutes, so do step 2 right away.
-2. On `k8sdev01`: `git pull` in `/root/gitops/ansible`, then `ansible-playbook -i inventory.ini site.yml --tags node_exporter --check --diff` and without `--check`. The same run changes `docker01` (new mount filter, update timer).
-3. Check: `systemctl status prometheus-node-exporter node-update-status.timer`, `curl -s localhost:9100/metrics | grep -E "node_pending_updates|node_reboot"` and the target in Prometheus. The old `instance` labels (node name, pod address) of `k8sdev01` end, the dashboards pick the new series up through the job `node-exporter`.
-
-### Database tuning
-
-The roles `postgresql` and `mariadb` include the role `database_tuning` at their end. It sets, per database:
-
-- sysctls in `/etc/sysctl.d/70-<database>.conf` (`vm.swappiness=1`, `vm.dirty_*`, `net.core.somaxconn`, `net.ipv4.tcp_keepalive_time`, `fs.aio-max-nr`),
-- a systemd drop-in `limits.conf` with `LimitNOFILE` and `OOMScoreAdjust=-900` (the OOM killer takes containers first),
-- the transparent huge pages mode via `/etc/tmpfiles.d/transparent-hugepage.conf`: `madvise` for PostgreSQL and MariaDB. THP is host-wide, so databases with different modes on one host overwrite each other.
-
-`/etc/security/limits.conf` is not used: systemd services ignore it. The service restarts once when the drop-in changes. Values are in the role's `defaults/main.yml`; MariaDB runs on `docker01`.
-
-### MariaDB (audit log and backup user)
-
-The role `mariadb` sets `bind-address` and `event_scheduler = ON` (`/etc/mysql/mariadb.conf.d/60-gitops.cnf`). The scripts in `scripts/mariadb/` (run them on the host with `sudo`) add an audit log and the backup user. MariaDB runs on `docker01` (`mariadb_hosts`), port 3306 is open for the Docker networks `172.16.0.0/12` only (`firewall_rules`, like PostgreSQL).
-
-| Script | Purpose |
-|---|---|
-| `audit_setup.sh [--dry-run] <db> [months]` | Creates `audit_log` (partitioned by month) and the helper procedures in the database, and a daily event that adds the next months and drops the partitions older than the retention (default 6 months). Run it again to change the retention (`audit_setup.sh shop 12`); without months the current value stays. The data of `audit_log` is kept. |
-| `audit_enable.sh [--dry-run] <db> <table> ...` | Triggers write the old and new values of every INSERT, UPDATE and DELETE of the tables to `audit_log`. Run it again after a column changed. The record id is the primary key (several columns joined by `-`), `NULL` without one. An UPDATE that changes nothing is not logged. |
-| `audit_disable.sh [--dry-run] <db> <table> ...` | Removes the triggers (a table without them is `unchanged`). Rows already logged stay until the retention drops them. |
-| `audit_list.sh <db>` | Audited tables, retention, partitions with their row counts. |
-| `backup_user_create.sh [user] [reset]` | Read-only login for the backup (`restic-backup`, default `backup`, host `%`, so keep port 3306 closed except for the Docker networks): `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, `LOCK TABLES` on all databases. The password goes to Vault (`databases/mariadb/backup`) and is not printed, `reset` sets a new one. |
-
-- The audit log lives in the database, so `db_delete.sh` takes it along. It holds personal data in clear text. The roles of `db_create.sh` can change it, their grants cover the whole database.
-- An audited write costs one more INSERT with all columns as JSON, so switch it on only for the tables where you need the history. A database without `audit_setup.sh` has no triggers and no cost.
-- The partition `p_future` (`VALUES LESS THAN MAXVALUE`) catches every row without a monthly partition. A stopped event scheduler only leaves the partitions unmaintained, audited writes never fail.
-- Monitoring: the role `mariadb_exporter` installs `prometheus-mysqld-exporter` (port 9104, scraped by the job `mysqld-exporter` in `kubernetes/monitoring/helm/prometheus.yaml`, alert `MariaDBDown` on `mysql_up`). It logs in as the MariaDB user `prometheus@localhost` through the socket (`unix_socket`, no password, `MAX_USER_CONNECTIONS 3`) with `PROCESS`, `BINLOG MONITOR`, `REPLICA MONITOR` and `SELECT` on `performance_schema.*`. The role creates the user, there is no script for it. The dashboard is a patched copy of 14057 in `kubernetes/monitoring/kubectl/dashboard-mariadb.yaml` (the original filters the handler panels on a variable it never defines and reads a metric the exporter no longer has); the role enables the `info_schema.processlist` collector for its process state panels.
-- Backups: `restic-backup` dumps every database with `mariadb-dump` once the backup login has its password in Vault `docker/restic-backup` (`MARIADB_PASSWORD`), see [Backups](#backups). The grants of the backup user are what `mariadb-dump` needs, adjust them if a run complains. `mariabackup` (physical) is for later, when the dump gets too slow or too large.
-
-### PostgreSQL (audit log)
-
-The scripts in `scripts/postgresql/` (run them on the host with `sudo`) add the same audit log as for MariaDB. The role `postgresql` preloads `pg_cron` (`shared_preload_libraries`, the first run restarts PostgreSQL), `pg_partman` and `pg_cron` are installed by the role too.
-
-| Script | Purpose |
-|---|---|
-| `audit_setup.sh [--dry-run] <db> [months]` | Creates the schema `audit` with `audit.audit_log` (monthly partitions by `pg_partman`, plus a default partition) and the trigger function in the database, and a daily `pg_cron` job (03:00) that runs `partman.run_maintenance()`: it adds the next months and drops the partitions older than the retention (default 6 months). Run it again to change the retention (`audit_setup.sh shop 12`), without months the current value stays. The data is kept. |
-| `audit_enable.sh [--dry-run] <db> <table> ...` | Triggers write the old and new row of every INSERT, UPDATE and DELETE as JSON. Tables are `name` (schema `public`) or `schema.name`. The record id is the primary key (several columns joined by `-`), `NULL` without one. An UPDATE that changes nothing is not logged. Run it again after the primary key changed. |
-| `audit_disable.sh [--dry-run] <db> <table> ...` | Removes the triggers (a table without them is `unchanged`). Rows already logged stay until the retention drops them. |
-| `audit_list.sh <db>` | Audited tables, retention, the `pg_cron` job and the partitions with their size and row count. |
-
-- The application roles of `db_create.sh` cannot read or change `audit.audit_log` (no access to the schema). The trigger function runs with the rights of its owner, so they can still write through it. `postgres` and the backup role (`pg_read_all_data`) can read it.
-- The job lives in the `pg_cron` database (`cron.database_name`, default `postgres`), not in the audited database. After a restore from a dump run `audit_setup.sh` again; `db_delete.sh` removes the job together with the database. Without `pg_cron` the default partition catches every row, the log keeps working and only the partitions are not maintained.
-- An audited write costs one more INSERT, so switch it on only for the tables where you need the history.
-- Switching on `pg_cron` is the only change to the server: after the Ansible run, check `SHOW shared_preload_libraries;`.
-
-### Database passwords in Vault
-
-`db_create.sh` and `user_create.sh` (PostgreSQL and MariaDB) are idempotent: a second run reports `unchanged` and changes nothing, an aborted run is finished by running it again. `--dry-run` shows the plan. The password of a **new** user is generated, stored in Vault as `databases/<dbms>/<user>` (keys `username`, `password`, e.g. `databases/postgresql/keycloak_owner`) and never printed; an existing user keeps its password. Vault is written first, so an unreachable Vault stops the script before anything is created. Names must match `^[a-z][a-z0-9_]*$` (52 characters at most).
-
-Set up once: the policy `databases-write` (create and update on `databases/data/*`, delete on `databases/metadata/*`, no read) and the AppRole `dbadmin` (token lifetime 5 minutes) are in `infra/kubectl/kube-vault-config.yaml`. The KV engine `databases` and the files `/etc/gitops/databases_role_id` and `databases_secret_id` on the host are set up as in [AppRole logins of the hosts](#approle-logins-of-the-hosts). `curl` and `jq` are on every host through the Ansible role `base`. Like for `docker01`, the role is not bound to an address (Vault sees a pod address). Read a password: `vault kv get -field=password databases/postgresql/keycloak_owner`.
-
-- The host can write and delete passwords but not read one back, so a leaked `secret_id` exposes no existing password. It can overwrite or delete one, though: a new `secret_id` cuts a leaked file off (rotation: [AppRole logins of the hosts](#approle-logins-of-the-hosts)).
-- `user_password.sh <login>` (or `<database> <username>`) rotates a password: it sets a new random one in Vault and in the database, every run again, the older ones stay as versions in Vault. `backup_user_create.sh` stores the password of the backup login the same way. Both support `--dry-run` and never print a password.
-- Logins that existed before the scripts used Vault are not in Vault yet. Their first `user_password.sh` run puts them there. The backup login `backup` is created by `backup_user_create.sh`, so its password is in Vault from the start. After a `reset` or a new password put it into `docker/restic-backup` (`POSTGRES_PASSWORD`, `MARIADB_PASSWORD`) and deploy `restic-backup` again, the container keeps its own copy.
-- All scripts for PostgreSQL and MariaDB follow the same rules: an error stops the script, a second run reports what is `unchanged`, and everything that changes something has `--dry-run` (the read-only `list_user_roles.sh` and `audit_list.sh` have none). Tools: `sudo`, the client of the DBMS, `openssl`; the scripts that store a password also `curl` and `jq`.
-- `db_delete.sh`, `user_delete.sh`, `cleanup_db_user.sh` and `copy_db.sh` delete data for good, so run them with `--dry-run` first. `db_delete.sh` finds the logins of a database by their membership in its three roles, not by their name: a database `shop` and a database `shop_dev` do not take each other's logins along. They refuse system databases and, for MariaDB, `root`. The Vault entry of every login (`databases/<dbms>/<login>`) is deleted with all its versions **before** the login is dropped: if Vault refuses (an old policy: `databases-write` in `infra/kubectl/kube-vault-config.yaml` is not synced yet), the script stops while the login still exists and can be repeated. `user_delete.sh` deletes the entry even if the login is already gone, so it also cleans up the leftover of an earlier deletion.
-- Personal logins (PostgreSQL, `scripts/postgresql/`): `person_grant.sh <username> <database> <ro|rw>` ensures the login `<username>` (no database prefix, one login for all databases) and its membership in `<db>_role_ro` or `<db>_role_rw`. The database is optional: `person_grant.sh <username>` (or `user_create.sh <username>`, which forwards there; with `<database> <username> <role>` it creates the application login `<database>_<username>` as before) only creates the login without any access, a later run with a database adds it. Run it once per database, so `robert` can be `ro` in `shop` and `rw` in `billing`; a changed role type moves the login, `owner` is not possible (that is `<db>_owner` of `db_create.sh`). The password of a new login goes to Vault as `databases/postgresql/<username>` (`user_password.sh <username>` rotates it). The script only touches logins it created itself (marked by a role comment), so it refuses an application login like `shop_owner` or `postgres`. `person_revoke.sh <username> <database>` takes the access to one database away and keeps the login for the others; `person_revoke.sh <username>` terminates its sessions, deletes the Vault entry (needs the current policy `databases-write` of `infra/kubectl/kube-vault-config.yaml`) and drops the login. Both support `--dry-run`, report an absent login or access as `unchanged` and refuse logins that `person_grant.sh` did not create (`user_delete.sh` expects `<database> <username>` and does not fit these logins). The rights of the two roles come from `db_create.sh` and `schema_create.sh`. MariaDB (`scripts/mariadb/`) has the same two scripts with the same arguments, `--dry-run` and Vault path (`databases/mariadb/<username>`). The difference: MariaDB enables only one default role per connection, so the login gets a role of its own, `<username>_role_person`, as default role, and `person_grant.sh` puts `<db>_role_ro` or `<db>_role_rw` into that role. The role is also the marker for a personal login (MariaDB has no comment on a user), and `person_revoke.sh <username>` drops it with the login. Open connections stay until they end, like with `user_delete.sh`.
-- Other scripts of the same family: `schema_create.sh <db> <schema>` (PostgreSQL schema with the privileges of the three roles), `copy_db.sh [source target]` (MariaDB: the target gets the tables of the source, default `fivem` to `fivem_dev`) and `list_user_roles.sh` (read only).
-
-### Declared database access (PostgreSQL)
-
-`databases/postgresql.yaml` says which databases, application logins and personal logins should exist on docker01. `scripts/postgresql/apply_declared.sh` makes the server match the file by calling the scripts above (`db_create.sh`, `user_create.sh`, `person_grant.sh`, `person_revoke.sh`), so the file works on its own, nothing else is needed to apply it. Needs `yq` (the apt package `yq`, a wrapper of `jq`, installed by the Ansible role `base`) and `jq`.
-
-```yaml
-databases:
-  forgejo: {}
-  developer_portal:
-    ownerPrivileges: [create, temporary]   # database privileges of <db>_role_owner beyond db_create.sh
-    logins:            # application logins <db>_<name>, role ro, rw or owner
-      reader: ro
-people:                # personal logins, ro or rw per database
-  robert:
-    forgejo: rw
-```
-
-- **First time:** `sudo scripts/postgresql/export_declared.sh > databases/postgresql.yaml` on docker01 prints the real state in this format (read only). A database without the roles of `db_create.sh` gets a comment: applying the file would change its privileges, check it first. Then commit the file.
-- **Apply:** `sudo scripts/postgresql/apply_declared.sh --dry-run`, then without `--dry-run`. Every part is reported as created, updated or unchanged, an aborted run is repeated.
-- **Removing access is automatic, but only with the key `people:`** in the file: a personal login that is not listed is dropped, a database that is not listed for it is taken away (`person_revoke.sh`). Without the key personal logins stay as they are.
-- **`ownerPrivileges`** gives the owner role of a database `create` (make schemas) and/or `temporary` (temporary tables) on it, which `db_create.sh` withholds. An app that manages its own schemas needs both: Backstage creates one schema per plugin and the catalog uses temporary tables. A privilege that is not listed is revoked again, like removed access. With `create` the script also lets every schema that the owner login makes later give `USAGE` to the roles `ro` and `rw` (default privileges), so the other logins of the database can read the tables of the new schemas as they can in `public`. A schema that exists before the first run stays closed to them.
-- **Deleting is not automatic:** a database or an application login that is not declared is only reported. `apply_declared.sh --prune` deletes the undeclared databases (`db_delete.sh`), it asks for the name of each one and needs a terminal, so no timer can run it. Application logins are removed with `user_delete.sh`.
-- Backstage (the Developer Portal) only reads this file to show the databases and never writes to the server. A change of the rights is a pull request on the file.
-
-## Updates (Renovate)
-
-Renovate (GitHub app, `renovate.json`) opens a pull request for every new version, after the release is 3 days old (`minimumReleaseAge`). It covers the Helm charts and manifests of `kubernetes/`, the images of `docker/` and `k3s_version` in `ansible/roles/k3s/defaults/main.yml`.
-
-- **Merged by Renovate itself:** digest and patch updates of `gcr.io/cadvisor/cadvisor`, `rclone/rclone` and `alpine` in `docker/`, on weekdays between 9:00 and 17:00 (Europe/Berlin), so a failed deploy is seen the same day. There is no CI check in front of it. The Docker host deploys the merge within 15 minutes (see [Automatic deploy](#automatic-deploy)), a failure goes through the `DockerDeploy*` alerts to Discord, rollback is `git revert`. A new image is added to the list in the `packageRules` of `renovate.json` on purpose, nothing is merged by default.
-- **Reviewed and merged by hand:** everything else. A merge to `master` is live in Argo CD (Kubernetes) or on the Docker host within minutes.
-- **k3s:** the pull request only raises `k3s_version`. The upgrade stays manual (dry run first, see [k3s](#k3s)). Release candidates are ignored.
-- **NetBird:** the images of `docker/netbird/docker-compose.yml` stay on plain tags without a digest (`netbird_rollback.sh` needs that), server, proxy and dashboard come in one pull request. Merging changes nothing on the host, the upgrade stays manual (see [Deploy NetBird](#deploy-netbird)). Check the validated Traefik and CrowdSec versions in the [upgrade docs](https://docs.netbird.io/selfhosted/maintenance/upgrade) before you merge.
-- **Not tracked by Renovate:** Istio (`istioctl`), its version is passed to the scripts, and the Traefik bouncer plugin in `docker/netbird/docker-compose.yml` (`--experimental.plugins.bouncer.version`).
-
-## Docker
-
-### Deploy
-
-The Compose projects of `docker/` are deployed with one script, there is no management UI. It is idempotent: a project is only recreated when its compose file or its environment changed.
-
-```bash
-sudo scripts/docker/deploy.sh                       # all projects, in a fixed order
-sudo scripts/docker/deploy.sh restic-backup vault-backup # only these
-sudo scripts/docker/deploy.sh --pull rustfs      # git pull --ff-only first
-sudo scripts/docker/deploy.sh --list
-```
-
-#### Automatic deploy
-
-A merge to `master` is deployed on the Docker host like it is in Argo CD: the systemd timer `gitops-deploy.timer` (Ansible role `gitops_deploy`, host group `gitops_deploy_hosts`) runs `deploy.sh --pull --metrics-file ...` in `/root/gitops` every full hour from 08:00 to 20:00 local time (`gitops_deploy_calendar`), not at night. Only a project whose compose file, image or Vault secret changed is recreated. Rollback is `git revert` on `master`, the next run deploys it.
-
-```bash
-sudo ansible-playbook -i inventory.ini site.yml --tags gitops_deploy --check --diff   # dry run first, in /root/gitops/ansible
-sudo ansible-playbook -i inventory.ini site.yml --tags gitops_deploy
-systemctl list-timers gitops-deploy.timer          # when does it run next
-journalctl -u gitops-deploy -n 100                 # the log of the last runs
-sudo systemctl stop gitops-deploy.timer            # pause it, e.g. while you change files in /root/gitops by hand
-```
-
-- The timer needs the AppRole files `/etc/gitops/role_id` and `/etc/gitops/secret_id` (see [Secrets from Vault](#secrets-from-vault)). Without `role_id` the run is skipped.
-- `git pull --ff-only` fails when the checkout has local changes or a commit that is not on `master`. Then nothing is deployed until you clean it up, and `DockerDeployPullFailed` fires.
-- If Vault is not reachable, the projects with secrets are not deployed (no fallback) and `DockerDeployFailed` fires after 30 minutes.
-- The run leaves its result in the textfile collector of the node_exporter (`/var/lib/prometheus/node-exporter/gitops-deploy.prom`): `gitops_deploy_project_success{project}`, `gitops_deploy_pull_success`, `gitops_deploy_last_success_timestamp_seconds`, `gitops_deploy_last_run_timestamp_seconds` and `gitops_deploy_revision_info{revision}` (the commit that is deployed). The rules are in `kubernetes/monitoring/kubectl/alert-rules.yaml` (`gitops-deploy`) and go through Alertmanager to Discord.
-- Order of the first rollout: merge to `master` (the alert rules go live through Argo CD), `git pull` in `/root/gitops` on the host, then the Ansible command above. `DockerDeployNeverReported` waits 2 hours for that.
-- A manual `deploy.sh` run stays possible and does not touch the metrics (only a run with `--metrics-file` writes them).
-
-`deploy.sh` never removes anything. To take a project down (also one that was already deleted from `docker/`) use `undeploy.sh`. It needs at least one project name, asks before it acts and removes only the containers and networks, the data and the named volumes stay:
-
-```bash
-sudo scripts/docker/undeploy.sh uptimeKuma
-sudo scripts/docker/undeploy.sh --yes restic-backup offsite-sync   # without the question
-```
-
-`cleanup.sh` shows what Docker keeps without using it (dry run) and with `--apply` removes only the safe part: unused images without a tag and the build cache. The images of `docker/` are pinned by digest and have no tag, so the old versions that Renovate leaves behind appear as `repository:<none>`. Images with a tag and no container, volumes, stopped containers and networks are only listed. Volumes hold data, `netbird-rollback/*` are the rollback points of `netbird_upgrade.sh` and Pelican creates its own networks and containers.
-
-```bash
-sudo scripts/docker/cleanup.sh            # dry run
-sudo scripts/docker/cleanup.sh --apply
-```
-
-After `apt upgrade` (or when NetBird changed the DNS of the host) run `restart-host-network.sh`. A container in the host network copies the `resolv.conf` of the host when it starts and keeps the old copy, so it can no longer resolve the NetBird names while the host still can (`vault-backup` fails with "Could not resolve host: vault.k8sdev.rjst.de"). The script restarts exactly these containers, the others have their own network and DNS:
-
-```bash
-sudo scripts/docker/restart-host-network.sh
-```
-
-Containers that mount `/var/run/docker.sock` (`pelican_wings`) need no manual step. Docker runs with `live-restore`, so a restart of `dockerd` (package update) keeps them running on the old socket and Wings fails with "dial unix /var/run/docker.sock: connect: connection refused". The role `docker` therefore adds a systemd drop-in (`docker.service.d/restart-socket-containers.conf`) that restarts the containers in `docker_socket_containers` after every start of `dockerd`.
-
-The secrets of a project are in Vault (KV engine `docker`, secret `docker/<project>`), never in a file of the repository or of the host: there is no `override.env`. The keys a project needs are named in `docker/<project>/vault.env.example` (`NAME=` is required, `#NAME=` is optional), `default.env` lists all variables of a project with empty secrets. `deploy.sh` reads the keys from Vault, checks the required ones before it touches a container and lists what is missing. Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `vault-backup`, `keycloak`, `keycloak-config` and `netbird`.
-
-New or changed secret:
-
-1. Change the secret in Vault with an admin token: `vault kv patch docker/<project> NAME=value` (`vault kv put` replaces the whole secret). A new variable in the example file after a `git pull` is reported by `deploy.sh` in the same way.
-2. `sudo scripts/docker/deploy.sh <project>`: Compose sees the changed environment and recreates the container within seconds. The data lives in folders on the host and stays.
-3. The S3 keys of `restic-backup`, `offsite-sync` and `vault-backup` are not in `docker/<project>`: `deploy.sh` adds them from the S3 identity (`docker/s3/<identity>`, see [Setup RustFS](#setup-rustfs); `vault-backup` uses the identity `vault`).
-
-NetBird is the one exception: it is not deployed by the timer and its secrets stay in rendered files on the host, see [Deploy NetBird](#deploy-netbird).
-
-#### Secrets from Vault
-
-Every project with a `vault.env.example` reads its secrets from Vault. `deploy.sh` logs in with an AppRole (`/etc/gitops/role_id`, `/etc/gitops/secret_id`, mode 600), reads the KV secret `docker/<project>`, writes its keys to `/run/gitops/<project>/vault.env` (tmpfs, mode 600) and removes the file as soon as Compose has started the container. The compose file reads `default.env` and `vault.env` (the later wins; `vault.env` is optional only so that `docker compose logs` works without it). `deploy.sh` checks the required variables of `vault.env.example` against the keys from Vault. It needs `curl` and `jq` on the host.
-
-Set up once: the policy `docker` and the AppRole `docker01` are in `infra/kubectl/kube-vault-config.yaml`. The KV engine `docker` and the files `/etc/gitops/role_id` and `secret_id` on the Docker host are set up as in [AppRole logins of the hosts](#approle-logins-of-the-hosts). Do not bind the role to the address of the Docker host (`token_bound_cidrs`): Vault runs in the cluster and sees the address of a pod (`10.42.x.x`), so the login fails with "source address unauthorized by CIDR restrictions".
-
-1. Put the values of a project into Vault, e.g. `vault kv put docker/keycloak KC_DB_USERNAME=... KC_DB_PASSWORD=... KC_BOOTSTRAP_ADMIN_PASSWORD=...` (`vault kv patch` changes single keys). Values must not contain a single quote or a control character (a line break), `deploy.sh` refuses them.
-2. `sudo scripts/docker/deploy.sh keycloak`.
-
-- If Vault is not reachable (or the secret does not exist), that project is not deployed; running containers are not touched, and there is no fallback to a file on the host. Deploy the projects only with `deploy.sh`: a manual `docker compose up` does not create `vault.env` and would start the container without the secrets.
-- After a total loss of Vault restore it first (see [Restore](#restore)), then deploy the projects. The restic passwords of the Vault repository and the `rclone.conf` for pCloud are in your password manager, that is the way back (the backups on pCloud need no S3 and no Vault).
-
-Move from the old management UI (once): `git pull`, run `setup-backup-host.sh` (data directories, `rclone.conf`), put the secrets into Vault, then deploy project by project with `--adopt`. That removes the existing container of the same name that belongs to another Compose project (a short interruption, the data stays) and creates it again. Finally stop and remove the old UI container.
-
-### Backups
-
-All backups of the Docker host go to a local RustFS S3 first and from there once a night to pCloud. Every service is its own Compose project (deployed by `scripts/docker/deploy.sh`), the details are in the `Setup ...` sections below.
+| Host | Runs | Reached via |
+|---|---|---|
+| `k8sdev01` | k3s: Argo CD, Vault, Istio, Harbor, Jenkins, Forgejo, Leantime, Kafka (Strimzi, Apicurio, AKHQ), Developer Portal frame, Prometheus/Grafana, Loki/Alloy, Tempo, Gatus | NetBird only (`https://<app>.k8sdev.rjst.de`); `status.rjst.de` is public |
+| `docker01` | Compose projects (NetBird server, Keycloak, RustFS, backups, Pelican, cAdvisor), PostgreSQL 18, MariaDB, Ansible-managed timers | NetBird only (SSH as `root`, repo at `/root/gitops`) |
+
+## How a change goes live
 
 ```mermaid
 flowchart LR
-  vault[("Vault (Kubernetes)")]
-  subgraph host["Docker host"]
-    vault -->|"snapshot API, periodic token"| vaultbackup["vault-backup (restic)"]
-    keys["Key files"] -->|read-only| resticbackup["restic-backup (restic)"]
-    pg[("PostgreSQL, MariaDB")] -->|"pg_dump, mariadb-dump"| resticbackup
-    resticbackup -->|"buckets backups, databases"| s3[("RustFS S3")]
-    vaultbackup -->|bucket vault| s3
-    netbird["NetBird server (netbird_backup.sh, restic)"] -->|bucket netbird| s3
-    s3 -->|read-only identity| sync["offsite-sync (rclone, 05:00 UTC)"]
-  end
-  forgejobackup["forgejo-backup (CronJob in Kubernetes, restic)"] -->|bucket forgejo| s3
-  leantimebackup["leantime-backup (CronJob in Kubernetes, restic)"] -->|bucket leantime| s3
-  sync -->|"rclone sync, deleted files go to Backups-deleted"| pcloud(["pCloud"])
+  pr["PR (you, Renovate)"] --> master[("master")]
+  master -->|"automated sync, prune, selfHeal"| argo["Argo CD: Kubernetes"]
+  master -->|"hourly 08-20h: git pull + deploy.sh"| dock["docker01: Compose projects"]
+  master -.->|"by hand: git pull + ansible-playbook"| hosts["Hosts: Ansible roles"]
+  jenkins["Jenkins (own Spring apps)"] -->|"helm upgrade"| spring["Namespaces dev and prod"]
 ```
 
-| Service | Task | Notes |
+| Target | Trigger | Rollback | Details |
+|---|---|---|---|
+| Kubernetes (`kubernetes/`) | merge to `master`, Argo CD syncs at once | `git revert` | [kubernetes.md](docs/kubernetes.md) |
+| Docker (`docker/`) | `gitops-deploy.timer`, hourly 08:00-20:00 (NetBird project: by hand) | `git revert` | [docker.md](docs/docker.md) |
+| Hosts (`ansible/`) | by hand: dry run (`--check --diff`), then apply, on explicit request | `git revert` + re-run | [ansible.md](docs/ansible.md) |
+| Databases (`databases/`) | by hand: `apply_declared.sh --dry-run`, then apply | `git revert` + re-apply | [databases.md](docs/databases.md#declared-access) |
+| Versions | Renovate PRs (3 days minimum age); some Docker digests auto-merge | `git revert` | [updates.md](docs/updates.md) |
+
+## Secrets
+
+Nothing secret in Git (not even base64). Everything lives in Vault.
+
+```mermaid
+flowchart LR
+  vault[("Vault")]
+  vault -->|"AVP at sync time"| ksecrets["Kubernetes Secrets"]
+  vault -->|"AppRole docker01: vault.env in tmpfs"| dproj["Docker projects"]
+  dbscripts["DB scripts (AppRole dbadmin)"] -->|"write only"| vault
+  gitres[("Git: Vault Config Operator resources")] -->|"policies, roles"| vault
+  kc["Keycloak"] -->|"OIDC login"| vault
+  vbackup["vault-backup (periodic token)"] -->|"Raft snapshot"| vault
+```
+
+| Where | Secrets | Docs |
 |---|---|---|
-| RustFS | Local S3 staging | One identity per service (`docker/rustfs/identities.json`, keys in Vault), the offsite sync can only read |
-| restic-backup | One nightly run: backs up a few static key files and the SQL dumps of all PostgreSQL and MariaDB databases, thins out and prunes both repositories and checks them, then checks the Vault and NetBird repositories | restic, repositories `backups/docker` and `databases/restic`. Reports every step to Prometheus. Restore with `scripts/docker/restore.sh` |
-| vault-backup | Daily Raft snapshot of Vault | Periodic token that may only read the snapshot, bucket `vault`, repository `vault/raft`, keeps its own retention |
-| NetBird backup | Config and database of the self-hosted NetBird server (`scripts/netbird/`) | bucket `netbird`, repository `netbird/restic`, keeps its own retention |
-| forgejo-backup | Nightly CronJob in the cluster: stops Forgejo, backs up its database dump and data volume in one snapshot, starts it again | bucket `forgejo`, repository `forgejo/restic`, keeps its own retention, see [Forgejo (package registry)](#forgejo-package-registry) |
-| leantime-backup | Nightly CronJob in the cluster: backs up the two upload volumes of Leantime while it runs | bucket `leantime`, repository `leantime/restic`, keeps its own retention, see [Leantime (project management)](#leantime-project-management) |
-| Offsite sync | Copies the whole S3 to pCloud and verifies the copy | Keeps deleted or overwritten files 30 days in `Backups-deleted` |
+| Vault `argocd/` | Kubernetes app secrets (rendered by the AVP plugin) | [vault.md](docs/vault.md) |
+| Vault `docker/` | Docker project secrets, S3 keys | [docker.md](docs/docker.md#secrets-from-vault) |
+| Vault `databases/` | DB passwords (hosts can write, not read) | [databases.md](docs/databases.md#passwords-in-vault) |
+| Ansible | none; NetBird join is a manual step with a one-time key | [ansible.md](docs/ansible.md#netbird-client) |
+| Password manager | restic passwords, pCloud `rclone.conf`, Vault unseal keys + root token | [backups.md](docs/backups.md#restore) |
 
-Everything writes to the S3 only, pCloud is written by the offsite sync alone. Not covered: the PVCs of the Kubernetes apps, except the ones of Forgejo and Leantime. MariaDB (`docker01`) is not backed up until `MARIADB_PASSWORD` of its backup login is in the Vault secret `docker/restic-backup`.
+## Backups
 
-#### Retention, checks and schedule
-
-| Data | Daily | Weekly | Monthly | Set in |
-|---|---|---|---|---|
-| Vault | 14 | 8 | 12 | `vault-backup` (`restic forget --prune` after each run) |
-| SQL dumps (PostgreSQL, MariaDB) | 14 | 8 | 6 | `restic-backup` (`DATABASES_KEEP_*` in `default.env`, per engine) |
-| Key files | 7 | 4 | 6 | `restic-backup` (`KEEP_*` in `default.env`, `restic forget` after each backup) |
-| NetBird | 0 | 8 | 6 | `netbird_backup.sh` (`RESTIC_KEEP_*` in `/etc/netbird-backup.cred`) |
-| Forgejo (database and data volume) | 14 | 8 | 6 | CronJob `forgejo-backup` (`KEEP_*` in `kubernetes/cicd/kubectl/forgejo-backup.yaml`) |
-| Leantime (upload volumes) | 14 | 8 | 6 | CronJob `leantime-backup` (`KEEP_*` in `kubernetes/management/kubectl/leantime-backup.yaml`) |
-| Deleted files in pCloud | 30 days | | | `RETENTION_DAYS` of the offsite sync |
-
-| Check | How |
-|---|---|
-| Repository structure and a sample of the data | `restic-backup`, every night on the repositories `docker`, `databases`, `vault`, `netbird`, `forgejo` and `leantime`: `restic check` with a 10% read-data subset (`CHECK_READ_DATA_SUBSET`), so the whole repository has been read after about ten nights |
-| Offsite copy complete and intact | `rclone check --one-way --size-only` S3 -> pCloud after every sync (S3 and pCloud have no common hash, so it compares sizes). A mismatch fails the sync |
-| Failed jobs | Offsite sync, `vault-backup` and `netbird_backup.sh` (`DISCORD_WEBHOOK_URL`) post to a Discord webhook when a run fails. `restic-backup` does it too (optional, a failed step is named, a failed dump too). A job that does not run at all sends nothing itself. For `offsite-sync`, `vault-backup` and `restic-backup` Prometheus catches it, see [Backup age alerts](#backup-age-alerts) |
-| Backups can be restored | By hand once per quarter: restore the latest PostgreSQL dump into a scratch database and a Vault snapshot, both from **pCloud** |
+```mermaid
+flowchart LR
+  src["Key files, PostgreSQL, MariaDB, Vault, NetBird, Forgejo, Leantime"] -->|"restic, nightly"| s3[("RustFS S3 on docker01")]
+  s3 -->|"rclone sync 05:00 UTC"| pcloud(["pCloud"])
+  s3 -.->|"failures"| discord["Discord"]
+  s3 -.->|"age metrics"| prom["Prometheus alerts"]
+```
 
 | Time (UTC) | Job |
 |---|---|
-| 02:00 | forgejo-backup (CronJob in the cluster, Forgejo is stopped for 1-2 minutes) |
-| 02:30 | vault-backup (Vault snapshot) |
-| 02:45 | leantime-backup (CronJob in the cluster, Leantime keeps running) |
-| 03:00 | restic-backup (backup of the key files and the SQL dumps, forget, prune, check of `docker` and `databases`, check of `vault`, `netbird`, `forgejo` and `leantime`) |
-| 05:00 | Offsite sync with check, runs when nothing writes to the S3 any more |
+| 02:00 | `forgejo-backup` (CronJob) |
+| 02:30 | `vault-backup` |
+| 02:45 | `leantime-backup` (CronJob) |
+| 03:00 | `restic-backup` (key files, SQL dumps, prune, checks) |
+| 05:00 | offsite sync to pCloud + check |
 
-#### Discord alerts
+Overview, retention, restore and per-service setup: [backups.md](docs/backups.md), [backup-services.md](docs/backup-services.md).
 
-Failed backups are reported to a Discord channel through a webhook. Only failures are posted, a run that succeeds is silent. A job that does not run at all (container stopped, host down) sends nothing, so look at `docker ps` now and then.
+## Monitoring and access
 
-1. Create a channel only for alerts (not the chat of a game server): **Edit Channel > Integrations > Webhooks > New Webhook**, copy the URL.
-2. The URL is a secret, whoever knows it can post to the channel. Keep it out of Git.
-3. Enter it where the job runs:
-
-   | Job | Where |
-   |---|---|
-   | `offsite-sync`, `vault-backup`, `restic-backup` | `DISCORD_WEBHOOK_URL` in the Vault secret `docker/<project>` (`vault kv patch`), then `sudo scripts/docker/deploy.sh <project>` |
-   | `netbird_backup.sh` | `sudo ./netbird_backup_setup.sh --discord-webhook <url>` (writes it to `/etc/netbird-backup.cred`) |
-
-4. Test the webhook, a message must appear in the channel:
-
-   ```bash
-   curl -H 'Content-Type: application/json' -d '{"content":"test"}' '<webhook url>'
-   docker exec offsite-sync sh -c 'wget -q -O /dev/null --header "Content-Type: application/json" --post-data "{\"content\":\"offsite-sync test\"}" "$DISCORD_WEBHOOK_URL"'
-   ```
-
-An old `PUSH_URL` in a secret of Vault or in `/etc/netbird-backup.cred` is ignored now, delete the line. Uptime Kuma is no longer part of the repository: stop it once with `sudo scripts/docker/undeploy.sh uptimeKuma` (if that finds nothing, the container was created by the old management UI: `docker rm -f uptime-kuma`), its data stays in `/root/docker/uptime-kuma` until you delete it.
-
-#### Backup age alerts
-
-A job that does not run at all (container stopped, cron gone) sends no Discord message. To catch that, `offsite-sync`, `vault-backup` and `restic-backup` write `backup_last_success_timestamp_seconds{backup="<job>"}` after every successful run into the textfile collector directory of the node_exporter on docker01 (`/var/lib/prometheus/node-exporter/<job>.prom`, created by the Ansible role `node_exporter`). `restic-backup` writes it only when every step of the run worked. Prometheus scrapes the files with the other node_exporter metrics and the rules in `kubernetes/monitoring/kubectl/alert-rules.yaml` alert when the last success is older than 26 hours or when one of the three never reported.
-
-`restic-backup` additionally reports every step (`backup`, `forget`, `prune` and `check` of the repository `docker`, `backup-postgresql`, `backup-mariadb`, `forget`, `prune` and `check` of `databases`, `check` of `vault` and `netbird`) in `restic-backup-<repository>-<step>.prom`: `restic_step_success{repository,step}` (1 or 0), `restic_step_last_success_timestamp_seconds` and `restic_step_duration_seconds`. The rule `ResticStepFailed` alerts as soon as a step failed, the table "Restic steps" of the Status dashboard shows the last result of every step. The output of the steps (the run log) is in `docker logs restic-backup`.
-
-The last step of every repository, `stats`, writes `restic-backup-<repository>-repository.prom`: `restic_repository_size_bytes{repository}` (size in the S3 after deduplication and compression), `restic_repository_snapshots` and `restic_repository_newest_snapshot_timestamp_seconds` (read as UTC, a writer in another time zone is off by its offset). The Status dashboard shows them in the table "Restic repositories" and the graph "Restic repository size". There is no alert on them.
-
-The alerts go through Alertmanager to a Discord webhook, which is set in Vault as `argocd/data/prometheus#discord_webhook_url`. `netbird_backup.sh` does not write this metric. It is only covered by its own Discord notification (NetBird is backed up by hand with every update, see `netbird_upgrade.sh`).
-
-After the first deploy check the metric: `curl -s localhost:9100/metrics | grep backup_last` on docker01, or `backup_last_success_timestamp_seconds` in Prometheus.
-
-#### Setting it up, in this order
-
-1. If there is no pCloud remote yet, get a token: on a machine with a browser and rclone run `rclone authorize "pcloud"` and keep the printed token JSON. The setup script asks for it and creates the remote `pCloud` in `/root/.config/rclone/rclone.conf`. An existing remote is reused.
-2. Create a Discord webhook for the alerts, see [Discord alerts](#discord-alerts).
-3. Prepare the host. It creates the data directories, installs `rclone.conf` and checks pCloud:
-
-   ```bash
-   sudo scripts/docker/setup-backup-host.sh
-   ```
-
-4. Set up RustFS (section [Setup RustFS](#setup-rustfs)): create the keys of the identities in Vault, deploy `rustfs`, then `sudo scripts/docker/setup-rustfs.sh` creates the buckets `backups`, `databases`, `vault`, `pelican` and `netbird`, the users and the policies. `restic-backup` and `offsite-sync` read their keys, `vault-backup` those of the identity `vault`, all from Vault.
-5. Put the secrets of the projects into Vault (`vault kv put docker/<project> ...`, with an admin token). `deploy.sh` stops and lists what is missing:
-
-   | Secret in Vault | Keys |
-   |---|---|
-   | `docker/restic-backup` | `RESTIC_PASSWORD_DOCKER` and `RESTIC_PASSWORD_DATABASES` (new ones: `openssl rand -base64 24`, also into the password manager), `POSTGRES_PASSWORD`, optional `MARIADB_PASSWORD` (both from the backup logins, see [Database dumps](#database-dumps)), `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD` (the same as `RESTIC_PASSWORD` of `docker/vault-backup` and the first line of `/root/restic`), optional `DISCORD_WEBHOOK_URL` |
-   | `docker/offsite-sync` | `DISCORD_WEBHOOK_URL` |
-   | `docker/vault-backup` | `VAULT_TOKEN` (see below), `RESTIC_PASSWORD` (the password of the Vault repository), optional `DISCORD_WEBHOOK_URL` |
-
-   `VAULT_TOKEN` is a periodic token that may only read the Raft snapshot (the policy `vault_snapshot` is in `infra/kubectl/kube-vault-config.yaml`). Create it once with an admin token, it is shown once, and put it into `docker/vault-backup`:
-
-   ```bash
-   vault token create -policy=vault_snapshot -period=768h -orphan -field=token
-   vault kv patch docker/vault-backup VAULT_TOKEN=<token>
-   ```
-
-   The Docker host must reach `https://vault.k8sdev.rjst.de`: `docker01` is a NetBird peer, put it into the group `k8s-users` (the policy `k8s-users` -> `kubernetes-services` exists, see NetBird configuration).
-
-6. Deploy them: `sudo scripts/docker/deploy.sh restic-backup vault-backup offsite-sync`.
-7. Prepare the database backup logins ([Database dumps](#database-dumps)), then run `restic-backup` once to test it: `docker exec restic-backup sh /backup.sh now`.
-8. Store the restic password and `rclone.conf` in your password manager. Without them the pCloud backups cannot be read after a total loss.
-
-Keycloak (`8180`) and the S3 port (`9000`) are published on all interfaces of the host. Restrict them to NetBird with a host firewall and allow them for your peers with NetBird policies. The backups should run before the sync, so schedule them between 01:00 and 03:00.
-
-#### Test the restore
-
-A backup that was never restored is not a backup. After the first nightly sync, and then once per quarter, restore a volume or a database from **pCloud**, not from the local S3. For the key files: `sudo scripts/docker/restore.sh --from pcloud restore docker`, see [Key files](#key-files).
-
-### Restore
-
-Keep these in the password manager, nothing can be read without them and they are not on the servers:
-
-- the restic passwords of the repositories `docker` and `databases` (project `restic-backup`), `vault` (project `vault-backup`) and `netbird` (`/root/restic`)
-- the `rclone.conf` of pCloud (the token)
-- the Vault unseal keys and the root token (printed once by `vault operator init`)
-
-| Data | Restore with |
-|---|---|
-| Key files (`rclone.conf`, `secret.key`), the secrets are in Vault | `scripts/docker/restore.sh`, repository `docker` (below) |
-| PostgreSQL, MariaDB | `scripts/docker/restore.sh`, repository `databases` (below) |
-| Vault | `scripts/vault/vault_restore.sh` (below) |
-| NetBird server | `netbird_restore.sh` (below) |
-| Pelican game servers | Pelican Panel, or unpack the plain `.tar.gz` by hand (below) |
-| The whole S3 is lost | restic directly from pCloud (below) |
-
-#### Key files
-
-1. Look at the snapshots and the files in one of them:
-
-   ```bash
-   sudo scripts/docker/restore.sh snapshots docker
-   sudo scripts/docker/restore.sh files docker <snapshot>
-   ```
-
-2. Restore a snapshot (default `latest`), or only some paths of it:
-
-   ```bash
-   sudo scripts/docker/restore.sh restore docker
-   sudo scripts/docker/restore.sh restore docker <snapshot> --include /userdata/docker/offsite-sync/rclone/rclone.conf
-   ```
-
-   The script restores into a **new** folder `/root/docker/restic-backup/restore/<repository>-<snapshot>-<time>` (the only writable place of the container, it never overwrites anything) and prints it. The files hold secrets in plain text, delete the folder afterwards. `/userdata/docker` in the snapshot is `/root/docker` on the host, `/userdata/gitops` is `/root/gitops`.
-
-3. Copy the file back to its place (`/root/docker/offsite-sync/rclone/rclone.conf`), check the owner and mode (`600`) and deploy the project with `deploy.sh`.
-
-`restore.sh` takes the repositories `docker`, `databases`, `vault`, `netbird`, `forgejo` and `leantime` (the Vault, NetBird, Forgejo and Leantime snapshots can also be browsed this way, they are restored with their own scripts or jobs). It needs the running container `restic-backup`. With the S3 gone use `--from pcloud`.
-
-After a total loss of RustFS deploy it and run `setup-rustfs.sh` again (the keys are in Vault), then fill it from pCloud (below). The key files and the dumps are also in the repositories `docker` and `databases` on pCloud, see the last section.
-
-#### PostgreSQL and MariaDB
-
-The dumps are plain SQL files, one per database, in the repository `databases`: `postgresql/<database>.sql` and `postgresql/globals.sql` (roles without passwords and tablespaces) with the tag `postgresql`, `mariadb/<database>.sql` with the tag `mariadb`. The passwords of the logins are in Vault (`databases/...`), the dumps do not hold them.
-
-1. Look at the snapshots and restore the newest of an engine (the folder is printed, the dumps hold all data in plain text, delete it afterwards):
-
-   ```bash
-   sudo scripts/docker/restore.sh --tag postgresql snapshots databases
-   sudo scripts/docker/restore.sh --tag postgresql restore databases
-   sudo scripts/docker/restore.sh --tag postgresql restore databases <snapshot> --include /dump/postgresql/<database>.sql
-   ```
-
-2. On a new server: run the Ansible role `postgresql` (PostgreSQL 18 with `pg_cron` and `pg_partman`), restore `globals.sql` for the roles (their passwords are set with `user_password.sh` afterwards, they are in Vault only), create the database with `db_create.sh <name>` and the backup role with `backup_user_create.sh`.
-3. Load the dump. Restore into a scratch database first to look at the result. The extensions `pg_cron` and `pg_partman` must exist on the target server. The shell reads the file (`<`), because the user `postgres` cannot enter `/root` where the restore folder is:
-
-   ```bash
-   sudo -u postgres psql --set ON_ERROR_STOP=on --dbname <database> < <folder>/dump/postgresql/<database>.sql
-   mariadb <database> < <folder>/dump/mariadb/<database>.sql
-   ```
-
-4. Without the Docker host (the S3 is gone): the same with `--from pcloud`, or with `restic -r rclone:pCloud:/Backups/s3/databases/restic restore latest --tag postgresql --target <folder>` and the restic password of the repository `databases`.
-
-#### Vault
-
-1. Vault runs (Argo, `kube-vault.yaml`) and is initialised and unsealed (`vault operator init` on a fresh Vault, see [Initialize Vault](#3-initialize-vault-and-populate-secrets)).
-2. On a host with the `vault` CLI: `VAULT_ADDR` and `VAULT_TOKEN` (root token) set, and `/etc/vault-backup.cred` with the lines `S3_ENDPOINT=...`, `AWS_ACCESS_KEY_ID=...` and `AWS_SECRET_ACCESS_KEY=...` (identity `vault` or `restic-backup`).
-3. Put the restic password of the Vault repository into a file and run the script, it lists the snapshots and asks which one to restore:
-
-   ```bash
-   sudo RESTIC_PASSWORD_FILE=/root/restic-vault scripts/vault/vault_restore.sh
-   ```
-
-A snapshot replaces all data of Vault. After restoring a snapshot of another cluster the unseal keys of the backed up cluster apply, and the restore may need `-force`. Snapshots from before the move are in `rclone:pCloud:/Backups/vault_pb` (set `RESTIC_REPOSITORY`).
-
-#### NetBird
-
-`netbird_restore.sh` works on the original server and on a new one (Docker and Compose installed, the same domain pointing to it, TCP 80 and 443 and UDP 3478 open). It needs `/etc/netbird-backup.cred` with the S3 keys of the identity `netbird` and `/root/restic`, both are written by `netbird_backup_setup.sh`. It lists the snapshots and restores the selected one:
-
-```bash
-sudo netbird_restore.sh
-```
-
-After a failed upgrade `netbird_rollback.sh` goes back to the rollback point made by `netbird_upgrade.sh`.
-
-#### Pelican game servers
-
-Panel -> server -> Backups -> Restore. Pelican fetches the backup from the bucket `pelican`, the Wings must reach port 9000 of the S3. The Panel and the Wings configuration are not backed up on purpose (see [Setup Pelican S3 backups](#setup-pelican-s3-backups)). Without the Panel unpack the `.tar.gz` of the server by hand.
-
-#### The S3 is lost (restore from pCloud)
-
-The offsite sync keeps a copy of every bucket in `pCloud:/Backups/s3/<bucket>/`. The restic repositories can be read from there directly, without the S3, with the `rclone.conf` and the restic password:
-
-```bash
-restic -r rclone:pCloud:/Backups/s3/backups/docker snapshots
-restic -r rclone:pCloud:/Backups/s3/databases/restic restore latest --tag postgresql --target /restore/databases
-restic -r rclone:pCloud:/Backups/s3/vault/raft restore latest --target /restore/vault
-restic -r rclone:pCloud:/Backups/s3/netbird/restic restore latest --target /restore/netbird
-```
-
-With the container `restic-backup` running, `sudo scripts/docker/restore.sh --from pcloud restore docker` does the same for the key files (`--tag postgresql restore databases` for the dumps; it reads the `rclone.conf` of the offsite sync, the S3 is not needed). To fill a new RustFS again, run the nightly sync the other way round: `rclone sync pCloud:/Backups/s3 RUSTFS:` (with an S3 remote named `RUSTFS` and the root key from the secret `docker/rustfs` in Vault).
-
-### Setup restic-backup
-
-`restic-backup` is one container with a shell script (`docker/restic-backup/backup.sh`, no UI). Once a night (03:00 UTC, after `vault-backup`, before the offsite sync) it runs everything on the local RustFS S3 in one go, so backup, forget, prune and check never fight over the repository lock:
-
-| Repository | Steps | Notes |
+| Topic | Tool | Docs |
 |---|---|---|
-| `docker` (`backups/docker`) | `backup`, `forget`, `prune`, `check` | The key files (below). `forget` keeps 7 daily, 4 weekly and 6 monthly snapshots over **all** snapshots of the repository (`--group-by ''`), so the snapshots of the former Backrest age out as well. `prune` removes a pack when more than 10% of it is unused. `check` reads 10% of the data. `forget` and `prune` are skipped when the backup failed |
-| `databases` (`databases/restic`) | `backup-postgresql`, `backup-mariadb`, `forget`, `prune`, `check` | One plain SQL file per database (`pg_dump`, `mariadb-dump`), see [Database dumps](#database-dumps). `forget` keeps 14 daily, 8 weekly and 6 monthly snapshots per engine (tag). `backup-mariadb` only runs when `MARIADB_PASSWORD` is set. `forget` and `prune` are skipped when no dump could be backed up |
-| `vault` (`vault/raft`), `netbird` (`netbird/restic`) | `check` | Written and pruned by `vault-backup` and `netbird_backup.sh`. The repositories must exist, a missing one fails the step |
+| Metrics, dashboards | Prometheus, Grafana (Keycloak login), node/postgres/mysqld exporters | [ansible.md](docs/ansible.md#node-exporter-and-update-monitoring) |
+| Alerts | Alertmanager to Discord (deploy, backup age, OS updates, DB, probes) | [backups.md](docs/backups.md#backup-age-alerts) |
+| Logs / traces | Loki + Alloy, Tempo | [kubernetes.md](docs/kubernetes.md#logs-loki-alloy) |
+| Public status | Gatus at `status.rjst.de` | [kubernetes.md](docs/kubernetes.md#public-status-page) |
+| VPN, proxy, DNS | NetBird (config by hand in the dashboard) | [netbird.md](docs/netbird.md) |
+| Login | Keycloak, realm `rjst` as code | [keycloak.md](docs/keycloak.md) |
 
-Every step leaves its result for Prometheus, see [Backup age alerts](#backup-age-alerts). The container exits the run with an error if a step failed and posts the failed steps to Discord (optional). The log of a run is in `docker logs restic-backup`, a run right now: `docker exec restic-backup sh /backup.sh now`. All backups of the Docker host and then the offsite sync in one go: `sudo scripts/docker/backup-now.sh` (the log is also in `/var/log/backup-now.log`, with `--background` the run survives a dropped SSH session, follow it with `tail -f`; the NetBird server with `netbird_backup.sh` on that host).
+## Docs
 
-- Secrets are in Vault (`docker/restic-backup`, the S3 keys of the identity `restic-backup` are added from `docker/s3/restic-backup`), `default.env` lists all variables, also the time of the run (`BACKUP_HOUR`, `BACKUP_MINUTE`), the retention (`KEEP_*`, `DATABASES_KEEP_*`), the database hosts and logins and the share of data that `check` reads (`CHECK_READ_DATA_SUBSET`). The secret holds the restic passwords of the repositories (`RESTIC_PASSWORD_DOCKER`, `RESTIC_PASSWORD_DATABASES`, `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD`), the passwords of the database backup logins (`POSTGRES_PASSWORD`, optional `MARIADB_PASSWORD`) and optionally `DISCORD_WEBHOOK_URL`. Order on a new host: `setup-backup-host.sh`, the secret in Vault (`vault kv put docker/restic-backup ...`), `deploy.sh restic-backup`
-- The repositories `docker` and `databases` are initialised by the first run. `vault` and `netbird` already exist (created by `vault-backup` and `netbird_backup.sh`), `restic-backup` only checks them
-- The repository checkout (`/root/gitops`) and `/root/docker` are mounted read-only, the container can only write to `/restore`, `/dump` (the scratch folder of the dumps) and the restic cache
-- The `rclone.conf` of the offsite sync is mounted read-only. It is only used to restore from pCloud, the container never writes to pCloud
-- Restore with `scripts/docker/restore.sh`, see [Key files](#key-files)
-- Store the restic passwords and `rclone.conf` outside the server as well (password manager)
-
-#### Move from Backrest (once)
-
-1. `sudo scripts/docker/undeploy.sh --yes backrest` (the data stays in `/root/docker/backrest`).
-2. `git pull`, then `sudo scripts/docker/setup-backup-host.sh`: it creates `/root/docker/restic-backup`. The S3 keys come from Vault (`docker/s3/restic-backup`).
-3. Put the secret into Vault (`vault kv put docker/restic-backup ...`). Use the **same** password for `docker` as Backrest had (the repository `docker` already exists).
-4. `sudo scripts/docker/deploy.sh restic-backup`, then `docker exec restic-backup sh /backup.sh now` and check the result: the log must end with `Run finished` and `backup_last_success_timestamp_seconds{backup="restic-backup"}` must show up in Prometheus.
-5. Look at what `forget` would remove from the old snapshots: `docker exec restic-backup sh -c '. /common.sh && select_repository docker s3 && restic forget --dry-run --group-by "" --keep-daily 7 --keep-weekly 4 --keep-monthly 6'`.
-6. Delete the old data once you trust the new run: `rm -r /root/docker/backrest`. In the NetBird dashboard remove the reverse proxy service `backrest.proxy.rjst.de`.
-
-The key files are in the plan of the script (`KEY_FILES` in `backup.sh`), the data directories of running databases are not copied, a copy of a live database is not consistent. PostgreSQL and MariaDB are backed up as dumps ([Database dumps](#database-dumps)).
-
-| Setting | Value |
+| Topic | File |
 |---|---|
-| Repository | `docker` |
-| Paths | `/userdata/gitops` (the repository checkout `/root/gitops`, it holds no secrets)<br>`/userdata/docker/offsite-sync/rclone/rclone.conf` |
-| Excludes | `/userdata/gitops/.git` (the history is on GitHub) |
-| Schedule | daily 03:00 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`) |
-| Retention | daily 7, weekly 4, monthly 6 |
-
-Test it: `docker exec restic-backup sh /backup.sh now`, then restore a file with `scripts/docker/restore.sh`. Restoring from pCloud (`--from pcloud`) is done after the first offsite sync.
-
-### Database dumps
-
-`restic-backup` dumps the databases of the Docker host itself, no UI and no list of databases: it asks the server which ones exist, so a new database is part of the next run. PostgreSQL 18 runs directly on the Docker host (Ansible role `postgresql`), MariaDB too, the container reaches both as `host.docker.internal`, which the compose file points to the host.
-
-| Engine | What is dumped | Not dumped |
-|---|---|---|
-| PostgreSQL | `pg_dumpall --globals-only --no-role-passwords` and `pg_dump` of every database that accepts connections (not the templates) | The data directory, role passwords (they are in Vault) |
-| MariaDB | `mariadb-dump --single-transaction --routines --events --triggers` of every database | `information_schema`, `performance_schema`, `mysql`, `sys`: users are created by `scripts/mariadb` |
-
-The dumps are written to the scratch folder `/dump` (`/root/docker/restic-backup/dump`, mode 700) first and backed up as files, then the folder is emptied. A dump that fails is removed, the others are still backed up, the step is reported as failed (`restic_step_success{repository="databases"}`) and `ResticStepFailed` alerts. A pipe straight into restic would be shorter, but `/bin/sh` has no `pipefail`, so a dump that died halfway would end up in a snapshot that looks fine.
-
-#### Setup
-
-1. Create the backup logins once (`backup`). PostgreSQL: `pg_read_all_data` (SELECT on all tables, views and sequences in all databases and schemas, also later ones) and `CONNECT` on every existing database. The `ro` role of `user_create.sh` is not enough, it only sees the `public` schema of one database and would miss e.g. the `partman` schema. MariaDB: `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, `LOCK TABLES`. The scripts store the passwords in Vault (`databases/postgresql/backup`, `databases/mariadb/backup`, not printed), an existing login keeps its password (`reset` sets a new one):
-
-   ```bash
-   sudo scripts/postgresql/backup_user_create.sh
-   sudo scripts/mariadb/backup_user_create.sh
-   ```
-
-2. `CONNECT` is needed because `db_create.sh` revokes it from `PUBLIC` and `pg_read_all_data` does not include it. `db_create.sh` grants it on every new database. Run the script above again for databases created in another way (the dump of such a database fails with `permission denied for database`).
-3. The containers of the Docker network must reach PostgreSQL (5432), MariaDB (3306) and the S3 (9000) of the host. The firewall blocks that by default (the test below times out). The Ansible role `firewall` allows them from `172.16.0.0/12`, see [Firewall](#firewall). Test it from a container, `open` is the right answer:
-
-   ```bash
-   docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 5432
-   docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 3306
-   docker run --rm --add-host=host.docker.internal:host-gateway alpine nc -zv -w 5 host.docker.internal 9000
-   ```
-
-4. The host cannot read a password from Vault, so copy them into the secret of the project (a new `RESTIC_PASSWORD_DATABASES` too, `openssl rand -base64 24`, also into the password manager). `vault kv patch` keeps the other keys:
-
-   ```bash
-   vault kv patch docker/restic-backup \
-     POSTGRES_PASSWORD=$(vault kv get -field=password databases/postgresql/backup) \
-     MARIADB_PASSWORD=$(vault kv get -field=password databases/mariadb/backup) \
-     RESTIC_PASSWORD_DATABASES=<new password>
-   ```
-
-5. Let the identity `restic-backup` write to the bucket `databases`: `sudo scripts/docker/setup-rustfs.sh` (it updates the policies of `docker/rustfs/identities.json`). Then `sudo scripts/docker/setup-backup-host.sh` (the folder `dump`) and `sudo scripts/docker/deploy.sh restic-backup` (the container is recreated for the new mount).
-6. Run it once and look at the result: `docker exec restic-backup sh /backup.sh now`, the log must end with `Run finished`, then restore a dump into a scratch database, see [PostgreSQL and MariaDB](#postgresql-and-mariadb).
-
-Tested for PostgreSQL: a complete run and a restore of `fw_chaos` into a scratch database. Not yet verified: the MariaDB dump, including the TLS setting of the client (`--skip-ssl`, the connection stays on the Docker bridge to the host), and a restore of a database that uses `pg_cron` or `pg_partman`, which needs the extensions on the target server. `pg_dump` must be version 18 or newer (the Alpine package `postgresql-client`), otherwise the dump fails with a version mismatch.
-
-PostgreSQL accepts connections from every address (`pg_hba.conf` `0.0.0.0/0`, `listen_addresses = '*'`), restrict it with a firewall (the rules above allow only the Docker network for these ports).
-
-### Setup Offsite Sync
-
-Nightly `rclone sync` of the RustFS S3 to pCloud (05:00 UTC, `SYNC_HOUR`), followed by an `rclone check` of the copy. Deleted or overwritten files are moved to `Backups-deleted/<date>` and kept for `RETENTION_DAYS`. This is the only container that holds the pCloud credentials.
-
-- The `rclone.conf` with the pCloud remote is installed to `/root/docker/offsite-sync/rclone/rclone.conf` by `setup-backup-host.sh`
-- The S3 keys (read-only identity `offsite-sync`) come from Vault (`docker/s3/offsite-sync`); set `DISCORD_WEBHOOK_URL` in the Vault secret `docker/offsite-sync`
-- `docker compose up -d` in the offsite-sync folder
-
-### Setup RustFS
-
-`docker/rustfs` is the local S3 of all backups (it replaced SeaweedFS). Ports: `9000` S3 API, `9001` console. RustFS is young (1.0.x), so test a restore now and then (`scripts/docker/restore.sh`, also `--from pcloud`).
-
-Buckets, users and policies come from `docker/rustfs/identities.json` (names and buckets, no keys). The keys are in Vault (`docker/s3/<name>`):
-
-1. Create the missing keys once with the loop over `identities.json` in [Secrets](#secrets) (step 3). It never changes an existing key. Read a key with `vault kv get -field=secret_key docker/s3/<name>` (for Pelican and NetBird).
-2. On the Docker host (after the steps below, RustFS running, the AppRole files in place, see [Secrets from Vault](#secrets-from-vault)): `sudo scripts/docker/setup-rustfs.sh` creates the buckets with the root key of the secret `docker/rustfs` (read with the AppRole), then a policy and a user per identity through the admin API of RustFS (`add-canned-policy`, `add-user`, `set-user-or-group-policy`, signed with the root key by `curl --aws-sigv4`, so `curl` 7.75 or newer). The script names the identity and prints the answer of RustFS when a step is refused. Last it tests every identity with its own keys: it lists its buckets, writes (`readwrite`) or must not write (`read`), and can neither write nor list a bucket outside its list.
-3. The firewall rule for port `9000` from the Docker networks is in `ansible/group_vars/all/main.yml` (run the Ansible playbook for the host).
-4. Keycloak: set `RUSTFS_CLIENT_SECRET` in the Vault secret `docker/keycloak-config` (`openssl rand -base64 32`), then `sudo scripts/docker/deploy.sh keycloak-config`. That creates the client `rustfs` and its client roles `consoleAdmin`, `readwrite` and `readonly` (the names of the RustFS policies). The deploy of `keycloak-config` stops with an undefined variable until the secret is set.
-5. Keycloak UI: give your user the client role `consoleAdmin` of the client `rustfs` (**Users > Role mapping**).
-6. The Vault secret `docker/rustfs` (`vault kv put docker/rustfs ...`, names in `docker/rustfs/vault.env.example`): `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY` (root login, not `rustfsadmin`) and `RUSTFS_IDENTITY_OPENID_CLIENT_SECRET` (the same value as `RUSTFS_CLIENT_SECRET`).
-7. `sudo scripts/docker/deploy.sh rustfs`. `pre-deploy.sh` makes the data directories belong to the user `10001` of the image.
-8. NetBird dashboard: the reverse proxy service `s3-admin.proxy.rjst.de` points to port `9001` of the Docker host, restricted to your peers (the catalog entry "RustFS" is a label of the container).
-
-- The container cannot use `https://auth.proxy.rjst.de` (the NetBird proxy only serves peers and answers `403` for a container). RustFS therefore fetches the discovery document, the keys and the token from the published port of Keycloak (`RUSTFS_IDENTITY_OPENID_CONFIG_URL=http://host.docker.internal:8180/realms/rjst`) and checks the issuer against the public URL (`RUSTFS_IDENTITY_OPENID_ISSUER`). For that Keycloak needs `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` (`docker/keycloak/default.env`): a call to port 8180 then gets the token and key endpoints of the address it used, while issuer and login page stay public. Deploy it first: `sudo scripts/docker/deploy.sh keycloak` (a short restart of Keycloak, the apps keep their local logins). Check it before the first login, the token endpoint must be `http://host.docker.internal:8180/...` and the issuer public:
-
-  ```bash
-  docker run --rm --add-host host.docker.internal:host-gateway curlimages/curl -s http://host.docker.internal:8180/realms/rjst/.well-known/openid-configuration
-  ```
-
-  If that call hangs, the firewall blocks the Docker network (`ufw allow from 172.16.0.0/12 to any port 8180 proto tcp`, as an entry in `firewall_rules` like the one for `9000`).
-- The user of a login gets the RustFS policies named in the claim `roles`. The root login (`RUSTFS_ACCESS_KEY`) stays as the emergency login.
-- Not verified: whether the callback `/rustfs/admin/v3/oidc/callback/default` is served on the console port `9001` or on the API port `9000`. If the login ends in a 404 after Keycloak, let the reverse proxy route `/rustfs/admin/` to port `9000`.
-- The RustFS data is `/root/docker/rustfs/data`. Nothing backs it up.
-
-### Setup Pelican S3 backups
-
-Pelican can store the backups of its servers in an S3. The bucket `pelican` and the identity `pelican` (Read, Write, List on this bucket only) are created by the setup script. Settings for Pelican, the names of the fields may differ in your version:
-
-- Backup driver S3 in the admin settings (Backups), endpoint `http://100.67.0.1:9000` (the NetBird address of `docker01`), bucket `pelican`, path-style on, any region (e.g. `us-east-1`)
-- Access key and secret of the identity `pelican`, without spaces or quotes (the password manager of the browser may fill them into a wrong field): `vault kv get docker/s3/pelican`
-- Why the IP: the endpoint must be reachable from the Panel and the Wings (containers in Docker networks), and for downloads from the browser (the Panel hands out presigned URLs). Containers do not know `host.docker.internal` there and cannot resolve `docker01.vpn.rjst.de` (the host DNS is the NetBird resolver), an IP works for both. The browser must be in the NetBird network.
-- The firewall must let the Docker networks reach port 9000 (the rule of the Ansible role `firewall` for `172.16.0.0/12` covers the destination `100.67.0.1`, see [Firewall](#firewall)). Test it from the networks of the Wings and the Panel, `open` is the right answer:
-
-  ```bash
-  docker run --rm --network wings0 alpine nc -zv -w 5 100.67.0.1 9000
-  docker run --rm --network pelicanpanel_default alpine nc -zv -w 5 100.67.0.1 9000
-  ```
-
-- Test a backup of a server, the download and a restore on a test server. Set the number of backups per server in Pelican, every backup is a full archive
-
-What this covers and what not: the S3 backups are the backups of the game **servers**. Pelican writes them as plain `.tar.gz` archives into the bucket `pelican`, restic is not involved. They are **not encrypted**: readable without a password in the S3 and, after the nightly sync, in pCloud (`Backups/s3/pelican/`, deleted or overwritten archives stay 30 days in `Backups-deleted`). This is intended, the game server data is not put into a restic repository. Every backup is a full archive (no deduplication), so set the number of backups per server and the schedule in Pelican to what the storage and the upload can take.
-
-The Panel itself is deliberately not backed up. Its database is SQLite (not MariaDB) in the Docker volume `pelican_panel_data`, it holds only the configuration of users, nodes and servers and can be set up again. The Wings configuration (`/etc/pelican`, node token) is created again with the node. The server files in `/var/lib/pelican` are left out as well, the S3 backups cover them.
-
-Because the backups are plain archives, they can be restored without the Panel: download the `.tar.gz` of the server from the S3 or from pCloud (`Backups/s3/pelican/`) and unpack it into the data directory of the server.
-
-### Deploy NetBird
-
-The self-hosted NetBird server is the project `docker/netbird/`. It is not in `ALL_PROJECTS`, so the timer never touches it: SSH to `docker01` and the way to Vault both run through NetBird, and a broken merge must not lock you out. `/root/netbird` stays the working folder. `pre-deploy.sh` installs the files of the project there and renders `config.yaml`, `proxy.env`, `crowdsec.env` and `traefik-dynamic.yaml` (mode 600) with the keys of `docker/netbird` from Vault. They stay on the host, unlike the `vault.env` of the other projects: the server cannot read its secrets from the environment, `/run` is empty after a reboot and NetBird must start without Vault. The named volumes and `crowdsec/` are not in Git, only `crowdsec/acquis.d/appsec.yaml` is installed from there.
-
-| Change | What to do |
-| --- | --- |
-| Config, labels, a secret | Merge, `git pull` in `/root/gitops`, `sudo scripts/docker/deploy.sh netbird` |
-| New image version (Renovate or by hand) | Merge, `git pull` in `/root/gitops`, `sudo scripts/netbird/netbird_upgrade.sh`, then `sudo scripts/docker/deploy.sh netbird` when the merge also changed a template |
-
-`deploy.sh netbird` refuses a change of an image (that needs the rollback point of `netbird_upgrade.sh`) and a `NETBIRD_STORE_ENCRYPTION_KEY` that differs from `/root/netbird/config.yaml` (the database would become unreadable). After `netbird_rollback.sh` the host runs the old version while Git holds the new one: `git revert` the version change on `master`.
-
-The keys of `docker/netbird` are listed in `docker/netbird/vault.env.example`. A new server is restored with `netbird_restore.sh`, which needs no Vault.
-
-#### CrowdSec AppSec
-
-The dashboard and the routes `/api` and `/oauth2` run through the Traefik bouncer plugin and the CrowdSec AppSec WAF ([guide](https://docs.netbird.io/selfhosted/maintenance/crowdsec-dashboard)). The difference to the guide: the middleware is in `traefik-dynamic.yaml`, not in a label. `deploy.sh` starts Compose in the repository folder and does not see a `.env` of `/root/netbird`, and the key stays out of the Compose config. The gRPC router and the relay stay outside, so peers are not filtered. The Kubernetes operator uses `/api` and does pass through the WAF.
-
-With the `Block` flags a CrowdSec failure blocks the dashboard, `/api` and `/oauth2`, and Traefik only starts when CrowdSec is healthy.
-
-Check after every change of the labels, from an admin IP and only with these two paths (two different rules within a minute ban the IP for 4 hours):
-
-```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://proxy.rjst.de/.env       # 403
-curl -s -o /dev/null -w '%{http_code}\n' https://proxy.rjst.de/api/.env   # 403
-sudo docker exec netbird-crowdsec cscli bouncers list                     # netbird-proxy and netbird_dashboard
-sudo docker exec netbird-crowdsec cscli metrics show appsec
-```
-
-The protection fails open: with a detached middleware the probes answer `404` and nothing reports an error.
-
-Locked out: `cscli decisions list` shows an IP decision (`cscli decisions delete --ip <ip>`). Without one it is an AppSec match on the request, see `cscli alerts list`. Last resort: remove **both** `middlewares` labels (`netbird-dashboard` and `netbird-dashboard-api`) in `/root/netbird/docker-compose.yml` and run `docker compose up -d dashboard netbird-server` there. With only one removed the UI loads but cannot log in. Fix it in Git afterwards, `deploy.sh netbird` installs the file again.
-
-### Setup NetBird backup
-
-The self-hosted NetBird server runs as a Docker Compose project on `docker01` (`/root/netbird`, `NETBIRD_DIR` in `/etc/netbird-backup.cred`). The scripts in `scripts/netbird/` back it up, restore it and upgrade it with a rollback point:
-
-- `netbird_backup.sh`: stops NetBird for a moment, copies the config files, `/var/lib/netbird` (SQLite store and keys), CrowdSec data and certificates, starts NetBird again (also on errors), writes everything with restic to the repository `netbird/restic` on the local RustFS S3 and applies the retention (8 weekly, 6 monthly). It has no schedule: it runs before every upgrade (`netbird_upgrade.sh`, tag `pre-upgrade`) and by hand, so everything changed since then is lost on a restore. A failed run is reported to Discord (`DISCORD_WEBHOOK_URL`). Connected through NetBird, use `sudo netbird_backup.sh --background`: the run stops NetBird, which drops that SSH session, so it detaches and writes to `/var/log/netbird-backup.log` (`tail -f` after reconnecting). A PostgreSQL or MySQL store would have to be backed up separately.
-- `netbird_restore.sh`, `netbird_upgrade.sh` (creates a pre-upgrade backup and a local rollback point), `netbird_rollback.sh`
-  - `netbird_upgrade.sh` takes all versions from `docker/netbird/docker-compose.yml` in `/root/gitops` (`GITOPS_DIR`), also those of CrowdSec and Traefik, which are not part of the NetBird release and are replaced one at a time (`--no-deps`). It shows the diff and copies the file to `/root/netbird` only after the backup, so `netbird_rollback.sh` restores the old one.
-- `netbird_backup_setup.sh` installs them to `/usr/local/bin`, writes `/etc/netbird-backup.cred` and removes the cron job of earlier versions.
-
-Set it up on `docker01`, the S3 is reached on `127.0.0.1:9000`, no NetBird is involved:
-
-1. The identity and bucket `netbird` come from `docker/rustfs/identities.json` (`setup-rustfs.sh`). The keys: `vault kv get docker/s3/netbird`
-2. Create a Discord webhook for the alerts, see [Discord alerts](#discord-alerts)
-3. Run the setup (installs restic if missing, asks for the S3 keys and the restic password, initialises the repository):
-
-   ```bash
-   cd scripts/netbird
-   sudo ./netbird_backup_setup.sh --discord-webhook <webhook url> --run
-   ```
-
-4. The restic password is in `/root/restic`, store it in your password manager (without it the backups are unreadable)
-5. Test later with `sudo netbird_backup.sh`. Snapshots from before the move are in `rclone:pCloud:/Backups/netbird` (set `RESTIC_REPOSITORY` for `netbird_restore.sh`)
-
-### Setup Vault backup
-
-Daily at 02:30 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`) the container fetches the Raft snapshot of Vault (`sys/storage/raft/snapshot`), writes it with restic to the repository `vault/raft` on the RustFS S3, applies the retention (`KEEP_*`, default 14 daily, 8 weekly, 12 monthly) and reports a failed run to Discord. It runs in the host network, so that it uses the NetBird DNS of the host to reach Vault and the S3 on `127.0.0.1`.
-
-- Create the token as described above (`vault token create`). The token is periodic and renewed by every run, so it stays valid as long as the backup runs at least once per period (32 days)
-- Put `VAULT_TOKEN`, `RESTIC_PASSWORD` and optionally `DISCORD_WEBHOOK_URL` into the Vault secret `docker/vault-backup`. The S3 keys of the identity `vault` are added from `docker/s3/vault`
-- `docker compose up -d` in the vault-backup folder
-- Restore with `scripts/vault/vault_restore.sh`. Snapshots from before the move are in `rclone:pCloud:/Backups/vault_pb` (set `RESTIC_REPOSITORY`)
-
-### Setup Keycloak
-
-Keycloak (`docker/keycloak`) runs on the Docker host and not in the cluster, on purpose: it is the login of everything else, so it must not depend on the cluster, ArgoCD or Vault, and a rebuilt cluster does not touch it. The database is the local PostgreSQL (`host.docker.internal`), which `restic-backup` backs up. The public URL is `https://auth.proxy.rjst.de` (the NetBird reverse proxy, TLS ends there). It is the issuer in every token and in the config of every client, so choose it once. Keycloak serves one URL only, a second hostname does not work for logins.
-
-1. On the Docker host: `scripts/postgresql/db_create.sh keycloak` (stores the password of `keycloak_owner` in Vault as `databases/postgresql/keycloak_owner`), the next `restic-backup` run dumps it on its own: the users and their group membership live only there (realm and clients are in Git, see below).
-2. The Vault secret `docker/keycloak` (`vault kv put docker/keycloak ...`, names in `docker/keycloak/vault.env.example`): the database user and password (`vault kv get -field=password databases/postgresql/keycloak_owner`) and the password of the first admin (`openssl rand -base64 24`). Keep the admin password in the password manager.
-3. `sudo scripts/docker/deploy.sh keycloak`
-4. NetBird dashboard: a reverse proxy service `auth.proxy.rjst.de` to port `8180` of the Docker host, restricted to your peers (this is what keeps Keycloak internal). The published port `8180` itself is open like the other Docker ports (see the note after the setup steps under [Backups](#backups)).
-5. Log in as `admin` at `https://auth.proxy.rjst.de/admin/`, create a personal admin in the realm `master` (role `admin`) and delete `admin`: the bootstrap variables are only read while the master realm has no user. Create a separate realm for the apps, the issuer is then `https://auth.proxy.rjst.de/realms/<name>`.
-
-Connecting apps: every app keeps its local emergency login (ArgoCD `admin`, Jenkins admin, Harbor `admin`, Vault root token, Grafana admin), so a Keycloak outage never locks you out.
-
-#### Realm, roles and clients (as code)
-
-The login of the apps is defined in Git: `docker/keycloak-config/realms/rjst.yaml` holds the realm `rjst`, the client roles and one client per app. The project `keycloak-config` is a one-shot job ([keycloak-config-cli](https://github.com/adorsys/keycloak-config-cli)) that applies the file through the admin API and exits. `deploy.sh keycloak-config` runs it again, the import is idempotent. Only what the job created itself is removed again when it disappears from the file. The image is built for Keycloak 26.5.5, the server is newer (26.6.x): if an import fails, look at that first.
-
-What is **not** in the file: users, their passwords and their group membership. They are created in the Keycloak UI and live in the database (backed up by `restic-backup`).
-
-- The issuer of every app is `https://auth.proxy.rjst.de/realms/rjst`. An app creates its own user at the first login and reads the roles from the token at every login.
-- The permissions are set per app: every app has its own client roles (Grafana: `admin`, `editor`, `viewer`). A user gets the roles of the apps he may use in the Keycloak UI (**Users > Role mapping > Client roles**). For many users create a group in the UI, give it the roles and put the users into it, the roles are inherited. A user without a role of an app is refused by that app, what the other apps do is not affected.
-- A changed role is effective at the next login. The client has a mapper that puts its roles into the token as the claim `roles`; the app turns them into its own roles (in `kubernetes/monitoring/helm/prometheus.yaml`: `role_attribute_path`).
-- The client secrets are generated into Vault ([Secrets](#secrets), step 3) (Grafana: `argocd/data/prometheus#oidc.client_secret`). The same value goes into the Vault secret `docker/keycloak-config` (`GRAFANA_CLIENT_SECRET`), the file refers to it as `$(env:GRAFANA_CLIENT_SECRET)`.
-- The Vault secret `docker/keycloak-config` also needs a user of the realm `master` with the role `admin` (`KEYCLOAK_USER`, `KEYCLOAK_PASSWORD`).
-
-A new app: one more client block with its roles and the mapper in the file, its secret in Vault and in the Vault secret `docker/keycloak-config` (with a new variable in `default.env` and `vault.env.example`), then `sudo scripts/docker/deploy.sh keycloak-config`. Check the result with `docker logs keycloak-config`.
-
-#### Argo CD login
-
-Argo CD is not rendered by AVP, so `oidc.config` in `kubernetes/argocd-values.yaml` only refers to the Secret `argocd-oidc` (`kubernetes/secrets/argocd-oidc.yaml`). Roles: `admin` is `role:admin`, `viewer` is `role:readonly`. A user without a role can log in, but sees nothing. The login works in the browser only: the client is confidential, so `argocd login --sso` does not work, use the local `admin` for the CLI.
-
-1. The client secret `argocd/data/argocd#oidc.client_secret` is one of the generated values ([Secrets](#secrets), step 3). Before the merge copy the value into the Vault secret `docker/keycloak-config` as `ARGOCD_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/argocd`). The variable is required: without it the deploy timer fails on `keycloak-config`.
-2. Merge, then `sudo scripts/docker/deploy.sh keycloak-config` creates the client and its roles.
-3. Hard refresh the app `secrets` in Argo CD, a plain refresh does not pick up the new Vault value.
-4. Apply `kubernetes/argocd-values.yaml` with the `helm upgrade` from [Bootstrap ArgoCD](#1-bootstrap-argocd).
-5. Keycloak UI: give your user the client role `admin` of the client `argocd`, then log in with the button **Log in via Keycloak**.
-
-The Pods fetch the token and the user info themselves from `https://auth.proxy.rjst.de`, so the cluster has to reach it. Test it from a Pod before the first login, e.g. `kubectl -n prometheus exec deploy/grafana -c grafana -- wget -qO- https://auth.proxy.rjst.de/realms/rjst/.well-known/openid-configuration`.
-
-## Kubernetes
-
-### Setup
-
-Each top-level folder is its own independently deployable ArgoCD app-of-apps (`kube-app-<name>.yaml`), so a domain can be bootstrapped on its own via `kubectl apply -f kubernetes/kube-app-<name>.yaml`. Inside a domain, the manifests are split by *how* they are deployed:
-
-```
-kubernetes/<domain>/
-  apps.yaml     the two child Applications below (the root app only reads this file)
-  helm/         Applications that wrap Helm charts (operators, apps) - synced first, wave 0
-  kubectl/      raw manifests (custom resources, Gateways, Secrets, ...) - synced second, wave 1
-```
-
-`<domain>-kubectl` waits until `<domain>-helm` is healthy, so operators and their CRDs exist before the custom resources that need them - that is the enforced ordering, no dry-run workarounds needed. Both are plain directory sources without AVP; the `<path:...>` values in a Helm app are resolved later, by the AVP Helm plugin of each child Application. Two rules follow from this: a Helm app must not depend on anything that lives in the same domain's `kubectl/` folder (it runs first), and a domain without Helm apps (`spring`) simply has no `helm/` folder.
-
-1. infra (cert-manager, ClusterIssuer, Istio security policies, NetBird operator)
-2. monitoring (Prometheus, exporters, Istio dashboards)
-3. cicd (Harbor, Jenkins, Forgejo)
-4. management (Leantime, frame of the Developer Portal)
-5. kafka (Strimzi, Apicurio Registry, AKHQ)
-6. spring
-
-`kube-vault.yaml` (Vault itself) and `kube-app-secrets.yaml` (the `secrets/` folder: every raw Secret that AVP fills from Vault) sit at the top level, not inside a domain folder, and are applied standalone before `infra` — see the Deployment Guide below for why.
-
-Sync-wave annotations (`argocd.argoproj.io/sync-wave`) additionally order resources *within* `helm/` and within `kubectl/` (e.g. ClusterIssuer before the NetworkResources), but not across domains — those orderings are manual/documented instead: `infra` must be healthy before the others (they all rely on its ClusterIssuer and cert-manager). Istio itself and ArgoCD's own installation are deliberately kept outside of GitOps (`istioctl` / `helm install` per above), since both carry too much blast radius for automated sync.
-
-### Public status page
-
-`https://status.rjst.de` shows the state of five services to anyone: Auth-Provider (Keycloak), VPN-Provider (NetBird), Gameserver-Frontend (Pelican panel), PostgreSQL and MariaDB. It is Gatus (`kubernetes/monitoring/helm/gatus.yaml`, namespace `gatus`), the only app on the public `istio-ingressgateway` (`kubernetes/monitoring/kubectl/status-page.yaml`, certificate from the `letsencrypt` ClusterIssuer). Everything else stays on the internal gateway.
-
-- The page shows names and state only: URLs, hosts, conditions and error texts are hidden (`ui.hide-*` per endpoint). Add a service to the list of `endpoints` in `gatus.yaml`, with a `group` (Access, Gameserver, Database); the page sorts by group.
-- Gatus checks from inside the cluster, so it shows whether a service answers there, not whether a visitor can reach it. A status below 500 counts as up (a login wall too). PostgreSQL reads `pg_up` from the `postgres_exporter` (port 5432 is closed to the cluster), MariaDB reads `mysql_up` from the `mysqld_exporter` (port 9104).
-- There are no UDP checks (STUN, WireGuard): without a request body Gatus only dials, which always succeeds for UDP, and the STUN request needs a byte that a YAML body cannot carry.
-- The host is also listed in the `AuthorizationPolicy` `ingress-policy-public` (`kubernetes/infra/kubectl/kube-istio-security.yaml`), which denies every other host on the public gateway. A new public host needs an entry there.
-- By hand: the DNS record `status.rjst.de` (A, `89.144.46.204`, the public IP of `k8sdev01`) at Hetzner, and the firewall rule for ports 80 and 443 on `k8sdev01` (`sudo ansible-playbook -i inventory.ini site.yml --tags firewall`). Whether UFW lets traffic to the ServiceLB ports through depends on the FORWARD chain; check it from outside with `curl -I https://status.rjst.de` after the first run.
-
-### Deployment Guide
-
-#### 0. Prerequisites (outside of GitOps, done once manually)
-
-1. Kubernetes cluster reachable, `kubectl`/`helm` configured against it.
-2. Istio installed via `istioctl` (base + istiod + ingressgateway) — still needed for the remaining public apps (`rjst.de`). See [Istio installation](#istio-installation-istioctl-by-hand).
-3. NetBird self-hosted server running (per the [quickstart script](https://docs.netbird.io/selfhosted/selfhosted-quickstart)), reachable at `proxy.rjst.de`, with its own Traefik reverse proxy.
-4. A NetBird personal access token (Management API scope) for the Kubernetes operator.
-
-#### Istio installation (`istioctl`, by hand)
-
-Istio is installed from `istio/istio-operator.yaml` (profile `default`: istiod and the public `istio-ingressgateway`). The file keeps what a plain `istioctl install` would reset: `externalTrafficPolicy: Local` on the gateway Service, so the apps see the client's real source address. Use an `istioctl` that matches the Istio version you want, the file does not pin it (`istioctl version` shows the client and the running control plane).
-
-```bash
-istioctl x precheck
-istioctl install -f istio/istio-operator.yaml
-istioctl verify-install -f istio/istio-operator.yaml
-```
-
-- Upgrade: download the `istioctl` of the new version and run the same commands. Then restart the workloads in the namespaces labelled `istio-injection: enabled` so they get the new sidecar.
-- Check: `kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.spec.externalTrafficPolicy}'` must print `Local`.
-- The second, internal gateway (`istio-internal-gateway`) is not part of this file, it is an ArgoCD Application in `kubernetes/infra/helm`.
-
-##### Distributed tracing (Tempo)
-
-The sidecars and gateways send their spans as OTLP/gRPC to Tempo (`kubernetes/monitoring/helm/tempo.yaml`, namespace `tempo`, ClusterIP only). Two parts have to match:
-
-- `meshConfig.extensionProviders` in `istio/istio-operator.yaml` defines the provider `tempo`. Run `istioctl install` **before** the `Telemetry` resource (`kubernetes/infra/kubectl/kube-istio-telemetry.yaml`) syncs, otherwise istiod rejects the unknown provider. Restart the workloads in the `istio-injection: enabled` namespaces afterwards so the sidecars pick up the provider.
-- The `Telemetry` resource samples 100 % of the requests mesh-wide, the traffic is low. Lower `randomSamplingPercentage` if the volume of Tempo grows, or add a `Telemetry` in a single namespace to override it there.
-
-The apps still have to pass the trace headers on (Spring Boot: Micrometer Tracing with the OpenTelemetry bridge, W3C `traceparent`), otherwise every hop is a trace of its own. Put `traceId` into the log pattern to find the logs of a trace later.
-
-Tempo turns the spans into the RED metrics and the service graph and writes them to Prometheus (`prometheusSpec.enableRemoteWriteReceiver`). Grafana reads both through the datasource `Tempo` (Explore -> Tempo -> Service Graph). Traces are kept 48 hours and are not backed up.
-
-##### Logs (Loki, Alloy)
-
-`kubernetes/monitoring/helm/loki.yaml` (namespace `loki`, one pod, filesystem storage, 7 days retention, no backup) stores the logs. `kubernetes/monitoring/helm/alloy.yaml` (namespace `alloy`, one pod) reads the logs of all pods through the Kubernetes API and pushes them to Loki. Labels are only `namespace`, `pod`, `container` and `app`: ids like `traceId` or `requestId` are never labels, search them in the line (`{app="freewar-chaos-service"} |= "<id>"`).
-
-The datasources `Loki` and `Tempo` are provisioned from one ConfigMap, `kubernetes/monitoring/kubectl/loki.yaml` (datasource sidecar of Grafana). It links both ways: a trace id in a log line opens the trace in Tempo (derived field, expects the Spring Boot correlation `[app,traceId,spanId]` or the `trace.id` of the ECS JSON logs), and a trace opens the log lines that carry its id.
-
-Loki has no login of its own and is only reachable inside the cluster (`loki.loki:3100`): there is no entry through `istio-internal` and no NetBird resource. The logs of the Docker host (`docker01`) are not collected.
-
-#### 1. Bootstrap ArgoCD
-
-```bash
-helm repo add argo https://argoproj.github.io/argo-helm
-helm install argocd argo/argo-cd -n argocd --values argocd-values.yaml --create-namespace
-
-# later, to apply changes to argocd-values.yaml:
-helm upgrade argocd argo/argo-cd -n argocd --values argocd-values.yaml
-```
-
-Argo CD is not part of GitOps, so a change of `argocd-values.yaml` only takes effect with this `helm upgrade` (the controller restarts for a moment, the Applications keep running).
-
-#### 2. Deploy Vault standalone
-
-```bash
-kubectl apply -f kubernetes/kube-vault.yaml
-```
-
-Vault is deliberately **not** part of a domain app: everything that needs AVP depends on Vault being up, unsealed and populated, so Vault is deployed on its own first and populated (next step) before any Secret is rendered.
-
-#### 3. Initialize Vault and populate secrets
-
-The `avp-helm`/`avp` ArgoCD CMP plugins read secrets from Vault at sync time — if a path is missing, that Application's manifests simply fail to render. Populate these **before** applying the `secrets` app in step 4 (paths are Vault KV v2, under `argocd/data/...`).
-
-No script is needed, the commands below use the `vault` CLI and `kubectl`. On the very first setup nothing is deployed yet, so reach the Vault from step 2 through a port-forward (`kubectl port-forward -n vault svc/vault 8200:8200`) and `export VAULT_ADDR=http://127.0.0.1:8200`. Later `https://vault.k8sdev.rjst.de` works over NetBird.
-
-##### Initialize (fresh Vault only)
-
-```bash
-vault operator init -key-shares=5 -key-threshold=3
-```
-
-This prints the five unseal keys and the root token **once**: copy them into your password manager, they are saved nowhere else. Unseal with three of the keys (`vault operator unseal`, three times). The unsealer needs all five keys. They cannot come from Vault itself (circular on a first install: Vault must be unsealed for AVP to read them back), so the Secret `vault-unsealer-config` is applied straight into the cluster. The keys are typed without echo and stay out of the process list:
-
-```bash
-{
-  printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: vault-unsealer-config\n  namespace: vault\n  labels:\n    vault-unsealer.bakito.net/stateful-set: vault\ntype: Opaque\nstringData:\n'
-  for i in 1 2 3 4 5; do read -rsp "Unseal key $i: " key </dev/tty; echo >&2; printf '  unsealKey%s: "%s"\n' "$i" "$key"; done
-} | kubectl apply -f -
-```
-
-Then `vault login` with the root token.
-
-##### KV engines and Kubernetes auth (required)
-
-```bash
-for engine in argocd jenkins dev prod; do vault secrets enable -path=$engine -version=2 kv; done
-```
-
-The engines `docker` and `databases` and the AppRole method are in [AppRole logins of the hosts](#approle-logins-of-the-hosts). The Kubernetes auth method lets workloads log in to Vault with their own ServiceAccount. It needs `kubectl` against the cluster:
-
-```bash
-kubectl -n vault create serviceaccount vault-auth
-kubectl create clusterrolebinding vault-auth-delegator --clusterrole=system:auth-delegator --serviceaccount=vault:vault-auth
-vault auth enable kubernetes
-vault write auth/kubernetes/config \
-  token_reviewer_jwt="$(kubectl -n vault create token vault-auth --duration=87600h)" \
-  kubernetes_host=https://kubernetes.default.svc:443 \
-  kubernetes_ca_cert="$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' | base64 -d)" \
-  disable_local_ca_jwt=true
-```
-
-Vault reaches the API server through `https://kubernetes.default.svc:443`, not through the address in your kubeconfig, so a new server IP does not break the login.
-
-The `argocd` role matters most: ArgoCD's AVP plugin itself logs in to Vault through it (`AVP_AUTH_TYPE=k8s`, role `argocd`, see `argocd-values.yaml`), so nothing that uses AVP renders without it, **including the Vault Config Operator** that would otherwise create it. On a fresh Vault create this one policy and role by hand, the operator takes them over later with the same values (the roles `jenkins`, `spring_dev` and `spring_prod` come from the operator, [below](#vault-config-operator)):
-
-```bash
-vault policy write argocd - <<'EOF'
-path "argocd/data/*" {
-  capabilities = ["read"]
-}
-EOF
-vault write auth/kubernetes/role/argocd bound_service_account_names=argocd-repo-server bound_service_account_namespaces=argocd policies=argocd ttl=24h audience=https://kubernetes.default.svc.cluster.local
-```
-
-Jenkins reads `jenkins/data/jenkins` in every pipeline: `cicd-library` logs in through the role `jenkins` with the token of the pipeline pod. The role accepts the ServiceAccounts `default` and `helm-deployer`, because the pod of a pipeline that deploys runs as `helm-deployer` (`cicd/kubectl/helm-deployer.yaml`) and helm needs no kubeconfig. The Spring apps don't read from Vault at runtime yet; wiring them up (Vault Agent injector, Spring Cloud Vault, etc.) is a separate, later step, app by app.
-
-##### Secrets
-
-Generated values are 32 or 64 alphanumeric characters. `kv_set` changes single keys of a secret and keeps the others, and it creates the secret when it does not exist yet (`vault kv patch` alone fails on a missing secret, and `-cas=0` never overwrites). `put_new` creates a key only when it is missing, so the block can be run again. The generated keys are listed once, in `scripts/vault/generated-secrets.txt` (`<secret> <key> <length>`): a new app adds its lines there. Never replace `security.secret_key` of Forgejo, it encrypts the database (`put_new` does not):
-
-```bash
-gen() { openssl rand -base64 300 | tr -dc "${2:-A-Za-z0-9}" | head -c "${1:-32}"; }
-kv_set() { vault kv patch -method=rw "$@" 2>/dev/null || vault kv put -cas=0 "$@"; }
-put_new() { vault kv get -mount=argocd -field="$2" "$1" >/dev/null 2>&1 || kv_set -mount=argocd "$1" "$2=$(gen "${3:-32}")"; }
-grep -vE '^(#|$)' scripts/vault/generated-secrets.txt | while read -r secret key length; do put_new "$secret" "$key" "$length"; done
-```
-
-The S3 keys of the RustFS identities (`docker/rustfs/identities.json`, run on the Docker host or anywhere with the checkout and `jq`). A key that exists is never changed (`-cas=0` writes only when the secret does not exist yet):
-
-```bash
-for name in $(jq -r '.identities[].name' docker/rustfs/identities.json); do
-  vault kv get -mount=docker -field=access_key "s3/$name" >/dev/null 2>&1 && continue
-  vault kv put -mount=docker -cas=0 "s3/$name" "access_key=$(gen 20 A-Z0-9)" "secret_key=$(gen 40)"
-done
-```
-
-The backup of Forgejo and Leantime needs the S3 keys of its identity in the cluster, and the nightly check of `restic-backup` needs the restic passwords. The AVP plugin may only read `argocd/` and the Docker host only `docker/`, so these values are copied (run it again after a change):
-
-```bash
-for app in forgejo leantime; do
-  kv_set -mount=argocd "$app" "backup.s3_access_key=$(vault kv get -mount=docker -field=access_key s3/$app)" "backup.s3_secret_key=$(vault kv get -mount=docker -field=secret_key s3/$app)"
-done
-kv_set -mount=docker restic-backup "RESTIC_PASSWORD_FORGEJO=$(vault kv get -mount=argocd -field=backup.restic_password forgejo)" "RESTIC_PASSWORD_LEANTIME=$(vault kv get -mount=argocd -field=backup.restic_password leantime)"
-```
-
-Values that must match reality are typed, never generated (`read -s` keeps them out of the history and the process list):
-
-```bash
-read -rsp 'Hetzner Cloud API token (DNS read/write): ' token; echo; kv_set -mount=argocd hetzner token="$token"
-read -rsp 'NetBird Management API token: ' token; echo; kv_set -mount=argocd netbird api_key="$token"
-```
-
-The database logins come from the scripts on docker01 (`db_create.sh <name>` first, it stores the password of the owner in `databases/...`):
-
-```bash
-kv_set -mount=argocd forgejo database.username=forgejo_owner "database.password=$(vault kv get -mount=databases -field=password postgresql/forgejo_owner)"
-kv_set -mount=argocd leantime database.username=leantime_owner "database.password=$(vault kv get -mount=databases -field=password mariadb/leantime_owner)"
-kv_set -mount=argocd developer-portal database.username=developer_portal_owner "database.password=$(vault kv get -mount=databases -field=password postgresql/developer_portal_owner)"
-kv_set -mount=argocd harbor database.username=<owner> "database.password=$(vault kv get -mount=databases -field=password postgresql/<owner>)"
-```
-
-Overview of the keys per path (the generated ones come from `scripts/vault/generated-secrets.txt`, the others are typed or copied):
-
-| Vault path | Keys |
+| Kubernetes, deployment guide, Istio, tracing, logs | [docs/kubernetes.md](docs/kubernetes.md) |
+| Vault: init, secrets, operator, AppRoles, OIDC | [docs/vault.md](docs/vault.md) |
+| Docker host: deploy, timer, secrets | [docs/docker.md](docs/docker.md) |
+| Backups: overview, alerts, restore | [docs/backups.md](docs/backups.md) |
+| Backup services: restic, dumps, RustFS, Pelican, Vault, NetBird | [docs/backup-services.md](docs/backup-services.md) |
+| Ansible roles, firewall, k3s, timers | [docs/ansible.md](docs/ansible.md) |
+| Databases: scripts, audit log, declared access | [docs/databases.md](docs/databases.md) |
+| NetBird: server, CrowdSec, Kubernetes access | [docs/netbird.md](docs/netbird.md) |
+| Keycloak and OIDC logins | [docs/keycloak.md](docs/keycloak.md) |
+| Jenkins, Forgejo, Leantime, Developer Portal | [docs/apps.md](docs/apps.md) |
+| Renovate | [docs/updates.md](docs/updates.md) |
+
+## Quick commands
+
+| Task | Command |
 |---|---|
-| `argocd/data/hetzner` | `token` (Hetzner Cloud API token, DNS read/write) |
-| `argocd/data/netbird` | `api_key` (NetBird Management API personal access token) |
-| `argocd/data/prometheus` | `password` (Grafana admin password), `oidc.client_secret` (secret of the Keycloak client `grafana`, generated, see Keycloak), `discord_webhook_url` (webhook of the alert channel for Alertmanager, see [Backup age alerts](#backup-age-alerts)) |
-| `argocd/data/harbor` | `admin.password`, `database.username`, `database.password` |
-| `argocd/data/jenkins` | `password` (Jenkins admin password), `github_app_private_key` (PKCS#8 PEM of the GitHub App, see Jenkins) |
-| `argocd/data/argocd` | `oidc.client_secret` (secret of the Keycloak client `argocd`, generated, see Keycloak) |
-
-##### Vault Config Operator
-
-The [vault-config-operator](https://github.com/redhat-cop/vault-config-operator) writes Vault configuration (mounts, policies, auth roles) from resources in Git, so that no script has to be run for it. `infra/helm/vault-config-operator.yaml` installs it, the resources are in `infra/kubectl/kube-vault-config.yaml`. Removing a resource from the file removes it in Vault. The file holds the policies and roles `argocd`, `jenkins`, `spring_dev` and `spring_prod`, the AppRoles `docker01` and `dbadmin` with their policies, and the policy `vault_snapshot`. Still by hand (step 3): the config of the kubernetes auth method and, on a fresh Vault, the policy and role `argocd` that the operator itself needs to be rendered. The Keycloak login is in `infra/kubectl/kube-vault-config-oidc.yaml`. The KV engines and the auth methods are not in the file on purpose: removing one would delete everything below it.
-
-Every resource names the ServiceAccount `vault/vault-config` and the Vault role `vault-config` to log in. Create the role once, **before** the first sync, with an admin token inside the Vault pod (`kubectl -n vault exec -it vault-0 -- sh`, then `vault login`). The policy is as powerful as an admin, because the operator may create policies:
-
-```bash
-vault policy write vault-config - <<'EOF'
-path "sys/policies/acl" { capabilities = ["list"] }
-path "sys/policies/acl/*" { capabilities = ["create", "read", "update", "delete", "list"] }
-path "sys/mounts" { capabilities = ["read", "list"] }
-path "sys/mounts/*" { capabilities = ["create", "read", "update", "delete", "list", "sudo"] }
-path "sys/auth" { capabilities = ["read", "list"] }
-path "sys/auth/*" { capabilities = ["create", "read", "update", "delete", "list", "sudo"] }
-path "auth/+/config" { capabilities = ["create", "read", "update"] }
-path "auth/+/role/*" { capabilities = ["create", "read", "update", "delete", "list"] }
-path "identity/*" { capabilities = ["create", "read", "update", "delete", "list"] }
-EOF
-vault write auth/kubernetes/role/vault-config bound_service_account_names=vault-config bound_service_account_namespaces=vault policies=vault-config ttl=1h
-```
-
-Not in Git: the `secret_id` of an AppRole, tokens, and every secret value.
-
-##### AppRole logins of the hosts
-
-The Docker host logs in with the AppRole `docker01` (reads `docker/data/*`, used by `deploy.sh`), the database scripts with `dbadmin` (writes `databases/data/*`). Policies and roles are in Git (above). By hand, with an admin token (inside the Vault pod, or on any machine that reaches Vault): the KV engines and the AppRole method, once on a fresh Vault, and the `secret_id` of each role.
-
-```bash
-vault secrets enable -path=docker -version=2 kv
-vault secrets enable -path=databases -version=2 kv
-vault auth enable approle
-```
-
-Then on the Docker host as root. The roles are `docker01` (files `role_id`, `secret_id`) and `dbadmin` (files `databases_role_id`, `databases_secret_id`). The token is read without echo and stays out of the process list; the files get mode 600. A new `secret_id` is created, the older ones are destroyed afterwards:
-
-```bash
-read -rsp 'Vault token: ' VAULT_TOKEN; echo
-export VAULT_ADDR=https://vault.k8sdev.rjst.de
-api() { printf 'X-Vault-Token: %s' "$VAULT_TOKEN" | curl -fsS -H @- "$@"; }
-role=docker01; prefix=            # for dbadmin: role=dbadmin; prefix=databases_
-base="$VAULT_ADDR/v1/auth/approle/role/$role"
-install -d -m 700 /etc/gitops
-api "$base/role-id" | jq -r .data.role_id | (umask 077; cat > "/etc/gitops/${prefix}role_id")
-response=$(api -X POST "$base/secret-id")
-jq -r .data.secret_id <<<"$response" | (umask 077; cat > "/etc/gitops/${prefix}secret_id")
-keep=$(jq -r .data.secret_id_accessor <<<"$response")
-for accessor in $(api "$base/secret-id?list=true" | jq -r '.data.keys[]'); do
-  [ "$accessor" = "$keep" ] || api -X POST -d "{\"secret_id_accessor\":\"$accessor\"}" "$base/secret-id-accessor/destroy"
-done
-```
-
-Do the destroy loop only after the new file works if the old one is still in use (`sudo scripts/docker/deploy.sh --list` logs in); without the loop both `secret_id`s stay valid.
-
-##### Login with Keycloak (OIDC)
-
-Besides the root token and the Kubernetes login, Vault can be used with a Keycloak login. The roles of the client `vault` (`docker/keycloak-config/realms/rjst.yaml`) are external groups in Vault with one policy each: `admin` (policy `keycloak_admin`, everything) and `developer` (policy `keycloak_developer`, read and write the secrets in `dev/` and `prod/`, no delete). A user without one of the roles is refused at the login. The configuration is in Git (`infra/kubectl/kube-vault-config-oidc.yaml`, written by the Vault Config Operator): the client, the role, the two policies and the two groups. Not in Git are the auth method and the group aliases, because removing the method would delete the login and an alias cannot be taken over once it exists. On a fresh Vault create them once with an admin token, the aliases only after the first sync (they need the groups):
-
-```bash
-vault auth enable -path=oidc oidc
-for group in admin developer; do
-  vault write identity/group-alias name=$group mount_accessor=$(vault read -field=accessor sys/auth/oidc) canonical_id=$(vault read -field=id identity/group/name/$group)
-done
-```
-
-- The client secret `argocd/data/vault#oidc.client_secret` is one of the generated values ([Secrets](#secrets), step 3). The same value goes into the Vault secret `docker/keycloak-config` as `VAULT_CLIENT_SECRET`, then `sudo scripts/docker/deploy.sh keycloak-config`.
-- Argo CD renders the client secret as the Secret `vault/vault-oidc` (`kubernetes/secrets/vault-oidc.yaml`) and the operator reads it there, so the operator needs no right on `argocd/data/vault`.
-- Log in in the UI with the method **OIDC** and type `default` into the field **Role** (the UI does not fill it in by itself, empty gives "Invalid role"), or with `vault login -method=oidc`. Give the users the role `vault` in Keycloak (**Role mapping, client roles**).
-- Vault reads the discovery of Keycloak when the configuration is written and the Pod needs `auth.proxy.rjst.de` at the login. If it fails, look at the DNS of the cluster first.
-
-##### Vault backups
-
-Vault is backed up from the Docker host, not from Kubernetes: see **Docker > Setup Vault backup**. It uses a periodic token with the policy `vault_snapshot` (created with `vault token create`, see above) and does not depend on anything inside the cluster.
-
-#### 4. Deploy the secrets, then the domains, in this order
-
-```bash
-kubectl apply -f kubernetes/kube-app-secrets.yaml     # 0. renders the Secrets from Vault via AVP, must be healthy before infra
-kubectl apply -f kubernetes/kube-app-infra.yaml       # 1. cert-manager, ClusterIssuer, NetBird operator
-kubectl apply -f kubernetes/kube-app-monitoring.yaml  # 2. needed before kafka (PodMonitor CRDs)
-kubectl apply -f kubernetes/kube-app-cicd.yaml        # 3.
-kubectl apply -f kubernetes/kube-app-kafka.yaml       # 4. onwards: order doesn't matter, all only need infra
-kubectl apply -f kubernetes/kube-app-management.yaml
-kubectl apply -f kubernetes/kube-app-spring.yaml
-```
-
-Why the secrets are a separate app that comes first: some Helm apps need their Secret at start (the NetBird operator needs `netbird-mgmt-api-key`), but `helm/` runs before `kubectl/`, so those Secrets can't wait for the domain's `kubectl/` folder. `secrets` holds them (plus the namespaces they live in) and is the only place that runs the AVP plugin, so **every** Secret that is filled from Vault lives there. Don't set the plugin on an app whose files contain no `<path` / `avp.kubernetes.io` marker: the plugin's discovery check finds nothing and ArgoCD fails with "could not find cmp-server plugin". Never put the AVP plugin on a `helm/` app: it would resolve every `<path:...>` in the child Applications' `HELM_VALUES` and write those passwords in plain text into the Application objects.
-
-Watch `infra` reach Healthy in the ArgoCD UI/CLI before applying the rest — nothing else will work without its ClusterIssuer and cert-manager.
-
-#### 5. NetBird configuration
-
-What lives in Git, and what doesn't:
-
-- **In Git, via the NetBird operator**: the groups. `k8s-users` (peers that may reach every app) and `kubernetes-services` (every `NetworkResource` is in it) live in `kubernetes/infra/kubectl/kube-netbird-access.yaml`. There is no group per app: access is decided by the policy `k8s-users` -> `kubernetes-services` alone.
-- **By hand in the dashboard**:
-  1. `DNS > Zones > Add Zone`: name and domain `k8sdev.rjst.de` (a separate internal zone: `proxy.rjst.de` is the NetBird host's own public domain and must not be shadowed; a subdomain of `rjst.de` so Let's Encrypt DNS-01 can issue for it). **Distribution Groups**: `k8s-users` (only peers in this group resolve the records; the zone is not a security boundary, the policies are). The zone must exist before the `NetworkRouter` syncs.
-  2. Records in that zone: the operator creates `<service>.<namespace>.k8sdev.rjst.de` for every `NetworkResource`. Add a CNAME per app to that name, e.g. `vault.k8sdev.rjst.de` -> `gw-vault.istio-internal.k8sdev.rjst.de`.
-  3. `Access Control > Policies`, one policy, TCP 443, one-way: `k8s-users` -> `kubernetes-services` (every app, also the ones added later). NetBird is deny-by-default and the operator writes no policies (its `NBPolicy` resource creates nothing for `NetworkResource`s, so it is deliberately not used).
-  4. `Peers`: put each peer/user into `k8s-users`. Nothing is reachable until a peer is in a group with a policy. Machines count as well: the k3s nodes (Harbor pull) and `docker01` (Vault) are peers in `k8s-users` too.
-- Guide this follows: [Route to a Kubernetes service](https://docs.netbird.io/use-cases/kubernetes/route-to-a-kubernetes-service). The router runs a single routing peer (`workloadOverride.replicas: 1`, single-node cluster); raise it to 3+ for failover.
-
-Every app is reached as `https://<app>.k8sdev.rjst.de` (see the next section): its own Gateway, Service, VirtualService and `NetworkResource` live next to the app (`kube-gw-argocd.yaml` in `infra`, the others in their domain's `kubectl/` folder) and create the record `gw-<app>.istio-internal.k8sdev.rjst.de`.
-
-| App | URL | Backend | Listener |
-|---|---|---|---|
-| ArgoCD | `argocd.k8sdev.rjst.de` | `argocd-server.argocd:80` | 8444 |
-| Vault | `vault.k8sdev.rjst.de` | `vault.vault:8200` | 8443 |
-| Grafana | `grafana.k8sdev.rjst.de` | `grafana.prometheus:80` | 8445 |
-| Harbor | `harbor.k8sdev.rjst.de` | `harbor.harbor:80` | 8446 |
-| Jenkins | `jenkins.k8sdev.rjst.de` | `jenkins.jenkins:8080` | 8447 |
-| Developer Portal | `developer-portal.k8sdev.rjst.de` | `developer-portal.developer-portal:7007` | 8448 |
-| AKHQ | `akhq.k8sdev.rjst.de` | `akhq.kafka:80` | 8449 |
-| Apicurio Registry | `apicurio.k8sdev.rjst.de` | `example-apicurioregistry-mem-service.kafka:8080` | 8450 |
-| Prometheus | `prometheus.k8sdev.rjst.de` | `prometheus-prometheus.prometheus:9090` | 8452 |
-| Forgejo | `forgejo.k8sdev.rjst.de` | `forgejo-http.forgejo:3000` | 8453 |
-| Leantime | `leantime.k8sdev.rjst.de` | `leantime.leantime:80` | 8454 |
-
-Each app needs the CNAME. The nodes need access to pull from Harbor too (`harbor.k8sdev.rjst.de` has a valid certificate, so k3s needs no insecure-registry setting): put the node peers into `k8s-users`.
-
-##### HTTPS entry for internal apps (`istio-internal`)
-
-Apps are reached as `https://<app>.k8sdev.rjst.de` (port 443, Let's Encrypt wildcard `*.k8sdev.rjst.de` via the `letsencrypt` ClusterIssuer, DNS-01 at Hetzner). `istio-internal-gateway` (`infra/helm`) is a second Istio ingress gateway, ClusterIP only - unlike the public `istio-ingressgateway`, nothing outside the cluster can reach it except through the NetBird routing peer. NetBird separates access per destination, not per hostname, so every app gets its own Service, its own listener port on the gateway and its own `NetworkResource` (`infra/kubectl/kube-istio-internal.yaml`). Each listener only accepts that app's hostname, so per-app groups stay meaningful.
-
-##### kubectl through NetBird (API server proxy)
-
-`infra/kubectl/kube-netbird-apiproxy.yaml` deploys the operator's `ClusterProxy` `k8sdev` ([API server proxy](https://docs.netbird.io/use-cases/kubernetes/api-server-proxy)). The proxy pod is a NetBird peer in the group `k8s-api-proxy`; it forwards `kubectl` requests to the API server and impersonates the caller: the Kubernetes user is the NetBird user, the Kubernetes groups are the NetBird groups the **user** belongs to. No credentials in a kubeconfig.
-
-What may be done is decided by RBAC. Only one binding exists so far: the NetBird group `k8s-cluster-admins` is bound to `cluster-admin`.
-
-By hand in the dashboard:
-
-1. `Team > Users > <your user> > Auto-assigned groups`: add `k8s-cluster-admins`. The **user** has to be in the group; the membership of your devices (peers) does not count.
-2. `Access Control > Policies`: `k8s-cluster-admins` -> `k8s-api-proxy` (find the port in the proxy pod, `kubectl -n netbird get pods`, the operator docs do not name it).
-
-Then on your machine (NetBird CLI >= 0.79):
-
-```bash
-netbird kubernetes list
-netbird kubernetes write-kubeconfig k8sdev
-kubectl --context k8sdev get pods -A
-```
-
-The proxy service account may impersonate any user and group, so the proxy pod is as sensitive as `cluster-admin`.
-
-#### Jenkins (plugins, shared library, GitHub App)
-
-`cicd/helm/jenkins.yaml` configures Jenkins as code, so a new Jenkins pod or a fresh volume needs no setup in the UI except one job:
-
-- **Plugins:** `controller.additionalPlugins` (added to the plugins the chart installs anyway).
-- **Credential `github-app`** (GitHub App, App ID `1161269`): Jenkins Configuration as Code in its own ConfigMap, `kubernetes/cicd/kubectl/jenkins-casc.yaml` (the chart sidecar loads every ConfigMap with the label `jenkins-jenkins-config`). The private key is not in Git. It lives in Vault `argocd/data/jenkins#github_app_private_key`, `kubernetes/secrets/jenkins-github-app.yaml` renders it into the Secret `jenkins-github-app`, the chart mounts it as a file and JCasC reads it with `readFile`. **Do not put a `$` into the Helm values of Jenkins** (`HELM_VALUES` in `cicd/helm/jenkins.yaml`): ArgoCD replaces `$NAME` and `${NAME}` in the plugin env values and an unknown name becomes an empty string, a JCasC placeholder there arrives as `""`.
-- **Global shared library `cicd-library`** (`https://github.com/RJST-DEVELOP/cicd-library.git`, version `master`, not loaded implicitly, fetched with the credential `github-app`).
-- **By hand, once:** the job `RJST-DEVELOP`: New Item, GitHub Organization, owner `RJST-DEVELOP`, credentials `github-app`.
-
-A new private key (for example when the old file is lost): generate one in the settings of the GitHub App (**Generate a private key**, several can exist at the same time, GitHub offers no API for this) and convert it to the unencrypted PKCS#8 PEM that Jenkins needs. Write it into Vault (the other keys of the secret stay), delete the downloaded file and restart Jenkins, which does not notice a changed Secret while it runs:
-
-```bash
-openssl pkcs8 -topk8 -nocrypt -in <downloaded>.pem | kv_set -mount=argocd jenkins github_app_private_key=-
-rm <downloaded>.pem
-kubectl -n jenkins rollout restart statefulset jenkins
-```
-
-(`kv_set` is defined under [Secrets](#secrets) in step 3.)
-
-Build history lives only in the Jenkins volume, it is not backed up.
-
-#### Forgejo (package registry)
-
-`cicd/helm/forgejo.yaml` runs Forgejo (the LTS line, rootless image) as the package registry of the own libraries: Maven, and npm or Helm if needed. Container images stay in Harbor (its pull-through cache feeds k3s), Git stays on GitHub, so SSH and Actions are off. The chart creates everything at every start of the pod: the config, the local admin `localadmin` (the emergency login, password from Vault) and the auth source `keycloak`. Users log in with Keycloak only, there is no registration form and no anonymous access.
-
-- **Before the first sync:** `scripts/postgresql/db_create.sh forgejo` on docker01 (the password of `forgejo_owner` goes to Vault `databases/postgresql/forgejo_owner`), then the commands of [Secrets](#secrets) (step 3): `put_new` creates `argocd/data/forgejo` (`admin.password`, `oidc.client_secret`, `security.secret_key`, `security.internal_token`) and the last block copies the database user and password. `security.secret_key` encrypts the secrets in the database (the client secret of the auth source, 2FA): never change it.
-- **Keycloak:** the client `forgejo` in `docker/keycloak-config/realms/rjst.yaml`. Its secret goes into the Vault secret `docker/keycloak-config` as `FORGEJO_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/forgejo`) before the merge (the variable is required, without it the deploy timer fails on `keycloak-config`), then `sudo scripts/docker/deploy.sh keycloak-config`. Give the users the client role `forgejo` `user` or `admin`: a user without one is refused, `admin` makes a site admin. The first login creates the user, named after the Keycloak username (claim `nickname`).
-- **NetBird:** the CNAME `forgejo` in the zone (see step 5).
-- **Maven:** the packages belong to a user or an organization (e.g. an organization `rjst`). The repository URL is `https://forgejo.k8sdev.rjst.de/api/packages/<owner>/maven`, the same for `<distributionManagement>` (releases and snapshots) and `<repositories>`. Maven logs in with the Forgejo username and an access token with the scope `package` (**Settings > Applications**) in a `<server>` of `settings.xml`, never with the Keycloak password. Pods in the cluster reach the URL through the CoreDNS rewrite to the internal gateway.
-
-##### Backup and restore
-
-The CronJob `forgejo-backup` (`cicd/kubectl/forgejo-backup.yaml`) follows the [backup guide of Forgejo](https://forgejo.org/docs/latest/admin/setup/backup/): every night at 02:00 UTC it scales Forgejo to 0, dumps the database (`pg_dump --clean`), backs up the dump and the data volume in **one** restic snapshot (repository `forgejo/restic` in the RustFS S3, host `forgejo`) and starts Forgejo again, 1-2 minutes without registry. Then it thins out the snapshots (14 daily, 8 weekly, 6 monthly) and prunes. `restic-backup` on docker01 checks the repository at 03:00, the offsite sync copies it to pCloud at 05:00. `app.ini` is not in the backup: the chart builds it from Git and Vault at every start, `SECRET_KEY` is in Vault (`vault-backup`). The SQL dump of `restic-backup` (03:00) covers the database a second time.
-
-- The Application `forgejo` ignores `spec.replicas` of the Deployment (`ignoreDifferences` with `RespectIgnoreDifferences`), so Argo CD does not start Forgejo during the backup. The trap of the script starts it again when a step fails. If Forgejo stays at 0 anyway (the pod was killed), `ProbeFailed` on `https://forgejo.k8sdev.rjst.de` fires; start it with `kubectl -n forgejo scale deployment forgejo --replicas=1`.
-- Alerts: `CronJobBackupFailed` (a failed job of the last day), `CronJobBackupTooOld` (no success for 26 hours) and `CronJobBackupNeverReported` (kube-state-metrics), plus `ResticStepFailed` of the nightly check. They also cover `leantime-backup`.
-- Set up once, before the merge (with an admin token): the S3 keys of the RustFS identity `forgejo`, the restic password `argocd/forgejo#backup.restic_password` and the copies (the S3 keys to `argocd/forgejo`, the restic password to `docker/restic-backup#RESTIC_PASSWORD_FORGEJO`) come with [Secrets](#secrets) (step 3). Keep the restic password in the password manager: without it the copy in pCloud cannot be read. The Secret `forgejo-backup` cannot be rendered without these values, and the `secrets` app would fail. After the merge, on docker01 once the checkout has the new `docker/rustfs/identities.json` (`git pull`): `sudo scripts/docker/setup-rustfs.sh` (bucket `forgejo`, identity `forgejo`, the rights of `restic-backup` and `offsite-sync`) and `sudo scripts/docker/deploy.sh restic-backup`, before the first run at 02:00 UTC.
-- The pods reach the S3 as `docker01.server.lan:9000` through NetBird, like the database on port 5432: the node needs a NetBird policy that allows docker01 on TCP 9000. Check after the sync that the first run went through: `kubectl -n forgejo create job forgejo-backup-test --from=cronjob/forgejo-backup`, then `kubectl -n forgejo logs -f job/forgejo-backup-test`.
-
-Restore (replaces the data volume and the database; if a step fails, Forgejo stays stopped on purpose, fix it and run the job again):
-
-1. Pick the snapshot on docker01: `sudo scripts/docker/restore.sh snapshots forgejo` (with the S3 gone: `--from pcloud`, the cluster job itself needs the S3).
-2. Restore the newest snapshot with the suspended CronJob `forgejo-restore`:
-
-   ```bash
-   kubectl -n forgejo create job forgejo-restore-$(date +%s) --from=cronjob/forgejo-restore
-   ```
-
-   An older snapshot: `kubectl -n forgejo create job forgejo-restore-1 --from=cronjob/forgejo-restore --dry-run=client -o yaml | kubectl set env --local -f - SNAPSHOT=<id> -o yaml | kubectl apply -f -`
-3. `kubectl -n forgejo logs -f job/<name>`, then log in and check a package. Run the cron jobs under **Site administration > Monitoring > Cron** if the search index looks wrong (the guide's last step).
-
-#### Leantime (project management)
-
-`management/kubectl/leantime.yaml` runs Leantime as plain manifests, there is no official Helm chart. The database is `leantime` on the MariaDB of docker01, the environment with the secrets is the Secret `leantime` (`secrets/leantime.yaml`).
-
-- **Before the first sync:** `scripts/mariadb/db_create.sh leantime` on docker01 (the password of `leantime_owner` goes to Vault `databases/mariadb/leantime_owner`), then the commands of [Secrets](#secrets) (step 3): `put_new` creates `argocd/data/leantime` (`oidc.client_secret`, `session.password`) and the last block copies the database user and password. The node needs a NetBird policy that allows docker01 on TCP 3306, otherwise the pod does not get ready.
-- **Keycloak:** the client `leantime` in `docker/keycloak-config/realms/rjst.yaml`. Its secret goes into the Vault secret `docker/keycloak-config` as `LEANTIME_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/leantime`) before the merge (the variable is required, without it the deploy timer fails on `keycloak-config`), then `sudo scripts/docker/deploy.sh keycloak-config`.
-- **NetBird:** the CNAME `leantime` in the zone (see step 5).
-- **First start:** open `https://leantime.k8sdev.rjst.de/install` as soon as the pod runs: the page creates the tables and the local admin, until then anyone in `k8s-users` can do that. Use the email address of your Keycloak user, then the Keycloak login works for this account too.
-- **Users:** Leantime creates no users at the Keycloak login and reads no roles. A user first gets an account in Leantime with the email address from Keycloak, and the role is set there. The address has to be verified in Keycloak, otherwise the login is refused. The login form stays on as the emergency login.
-- **Update:** a new image can bring database migrations. After the rollout log in as admin and confirm the update Leantime asks for.
-
-The uploads live only in the two Leantime volumes. Deleting `leantime.yaml` deletes the volumes (`prune`).
-
-#### Developer Portal (Backstage)
-
-The Developer Portal is Backstage as our own build (repository `developer-portal` in RJST-DEVELOP) and is deployed by Jenkins like the Spring apps: the pipeline builds the image, pushes it to Harbor and runs `helm upgrade --install developer-portal` of the chart `ghcr.io/backstage/charts/backstage` into the namespace `developer-portal`. It replaces the Portal step by step, both run side by side until the Developer Portal shows everything. This repo only holds the frame:
-
-- `management/kubectl/developer-portal.yaml`: Gateway (port 8448), Service, VirtualService and NetBird resource, the groups `k8s-developer-portal` and `developer-portal-users`. The VirtualService points to the Service `developer-portal:7007`. The chart calls the Service `<release>-backstage` by default, so the values of the pipeline set `fullnameOverride: developer-portal`.
-- `secrets/namespaces.yaml` and `secrets/developer-portal.yaml`: the namespace and the environment (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `AUTH_OIDC_CLIENT_SECRET`, `BACKEND_SECRET` and the `GITHUB_APP_*` values of the GitHub App). The chart reads it with `extraEnvVarsSecrets`.
-- `cicd/kubectl/helm-deployer.yaml`: the Role of `helm-deployer` in the namespace `developer-portal`, namespaced and without RBAC.
-
-Before the first deploy:
-
-- **Database:** `developer_portal` is declared in `databases/postgresql.yaml`, so `scripts/postgresql/apply_declared.sh` on docker01 creates it (`db_create.sh developer_portal` does the same alone; database names allow underscores only), then the commands of [Secrets](#secrets) (step 3): `put_new` creates `argocd/data/developer-portal` (`oidc.client_secret`, `backend.secret`) and the last block copies the database user and password. Backstage creates one database per plugin unless `backend.database.pluginDivisionMode` is `schema`; set it, otherwise the login needs the right to create databases. The PostgreSQL subchart of the chart stays off.
-- **Keycloak:** the client `developer-portal` with the client roles `admin` and `user` in `docker/keycloak-config/realms/rjst.yaml`. The Developer Portal refuses a user without one of them, so give the roles in the Keycloak UI (**Users > Role mapping**) before the first login. Its secret goes into the Vault secret `docker/keycloak-config` as `DEVELOPER_PORTAL_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/developer-portal`) before the merge, like for Leantime, then `sudo scripts/docker/deploy.sh keycloak-config`.
-- **NetBird:** the CNAME `developer-portal` in the zone (see step 5).
-- **Order:** the Gateway and the VirtualService exist after the merge, the app answers once Jenkins has deployed the release. A probe in `monitoring/kubectl/probes.yaml` is added with the first release, not before: it would alert until then.
-
-#### 6. Verify
-
-```bash
-kubectl get applications -n argocd
-kubectl get clusterissuer
-kubectl get certificates -A
-kubectl get networkresources -A
-```
-
-All `Application` rows should show `Synced`/`Healthy`, and each `NetworkResource` should have a matching entry in the NetBird dashboard under the `k8sdev.rjst.de` zone.
+| Ansible dry run | `cd ansible && ansible-playbook -i inventory.ini site.yml --check --diff` |
+| Deploy a Docker project | `sudo scripts/docker/deploy.sh <project>` (`--list` shows all) |
+| Deploy timer log | `journalctl -u gitops-deploy -n 100` |
+| Backup now | `sudo scripts/docker/backup-now.sh [--background]` |
+| Restore key files / dumps | `sudo scripts/docker/restore.sh snapshots docker` ([backups.md](docs/backups.md#restore)) |
+| Declared DB access | `sudo scripts/postgresql/apply_declared.sh --dry-run` |
+| Join NetBird (once) | `netbird up --setup-key <key> --management-url <url>` |
+| Argo CD apps | `kubectl get applications -n argocd` |
+
+## Rules
+
+- Git is the source of truth; no `kubectl apply/edit/patch/delete` or `helm install/upgrade` against the cluster (fix drift in Git)
+- Pin versions exactly; Renovate raises them
+- Deleting a file deletes the resource (`prune`): take care with PVCs, namespaces, operators, CRDs, Vault
+- No plaintext secrets in Git; found one: report it and rotate it

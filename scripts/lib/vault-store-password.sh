@@ -5,7 +5,7 @@
 # The secret is databases/<dbms>/<username> (KV v2 engine "databases", keys username and password). The host
 # logs in with the AppRole "dbadmin" (/etc/gitops/databases_role_id and _secret_id, mode 600), whose policy can
 # create, update and delete secrets of this engine: it cannot read a password back.
-# Setup: kubernetes/infra/kubectl/kube-vault-config.yaml (databases-write), README section "Database passwords in Vault".
+# Setup: kubernetes/infra/kubectl/kube-vault-config.yaml (databases-write), docs/databases.md, section "Passwords in Vault".
 
 readonly VAULT_ADDR="${VAULT_ADDR:-https://vault.k8sdev.rjst.de}"
 readonly VAULT_DATABASES_MOUNT="databases"
@@ -20,7 +20,7 @@ require_vault_access() {
     command -v "$tool" >/dev/null || die "$tool is missing"
   done
   for file in "$VAULT_ROLE_ID_FILE" "$VAULT_SECRET_ID_FILE"; do
-    [[ -r $file ]] || die "$file is missing or not readable (README: Database passwords in Vault)"
+    [[ -r $file ]] || die "$file is missing or not readable (docs/databases.md: Passwords in Vault)"
   done
 }
 

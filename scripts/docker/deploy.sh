@@ -14,7 +14,7 @@
 #   --list   list the projects and exit
 #   --metrics-file FILE
 #            write the result of the run for the node_exporter textfile collector
-#            (gitops_deploy_* metrics, see the README). The gitops-deploy timer sets it
+#            (gitops_deploy_* metrics, see docs/docker.md). The gitops-deploy timer sets it
 #
 # Without a project name all projects are deployed in a fixed order.
 #
@@ -51,7 +51,7 @@ DOCKER_DIR="$REPO_DIR/docker"
 ALL_PROJECTS=(rustfs restic-backup keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
 
 # Projects that need the keys of an S3 identity (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), as project:identity.
-# The keys are docker/s3/<identity> in Vault (README: Secrets, step 3)
+# The keys are docker/s3/<identity> in Vault (docs/vault.md: Secrets)
 S3_IDENTITIES=(restic-backup:restic-backup offsite-sync:offsite-sync vault-backup:vault)
 VAULT_ADDR="${VAULT_ADDR:-https://vault.k8sdev.rjst.de}"
 VAULT_KV_MOUNT="docker"
@@ -176,7 +176,7 @@ vault_header() {
 vault_login() {
     local file response
     for file in "$VAULT_ROLE_ID_FILE" "$VAULT_SECRET_ID_FILE"; do
-        [[ -r "$file" ]] || { error "Vault login: $file is missing (README: Secrets from Vault)"; return 1; }
+        [[ -r "$file" ]] || { error "Vault login: $file is missing (docs/docker.md: Secrets from Vault)"; return 1; }
     done
     command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || { error "curl and jq are required for the projects with secrets from Vault"; return 1; }
     response=$(jq -n --rawfile role_id "$VAULT_ROLE_ID_FILE" --rawfile secret_id "$VAULT_SECRET_ID_FILE" \
@@ -228,7 +228,7 @@ append_s3_keys() {
         .data.data | select(.access_key and .secret_key)
         | "AWS_ACCESS_KEY_ID=\($quote)\(.access_key)\($quote)", "AWS_SECRET_ACCESS_KEY=\($quote)\(.secret_key)\($quote)"' \
         <<<"$response" >> "$3") \
-        || { error "$1: $VAULT_KV_MOUNT/s3/$2 holds no access_key and secret_key (README: Secrets, step 3)"; return 1; }
+        || { error "$1: $VAULT_KV_MOUNT/s3/$2 holds no access_key and secret_key (docs/vault.md: Secrets)"; return 1; }
 }
 
 # write_vault_env <project>: the secrets of the project from Vault to /run/gitops/<project>/vault.env

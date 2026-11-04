@@ -1,4 +1,4 @@
-# Input for `istioctl install -f istio/istio-operator.yaml` (see README, "Istio").
+# Input for `istioctl install -f istio/istio-operator.yaml` (see docs/kubernetes.md, "Istio installation").
 # Istio is installed by hand and stays outside ArgoCD. This file is not applied to the
 # cluster by itself, it only keeps the settings that a plain `istioctl install` would reset.
 apiVersion: install.istio.io/v1alpha1

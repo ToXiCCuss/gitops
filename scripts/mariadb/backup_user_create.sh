@@ -96,7 +96,7 @@ main() {
 
   ensure_backup_user
   apply_backup_privileges
-  log "Put the password into the Vault secret docker/restic-backup as MARIADB_PASSWORD, see the README (Setup restic-backup)."
+  log "Put the password into the Vault secret docker/restic-backup as MARIADB_PASSWORD, see docs/backup-services.md (restic-backup)."
 }
 
 main "$@"

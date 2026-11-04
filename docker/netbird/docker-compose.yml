@@ -1,6 +1,6 @@
 # The self-hosted NetBird server. Not in ALL_PROJECTS of scripts/docker/deploy.sh: the timer never touches it, because SSH to
 # this host and the way to Vault both run through NetBird. Other changes: sudo scripts/docker/deploy.sh netbird.
-# A new image version: sudo netbird_upgrade.sh, it makes a rollback point first (README: Deploy NetBird).
+# A new image version: sudo netbird_upgrade.sh, it makes a rollback point first (docs/netbird.md: Server).
 # /root/netbird stays the working folder, pre-deploy.sh installs the files there, the scripts of scripts/netbird/ work on that copy.
 services:
   # Traefik reverse proxy (automatic TLS via Let's Encrypt)

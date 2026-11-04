@@ -4,7 +4,7 @@
 #
 # Deliberately not here: the auth method itself and the group aliases (admin, developer on the mount oidc). Removing the
 # method would delete the login, an alias cannot be taken over once it exists (the operator would create it again and fail).
-# README: Login with Keycloak (OIDC).
+# docs/vault.md: Login with Keycloak (OIDC).
 apiVersion: redhatcop.redhat.io/v1alpha1
 kind: JWTOIDCAuthEngineConfig
 metadata:

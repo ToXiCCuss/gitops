@@ -13,7 +13,7 @@ apk add --no-cache restic rclone curl jq postgresql-client mariadb-client >/dev/
 
 . /common.sh
 
-# Static files only: the data directories of running services are not consistent when copied (see the README).
+# Static files only: the data directories of running services are not consistent when copied (see docs/backup-services.md).
 # /userdata/docker and /userdata/gitops are mounted read-only by the compose file
 KEY_FILES="/userdata/gitops /userdata/docker/offsite-sync/rclone/rclone.conf"
 GITOPS_GIT_DIRECTORY=/userdata/gitops/.git

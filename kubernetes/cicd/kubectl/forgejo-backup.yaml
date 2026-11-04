@@ -130,7 +130,7 @@ data:
   restore.sh: |
     #!/bin/sh
     # Replaces the data volume and the database of Forgejo with a snapshot (SNAPSHOT, default latest) and starts
-    # Forgejo again. Started by hand only (the suspended CronJob forgejo-restore, see the README). If a step fails,
+    # Forgejo again. Started by hand only (the suspended CronJob forgejo-restore, see docs/apps.md). If a step fails,
     # Forgejo stays stopped on purpose: a half restored state must not be migrated. Fix it and run the job again.
     set -eu
     . /scripts/common.sh
@@ -232,7 +232,7 @@ spec:
 
 ---
 
-# The restore: never scheduled (suspend), started by hand from the template, see "Forgejo (package registry)" in the README:
+# The restore: never scheduled (suspend), started by hand from the template, see "Forgejo" in docs/apps.md:
 #   kubectl -n forgejo create job forgejo-restore-$(date +%s) --from=cronjob/forgejo-restore
 apiVersion: batch/v1
 kind: CronJob

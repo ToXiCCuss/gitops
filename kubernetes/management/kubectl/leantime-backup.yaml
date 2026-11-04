@@ -35,7 +35,7 @@ data:
   restore.sh: |
     #!/bin/sh
     # Writes a snapshot (SNAPSHOT, default latest) back into the two volumes while Leantime runs. Started by hand only
-    # (the suspended CronJob leantime-restore, see the README). Files that are newer than the snapshot stay.
+    # (the suspended CronJob leantime-restore, see docs/apps.md). Files that are newer than the snapshot stay.
     set -eu
 
     readonly SNAPSHOT="${SNAPSHOT:-latest}"
@@ -124,7 +124,7 @@ spec:
 
 ---
 
-# The restore: never scheduled (suspend), started by hand from the template, see "Leantime (project management)" in the README:
+# The restore: never scheduled (suspend), started by hand from the template, see "Leantime" in docs/apps.md:
 #   kubectl -n leantime create job leantime-restore-$(date +%s) --from=cronjob/leantime-restore
 apiVersion: batch/v1
 kind: CronJob

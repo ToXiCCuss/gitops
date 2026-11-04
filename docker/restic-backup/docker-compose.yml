@@ -22,7 +22,7 @@ services:
       - ./common.sh:/common.sh:ro
       # restic cache, so that check and prune do not read the metadata from the S3 again every night
       - /root/docker/restic-backup/cache:/root/.cache/restic
-      # Backup sources, read-only. Only static files (keys, config), see the README.
+      # Backup sources, read-only. Only static files (keys, config), see docs/backup-services.md.
       # Never the data directories of running databases, they are not consistent when copied.
       - /root/docker:/userdata/docker:ro
       # The repository checkout (it holds no secrets: they are in Vault)

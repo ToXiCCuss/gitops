@@ -1,6 +1,6 @@
 # Vault configuration as resources, applied by the vault-config-operator (infra/helm/vault-config-operator.yaml).
 # The operator logs in with the token of the ServiceAccount named in spec.authentication and the Vault role vault-config,
-# which is created once by hand (README: Vault Config Operator).
+# which is created once by hand (docs/vault.md: Vault Config Operator).
 #
 # Removing a resource from this file removes it in Vault. argocd is the login of the AVP plugin of Argo CD: without it no Secret
 # renders any more (a missing Secret does not fail the sync). jenkins is the login of every pipeline. The AppRoles docker01 and

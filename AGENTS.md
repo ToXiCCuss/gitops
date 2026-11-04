@@ -6,7 +6,7 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 - This repo is only for **external (third-party) apps**, deployed via Argo CD (Kubernetes: Vault, Harbor, Jenkins, Kafka, Prometheus, cert-manager, NetBird, Argo itself), Ansible (hosts) or Docker Compose (Docker host).
 - **Own Spring applications** are never deployed from here: Jenkins deploys them with Helm (repos `cicd-library`, `kubernetes-values`, `spring-boot-chart`). Only the deployer's permissions live here (`kubernetes/spring/kubectl/helm-deployer.yaml`).
 - The **Developer Portal** (Backstage) is our own build and is deployed by Jenkins the same way. Only its frame lives here: Gateway/VirtualService/NetBird (`kubernetes/management/kubectl/developer-portal.yaml`), Secret, namespace, Keycloak client and the Role of the deployer in the namespace `developer-portal`.
-- Layout: `kubernetes/` (Argo CD), `ansible/` (hosts, roles), `docker/` (Compose projects), `databases/` (declared PostgreSQL access of docker01), `scripts/`, `istio/` (input for a manual `istioctl install`, not synced by Argo CD).
+- Layout: `kubernetes/` (Argo CD), `ansible/` (hosts, roles), `docker/` (Compose projects), `databases/` (declared PostgreSQL access of docker01), `scripts/`, `docs/` (documentation per topic, entry point `README.md`), `istio/` (input for a manual `istioctl install`, not synced by Argo CD).
 
 ## Core principle
 - Git is the source of truth. All Applications run with `automated` (`prune` and `selfHeal`) on `targetRevision: master`: **a merge to `master` is a live deployment.** Prepare changes on a branch; never commit, push or merge without a request.
@@ -18,7 +18,7 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 - `kubernetes/<domain>/apps.yaml`: two Applications, `<domain>-helm` (sync wave 0) and `<domain>-kubectl` (sync wave 1). Helm charts come before the plain manifests.
 - `<domain>/helm/<app>.yaml`: one Application per third-party chart (`repoURL` = chart repo, `targetRevision` = chart version, values inline via `plugin.env: HELM_VALUES`). `<domain>/kubectl/*.yaml`: plain manifests (CRDs, gateways, RBAC, network rules).
 - Naming: file and Application names in lowercase `kebab-case`; Helm apps are named after the chart (`cert-manager.yaml`). Follow the neighboring files in the folder (e.g. `infra/kubectl` uses `kube-<topic>.yaml`).
-- New domain = new `kube-app-<domain>.yaml` plus a folder with `apps.yaml`, `helm/`, `kubectl/`. Order of commissioning: section "Deployment Guide" in `README.adoc`.
+- New domain = new `kube-app-<domain>.yaml` plus a folder with `apps.yaml`, `helm/`, `kubectl/`. Order of commissioning: section "Deployment guide" in `docs/kubernetes.md`.
 - Internal gateway ports 8443–8451 belong to the platform apps here; 9000–9999 are Spring apps (`kubernetes-values/PORTS.md`). No overlap.
 
 ## Rules for changes
@@ -34,7 +34,7 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 - Found a plaintext secret: report it, do not delete it silently (it is in the history, rotate the secret).
 
 ## Ansible and Docker
-- Ansible: dry run first (see `README.adoc`, section "Dry Run"), apply only on explicit request.
+- Ansible: dry run first (see `docs/ansible.md`, section "Run"), apply only on explicit request.
 - Database access is declared in `databases/postgresql.yaml`; `scripts/postgresql/apply_declared.sh` applies it on docker01 (`--dry-run` first). I change the file, I do not run the script against the host unless asked.
 - Docker projects: defaults in `default.env`, overrides in `override.env` (not in Git, keep the template `override.env.example` up to date).
 

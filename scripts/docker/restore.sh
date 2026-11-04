@@ -9,7 +9,7 @@
 #   sudo scripts/docker/restore.sh [--from pcloud] [--tag <tag>] restore <repository> [snapshot] [--include <path>]
 #
 #   repository  docker (key files), databases (SQL dumps), vault (Raft snapshots), netbird, forgejo or leantime (written
-#               by the CronJobs forgejo-backup and leantime-backup in the cluster, see the README)
+#               by the CronJobs forgejo-backup and leantime-backup in the cluster, see docs/backups.md)
 #   snapshot    an id from "snapshots", default latest
 #   --from      s3 (default, the local RustFS) or pcloud (the copy of the offsite sync, for a lost S3)
 #   --tag       only snapshots with this tag. The repository databases holds the tags postgresql and mariadb,
