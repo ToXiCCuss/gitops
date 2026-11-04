@@ -80,7 +80,7 @@ people:                # personal logins, ro or rw per database
 
 ### Automatic apply
 
-Timer `postgresql-apply.timer` (role `postgresql_apply`, `docker01`) runs `apply_declared.sh --pull --metrics-file ...` in `/root/gitops` hourly 08:30-20:30 (`postgresql_apply_calendar`), half an hour after `gitops-deploy.timer`. A merge to `master` that changes `databases/postgresql.yaml` is live on the server within the hour, **including every revoke** (`ownerPrivileges`, `people:`). **Rollback = `git revert` on `master`.**
+Timer `postgresql-apply.timer` (role `postgresql_apply`, `docker01`) runs `apply_declared.sh --pull --metrics-file ...` in `/root/gitops` hourly 08:30-20:30 (`postgresql_apply_calendar`), half an hour after `gitops-deploy.timer`. A merge to `master` that changes `databases/postgresql.yaml` is live on the server within the hour, **including every revoke** (`ownerPrivileges`, `people:`). **Rollback = `git revert` on `master`.** A failed `git pull` (e.g. DNS) is tried 4 times, 30 seconds apart, before the run counts as failed.
 
 ```bash
 sudo ansible-playbook -i inventory.ini site.yml --tags postgresql_apply --check --diff   # in /root/gitops/ansible

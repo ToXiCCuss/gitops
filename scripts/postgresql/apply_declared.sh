@@ -32,6 +32,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/database-common.sh"
 readonly MAX_NAME_LENGTH=52
 # The role comment that marks personal logins, person_grant.sh and person_revoke.sh use the same text
 readonly PERSON_MARKER="gitops: person login"
+# --pull tries the git pull this often, with this pause in between (the unit allows 15 minutes)
+readonly PULL_ATTEMPTS=4
+readonly PULL_RETRY_SECONDS=30
 readonly ACCESS_ROLE_PATTERN='^(.+)_role_(ro|rw)$'
 readonly LOGIN_ROLE_PATTERN='^(.+)_role_(ro|rw|owner)$'
 # One line per declared item: kind, then up to three fields, "-" for an empty one
@@ -382,10 +385,23 @@ report_undeclared_databases() {
   done <<<"$databases"
 }
 
-# The checkout of the host is brought up to date before the file is read, so a merge to master reaches the server
+# The checkout of the host is brought up to date before the file is read, so a merge to master reaches the server.
+# A short outage of DNS or GitHub is repeated, so it does not end in a failed run (and an alert) until the next hour.
 pull_repository() {
-  git -C "$REPOSITORY_DIR" pull --ff-only >&2 ||
-    die "git pull failed (local changes or a diverged branch?), nothing is applied"
+  local attempt=1 is_pulled=false
+  while [[ $is_pulled == false && $attempt -le $PULL_ATTEMPTS ]]; do
+    if git -C "$REPOSITORY_DIR" pull --ff-only >&2; then
+      is_pulled=true
+    else
+      log "git pull failed (attempt $attempt of $PULL_ATTEMPTS)"
+      if ((attempt < PULL_ATTEMPTS)); then
+        sleep "$PULL_RETRY_SECONDS"
+      fi
+      attempt=$((attempt + 1))
+    fi
+  done
+  [[ $is_pulled == true ]] ||
+    die "git pull failed $PULL_ATTEMPTS times (network, local changes or a diverged branch?), nothing is applied"
 }
 
 # The time of the last successful run from the previous metrics file, 0 if there is none
