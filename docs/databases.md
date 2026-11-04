@@ -113,4 +113,4 @@ Audit log as for MariaDB. Role `postgresql` preloads `pg_cron` (`shared_preload_
 - The `pg_cron` job lives in the `pg_cron` database (`cron.database_name`, default `postgres`). After a restore from dump run `audit_setup.sh` again; `db_delete.sh` removes the job. Without `pg_cron` the default partition keeps logging, only maintenance stops
 - After the Ansible run check `SHOW shared_preload_libraries;`
 - PostgreSQL accepts connections from every address (`pg_hba.conf` `0.0.0.0/0`, `listen_addresses = '*'`): the firewall allows only the Docker network for 5432
-- **Monitoring:** role `postgres_exporter` (port 9187, peer login as DB role `prometheus` with `pg_monitor`, extension `pg_stat_statements`, extra collectors in `postgres_exporter_collectors`), `pg_up` for alerts and Gatus
+- **Monitoring:** role `postgres_exporter` (port 9187, peer login as DB role `prometheus` with `pg_monitor`, extension `pg_stat_statements`, extra collectors in `postgres_exporter_collectors`), `pg_up` for alerts

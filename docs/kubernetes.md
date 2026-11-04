@@ -29,7 +29,7 @@ flowchart TD
 |---|---|
 | (top level) | `kube-vault.yaml` (Vault), `kube-app-secrets.yaml` (every raw Secret that AVP fills from Vault), `argocd-values.yaml` (Argo CD itself, helm by hand) |
 | `infra` | cert-manager, ClusterIssuer, Hetzner webhook, Istio internal gateway + security policies + telemetry, NetBird operator/router/access/API proxy, CoreDNS custom, Vault Config Operator, vault-unsealer |
-| `monitoring` | Prometheus/Grafana, Alloy, Loki, Tempo, blackbox exporter, Gatus, alert rules, dashboards, probes |
+| `monitoring` | Prometheus/Grafana, Alloy, Loki, Tempo, blackbox exporter, alert rules, dashboards, probes |
 | `cicd` | Harbor, Jenkins, Forgejo (+ backup), `helm-deployer` role |
 | `kafka` | Strimzi operator, Apicurio Registry (+ operator), AKHQ |
 | `management` | Leantime (+ backup), frame of the Developer Portal |
@@ -44,15 +44,13 @@ Rules:
 - Secrets: **every** Secret filled from Vault lives in `secrets/`, the only place running the AVP plugin. Never put the plugin on a `helm/` app (it would write resolved passwords in plain text into the Application objects) or on an app whose files have no `<path` / `avp.kubernetes.io` marker (fails with "could not find cmp-server plugin")
 - `kubernetes/archive/` and `kubernetes/parked/` no longer exist
 
-## Public status page
+## Public ingress gateway
 
-`https://status.rjst.de`: state of five services (Keycloak, NetBird, Pelican panel, PostgreSQL, MariaDB) for anyone. Gatus (`kubernetes/monitoring/helm/gatus.yaml`, namespace `gatus`), the **only app on the public `istio-ingressgateway`** (`status-page.yaml`, certificate from `letsencrypt`). Everything else stays on the internal gateway.
+The public `istio-ingressgateway` (installed by hand, see [Istio installation](#istio-installation)) is the only way into the cluster from the Internet. Everything else stays on the internal gateway. The former public status page (Gatus at `status.rjst.de`) is gone.
 
-- Shows names and state only (`ui.hide-*` per endpoint). New service: add to `endpoints` in `gatus.yaml` with a `group` (Access, Gameserver, Database)
-- Checks from inside the cluster: shows whether a service answers there, not whether a visitor can reach it. Status below 500 counts as up. PostgreSQL reads `pg_up` (`postgres_exporter`, 5432 is closed to the cluster), MariaDB `mysql_up` (`mysqld_exporter`, 9104)
-- No UDP checks (STUN, WireGuard): Gatus only dials, which always succeeds for UDP
-- A new public host also needs an entry in `AuthorizationPolicy` `ingress-policy-public` (`infra/kubectl/kube-istio-security.yaml`, denies every other host)
-- By hand: DNS record `status.rjst.de` (A, `89.144.46.204`, public IP of `k8sdev01`) at Hetzner; firewall rule for 80/443 (`sudo ansible-playbook -i inventory.ini site.yml --tags firewall`). Whether UFW passes ServiceLB ports depends on the FORWARD chain: check with `curl -I https://status.rjst.de`
+- `AuthorizationPolicy` `ingress-policy-public` (`infra/kubectl/kube-istio-security.yaml`) allows only `rjst.de` and `www.rjst.de` and denies every other host: a new public host needs an entry there
+- Ports 80/443 are open on `k8sdev01` (`host_config.k8sdev01.firewall_rules`). Whether UFW passes ServiceLB ports depends on the FORWARD chain: check from outside with `curl -I https://<host>`
+- DNS records of public hosts are set by hand at Hetzner (A, public IP of `k8sdev01`); after an IP change update them, see [ansible.md](ansible.md#change-the-public-ip)
 
 ## Deployment guide
 

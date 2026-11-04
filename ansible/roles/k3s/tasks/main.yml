@@ -8,6 +8,32 @@
     reload: true
   loop: "{{ k3s_kernel_sysctls | dict2items }}"
 
+# The unit creates the dummy interface with the node-ip before every start of k3s.
+- name: Install the unit that holds the fixed node address
+  ansible.builtin.template:
+    src: k3s-node-address.service.j2
+    dest: /etc/systemd/system/k3s-node-address.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: k3s_node_address_unit
+  tags: [k3s, k3s_node_address]
+
+- name: Reload systemd after the node address unit changed
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: k3s_node_address_unit is changed
+  tags: [k3s, k3s_node_address]
+
+# In check mode on a new host the unit file does not exist yet, so enabling it would fail
+- name: Ensure the node address exists and is enabled
+  ansible.builtin.systemd:
+    name: k3s-node-address.service
+    state: started
+    enabled: true
+  ignore_errors: "{{ ansible_check_mode }}"
+  tags: [k3s, k3s_node_address]
+
 # Both checks only read, so they also run in check mode and the dry run is accurate.
 - name: Read the installed k3s version
   ansible.builtin.command: /usr/local/bin/k3s --version
@@ -50,6 +76,21 @@
     path: /etc/rancher/k3s
     state: directory
     mode: "0755"
+
+# k3s does not survive a changed node-ip on its own: the embedded etcd keeps the old peer address and k3s
+# restarts in a loop. The role therefore refuses to rewrite it, the change is a manual procedure.
+- name: Read the current config.yaml
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/config.yaml
+  register: k3s_config_current
+  failed_when: false
+
+- name: Refuse to change the node-ip of an existing node
+  ansible.builtin.assert:
+    that:
+      - (k3s_config_current.content | b64decode | from_yaml | default({}, true)).get('node-ip', k3s_node_ip) == k3s_node_ip
+    fail_msg: "The node-ip in /etc/rancher/k3s/config.yaml differs from k3s_node_ip ({{ k3s_node_ip }}). k3s does not start with a changed node-ip: follow docs/ansible.md, section 'Change the node address'."
+  when: k3s_config_current.content is defined
 
 - name: Write config.yaml
   ansible.builtin.copy:

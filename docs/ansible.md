@@ -68,6 +68,7 @@ netbird up --setup-key <key> --management-url <url of the self-hosted server>
 | Install | pinned `k3s_version`, official install script, `/etc/rancher/k3s/config.yaml` |
 | Flags | keys of `host_config.<host>.k3s_config` (`node-ip` defaults to primary IPv4) |
 | Registry mirror | role `k3s_registries` writes `/etc/rancher/k3s/registries.yaml` for `docker.io`, `ghcr.io` via Harbor; Harbor projects must be **public**, no credentials |
+| Node address | fixed `k3s_node_ip` (`10.254.0.1`) on the dummy interface `dummy0`, created by the unit `k3s-node-address.service` before every start of k3s. It is the `node-ip`, so a new **public** IP does not touch the cluster. The role refuses to change an existing `node-ip` (see [below](#change-the-node-address)) |
 | Kernel | `/etc/sysctl.d/90-kubelet.conf` (`k3s_kernel_sysctls`): the parameters the kubelet expects (without `protect-kernel-defaults` it would set them itself, the file makes them persistent) |
 | Etcd | embedded (`cluster-init`); snapshots only local in `/var/lib/rancher/k3s/server/db/snapshots`, **not backed up** |
 | UFW | `k8sdev01` allows pod CIDR `10.42.0.0/16` and service CIDR `10.43.0.0/16`; rest closed |
@@ -75,6 +76,33 @@ netbird up --setup-key <key> --management-url <url of the self-hosted server>
 
 - Change a flag: edit `k3s_config`, `--tags k3s` (k3s restarts once, pods keep running)
 - Upgrade: change `k3s_version`, dry run (`--tags k3s --check --diff`), then apply. Renovate only raises the version
+
+### Change the node address
+
+Only needed **once** (the `node-ip` moves from the public IP to `k3s_node_ip`) or if the fixed address itself is ever changed. k3s does not start with a changed `node-ip`: the embedded etcd keeps the old peer address and k3s loops with "this server is not a member of the etcd cluster" (tested with k3s `v1.36.5+k3s1`). The role therefore stops with an error instead of rewriting `config.yaml`.
+
+On `k8sdev01` as root. **All apps are down for a few minutes.**
+
+1. Snapshot (the local snapshots are not part of the backups): `k3s etcd-snapshot save --name vor-node-ip`
+2. `systemctl stop k3s`
+3. Create the address without touching k3s: `ansible-playbook -i inventory.ini site.yml --tags k3s_node_address`, check with `ip -4 addr show dummy0`
+4. Set the new address in the config: `sed -i 's/^node-ip:.*/node-ip: 10.254.0.1/' /etc/rancher/k3s/config.yaml` (use the value of `k3s_node_ip`)
+5. Reset the etcd membership: `k3s server --cluster-reset`. It reads `config.yaml`, keeps the data and exits after "restart without --cluster-reset flag now"
+6. First start with the network policy controller off, as a temporary unit (otherwise k3s stops with "failed to find interface with specified node ip": the node object still holds the old IP until the kubelet has updated it): `systemd-run --unit k3s-migrate /usr/local/bin/k3s server --disable-network-policy`. Wait until `kubectl get nodes -o wide` shows the new `INTERNAL-IP`
+7. `systemctl stop k3s-migrate`, then `systemctl start k3s`
+8. Check: `kubectl get nodes -o wide`, `kubectl get pods -A`, `kubectl get --raw /healthz/etcd`; then `ansible-playbook -i inventory.ini site.yml --tags k3s --check --diff` must show no change
+
+Fallback if a step fails: restore the snapshot of step 1 (`k3s server --cluster-reset --cluster-reset-restore-path=<snapshot file in /var/lib/rancher/k3s/server/db/snapshots>`, see the k3s docs; not tested here). Steps 5-7 were tested in a local container with the pinned k3s version, not on the real host.
+
+### Change the public IP
+
+With the fixed node address the cluster does not care. Three steps:
+
+1. Set the new IP (and gateway) in the network configuration of the host (depends on the hoster), check `ip -4 addr`, `ip route`, `ping -c 2 1.1.1.1`
+2. `netbird status` must show `Management: Connected` (else `systemctl restart netbird`)
+3. DNS: update the A records of the public hosts at Hetzner (public IP of `k8sdev01`, see [kubernetes.md](kubernetes.md#public-ingress-gateway)), check with `curl -I https://<host>`; check the cloud firewall of the hoster
+
+Nothing to do for k3s, Prometheus, Ansible or Argo CD.
 
 ## Node exporter and update monitoring
 

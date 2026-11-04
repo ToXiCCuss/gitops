@@ -21,13 +21,13 @@ Infrastructure as code for two servers: a Docker host (`docker01`) and a k3s nod
 flowchart TB
   you["You / Renovate"] -->|"PR, merge"| git[("GitHub: gitops, branch master")]
   peers["Your devices (NetBird peers)"] -->|"VPN, HTTPS"| mesh
-  internet(["Internet"]) -->|"status.rjst.de"| mesh
+  internet(["Internet"]) -->|"public hosts"| mesh
   subgraph k8s["k8sdev01 (k3s)"]
     argocd["Argo CD"]
     vault[("Vault")]
     mesh["Istio gateways (public + internal)"]
     apps["Harbor, Jenkins, Forgejo, Leantime, Kafka, Developer Portal"]
-    obs["Prometheus, Grafana, Loki, Tempo, Gatus"]
+    obs["Prometheus, Grafana, Loki, Tempo"]
     nbop["NetBird operator + router"]
   end
   subgraph docker01["docker01"]
@@ -57,7 +57,7 @@ flowchart TB
 
 | Host | Runs | Reached via |
 |---|---|---|
-| `k8sdev01` | k3s: Argo CD, Vault, Istio, Harbor, Jenkins, Forgejo, Leantime, Kafka (Strimzi, Apicurio, AKHQ), Developer Portal frame, Prometheus/Grafana, Loki/Alloy, Tempo, Gatus | NetBird only (`https://<app>.k8sdev.rjst.de`); `status.rjst.de` is public |
+| `k8sdev01` | k3s: Argo CD, Vault, Istio, Harbor, Jenkins, Forgejo, Leantime, Kafka (Strimzi, Apicurio, AKHQ), Developer Portal frame, Prometheus/Grafana, Loki/Alloy, Tempo | NetBird only (`https://<app>.k8sdev.rjst.de`); public hosts only through the public Istio gateway |
 | `docker01` | Compose projects (NetBird server, Keycloak, RustFS, backups, Pelican, cAdvisor), PostgreSQL 18, MariaDB, Ansible-managed timers | NetBird only (SSH as `root`, repo at `/root/gitops`) |
 
 ## How a change goes live
@@ -129,7 +129,6 @@ Overview, retention, restore and per-service setup: [backups.md](docs/backups.md
 | Metrics, dashboards | Prometheus, Grafana (Keycloak login), node/postgres/mysqld exporters | [ansible.md](docs/ansible.md#node-exporter-and-update-monitoring) |
 | Alerts | Alertmanager to Discord (deploy, backup age, OS updates, DB, probes) | [backups.md](docs/backups.md#backup-age-alerts) |
 | Logs / traces | Loki + Alloy, Tempo | [kubernetes.md](docs/kubernetes.md#logs-loki-alloy) |
-| Public status | Gatus at `status.rjst.de` | [kubernetes.md](docs/kubernetes.md#public-status-page) |
 | VPN, proxy, DNS | NetBird (config by hand in the dashboard) | [netbird.md](docs/netbird.md) |
 | Login | Keycloak, realm `rjst` as code | [keycloak.md](docs/keycloak.md) |
 

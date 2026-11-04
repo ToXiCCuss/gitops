@@ -3,8 +3,11 @@
 # on the next run and restarts k3s.
 k3s_version: "v1.36.5+k3s1"
 
-# Address the node advertises (node-ip). Defaults to the primary IPv4 address of the host.
-k3s_node_ip: "{{ ansible_default_ipv4.address }}"
+# Fixed address of the node (node-ip), on a dummy interface. The public IP of the host may change without
+# touching the cluster. Pick an address that no other network uses (pods 10.42.0.0/16, services 10.43.0.0/16,
+# NetBird 100.67.0.0/16). A changed node-ip needs the etcd reset, see docs/ansible.md "Change the node address".
+k3s_node_ip: 10.254.0.1
+k3s_node_interface: dummy0
 
 # Kernel settings the kubelet expects (/etc/sysctl.d/90-kubelet.conf). Without
 # protect-kernel-defaults the kubelet sets them itself on start; writing them here makes

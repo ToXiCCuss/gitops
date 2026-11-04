@@ -105,10 +105,12 @@ spec:
                     sourceLabels:
                       - node
                     targetLabel: instance
+            # The control plane endpoints need an IP (the chart builds an Endpoints object from them): the fixed node address
+            # k3s_node_ip of the Ansible role k3s (dummy interface), which does not change with the public IP of the host.
             kubeControllerManager:
               enabled: true
               endpoints:
-                - 89.144.46.204
+                - 10.254.0.1
             coreDns:
               enabled: true
             kubeDns:
@@ -116,15 +118,15 @@ spec:
             kubeEtcd:
               enabled: true
               endpoints:
-                - 89.144.46.204
+                - 10.254.0.1
             kubeScheduler:
               enabled: true
               endpoints:
-                - 89.144.46.204
+                - 10.254.0.1
             kubeProxy:
               enabled: true
               endpoints:
-                - 89.144.46.204
+                - 10.254.0.1
             kubeStateMetrics:
               enabled: true
             kube-state-metrics:
@@ -225,8 +227,8 @@ spec:
                     static_configs:
                       - targets:
                           - docker01.server.lan:9100
-                          # k8sdev01 by its address, like the control plane endpoints above (the pod CIDR may reach the host in UFW)
-                          - 89.144.46.204:9100
+                          # k8sdev01 by its NetBird name, like docker01 (the pod CIDR may reach the host in UFW)
+                          - k8sdev01.server.lan:9100
                     relabel_configs:
                       - target_label: job
                         replacement: node-exporter

@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+# Fixed address of the node on a dummy interface. It is the node-ip of k3s, so the cluster does not depend on
+# the public IP of the host and a new public IP changes nothing in the cluster.
+[Unit]
+Description=Fixed node address {{ k3s_node_ip }} for k3s
+Before=k3s.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=-/usr/bin/env ip link add {{ k3s_node_interface }} type dummy
+ExecStart=/usr/bin/env ip addr replace {{ k3s_node_ip }}/32 dev {{ k3s_node_interface }}
+ExecStart=/usr/bin/env ip link set {{ k3s_node_interface }} up
+ExecStop=/usr/bin/env ip link delete {{ k3s_node_interface }}
+
+[Install]
+WantedBy=multi-user.target
+WantedBy=k3s.service
