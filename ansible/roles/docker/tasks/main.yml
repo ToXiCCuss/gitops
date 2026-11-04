@@ -86,21 +86,3 @@
     name: docker
     state: started
     enabled: true
-
-- name: Ensure configured Docker networks exist
-  community.docker.docker_network:
-    name: "{{ item.name }}"
-    driver: "{{ item.driver | default('bridge') }}"
-    state: present
-  loop: "{{ docker_networks }}"
-  loop_control:
-    label: "{{ item.name }}"
-  when: docker_networks | length > 0
-
-- name: Add users to the docker group
-  user:
-    name: "{{ item }}"
-    groups: docker
-    append: true
-  loop: "{{ docker_users }}"
-  when: docker_users | length > 0
