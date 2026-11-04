@@ -26,7 +26,6 @@
         - mariadb_exporter
         - postgresql
         - postgres_exporter
-        - mongodb
         - k3s
       when: ansible_hostname in lookup('vars', item ~ '_hosts')
 
@@ -89,12 +88,6 @@
   become: true
   roles:
     - postgres_exporter
-
-- name: Install MongoDB
-  hosts: has_mongodb
-  become: true
-  roles:
-    - mongodb
 
 - name: Install k3s
   hosts: has_k3s

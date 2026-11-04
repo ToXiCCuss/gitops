@@ -1,5 +1,5 @@
 ---
-# Kernel and service settings shared by the database roles (postgresql, mariadb, mongodb).
+# Kernel and service settings shared by the database roles (postgresql, mariadb).
 # Each of them includes this role at its end and sets the three "per role" variables.
 
 # Per role: name used in file names (/etc/sysctl.d/70-<name>.conf), systemd unit that carries

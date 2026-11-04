@@ -19,7 +19,6 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 - `<domain>/helm/<app>.yaml`: one Application per third-party chart (`repoURL` = chart repo, `targetRevision` = chart version, values inline via `plugin.env: HELM_VALUES`). `<domain>/kubectl/*.yaml`: plain manifests (CRDs, gateways, RBAC, network rules).
 - Naming: file and Application names in lowercase `kebab-case`; Helm apps are named after the chart (`cert-manager.yaml`). Follow the neighboring files in the folder (e.g. `infra/kubectl` uses `kube-<topic>.yaml`).
 - New domain = new `kube-app-<domain>.yaml` plus a folder with `apps.yaml`, `helm/`, `kubectl/`. Order of commissioning: section "Deployment Guide" in `README.adoc`.
-- `kubernetes/archive/` and `kubernetes/parked/` are not deployed and are not touched.
 - Internal gateway ports 8443–8451 belong to the platform apps here; 9000–9999 are Spring apps (`kubernetes-values/PORTS.md`). No overlap.
 
 ## Rules for changes

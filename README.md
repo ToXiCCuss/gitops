@@ -113,13 +113,13 @@ Rollout on `k8sdev01` (it had the node-exporter pod before):
 
 ### Database tuning
 
-The roles `postgresql`, `mariadb` and `mongodb` include the role `database_tuning` at their end. It sets, per database:
+The roles `postgresql` and `mariadb` include the role `database_tuning` at their end. It sets, per database:
 
-- sysctls in `/etc/sysctl.d/70-<database>.conf` (`vm.swappiness=1`, `vm.dirty_*`, `net.core.somaxconn`, `net.ipv4.tcp_keepalive_time`, `fs.aio-max-nr`; MongoDB also `vm.max_map_count`),
+- sysctls in `/etc/sysctl.d/70-<database>.conf` (`vm.swappiness=1`, `vm.dirty_*`, `net.core.somaxconn`, `net.ipv4.tcp_keepalive_time`, `fs.aio-max-nr`),
 - a systemd drop-in `limits.conf` with `LimitNOFILE` and `OOMScoreAdjust=-900` (the OOM killer takes containers first),
-- the transparent huge pages mode via `/etc/tmpfiles.d/transparent-hugepage.conf`: `madvise` for PostgreSQL and MariaDB, for MongoDB `never` (7.0 and older) or `always` (8.0). THP is host-wide, so databases with different modes on one host overwrite each other.
+- the transparent huge pages mode via `/etc/tmpfiles.d/transparent-hugepage.conf`: `madvise` for PostgreSQL and MariaDB. THP is host-wide, so databases with different modes on one host overwrite each other.
 
-`/etc/security/limits.conf` is not used: systemd services ignore it. The service restarts once when the drop-in changes. Values are in the role's `defaults/main.yml`; MariaDB runs on `docker01`, MongoDB is not assigned to a host yet.
+`/etc/security/limits.conf` is not used: systemd services ignore it. The service restarts once when the drop-in changes. Values are in the role's `defaults/main.yml`; MariaDB runs on `docker01`.
 
 ### MariaDB (audit log and backup user)
 
@@ -164,8 +164,8 @@ Set up once: the policy `databases-write` (create and update on `databases/data/
 - The host can write and delete passwords but not read one back, so a leaked `secret_id` exposes no existing password. It can overwrite or delete one, though: a new `secret_id` cuts a leaked file off (rotation: [AppRole logins of the hosts](#approle-logins-of-the-hosts)).
 - `user_password.sh <login>` (or `<database> <username>`) rotates a password: it sets a new random one in Vault and in the database, every run again, the older ones stay as versions in Vault. `backup_user_create.sh` stores the password of the backup login the same way. Both support `--dry-run` and never print a password.
 - Logins that existed before the scripts used Vault are not in Vault yet. Their first `user_password.sh` run puts them there. The backup login `backup` is created by `backup_user_create.sh`, so its password is in Vault from the start. After a `reset` or a new password put it into `docker/restic-backup` (`POSTGRES_PASSWORD`, `MARIADB_PASSWORD`) and deploy `restic-backup` again, the container keeps its own copy.
-- All scripts for PostgreSQL, MariaDB and MongoDB follow the same rules: an error stops the script, a second run reports what is `unchanged`, and everything that changes something has `--dry-run` (the read-only `list_user_roles.sh` and `audit_list.sh` have none). Tools: `sudo`, the client of the DBMS, `openssl`; the scripts that store a password also `curl` and `jq`.
-- `db_delete.sh`, `user_delete.sh`, `cleanup_db_user.sh` and `copy_db.sh` delete data for good, so run them with `--dry-run` first. `db_delete.sh` finds the logins of a database by their membership in its three roles, not by their name: a database `shop` and a database `shop_dev` do not take each other's logins along. They refuse system databases and, for MariaDB, `root`. The Vault entry of every login (`databases/<dbms>/<login>`, for MongoDB `databases/mongodb/<database>/<username>`) is deleted with all its versions **before** the login is dropped: if Vault refuses (an old policy: `databases-write` in `infra/kubectl/kube-vault-config.yaml` is not synced yet), the script stops while the login still exists and can be repeated. `user_delete.sh` deletes the entry even if the login is already gone, so it also cleans up the leftover of an earlier deletion.
+- All scripts for PostgreSQL and MariaDB follow the same rules: an error stops the script, a second run reports what is `unchanged`, and everything that changes something has `--dry-run` (the read-only `list_user_roles.sh` and `audit_list.sh` have none). Tools: `sudo`, the client of the DBMS, `openssl`; the scripts that store a password also `curl` and `jq`.
+- `db_delete.sh`, `user_delete.sh`, `cleanup_db_user.sh` and `copy_db.sh` delete data for good, so run them with `--dry-run` first. `db_delete.sh` finds the logins of a database by their membership in its three roles, not by their name: a database `shop` and a database `shop_dev` do not take each other's logins along. They refuse system databases and, for MariaDB, `root`. The Vault entry of every login (`databases/<dbms>/<login>`) is deleted with all its versions **before** the login is dropped: if Vault refuses (an old policy: `databases-write` in `infra/kubectl/kube-vault-config.yaml` is not synced yet), the script stops while the login still exists and can be repeated. `user_delete.sh` deletes the entry even if the login is already gone, so it also cleans up the leftover of an earlier deletion.
 - Personal logins (PostgreSQL, `scripts/postgresql/`): `person_grant.sh <username> <database> <ro|rw>` ensures the login `<username>` (no database prefix, one login for all databases) and its membership in `<db>_role_ro` or `<db>_role_rw`. The database is optional: `person_grant.sh <username>` (or `user_create.sh <username>`, which forwards there; with `<database> <username> <role>` it creates the application login `<database>_<username>` as before) only creates the login without any access, a later run with a database adds it. Run it once per database, so `robert` can be `ro` in `shop` and `rw` in `billing`; a changed role type moves the login, `owner` is not possible (that is `<db>_owner` of `db_create.sh`). The password of a new login goes to Vault as `databases/postgresql/<username>` (`user_password.sh <username>` rotates it). The script only touches logins it created itself (marked by a role comment), so it refuses an application login like `shop_owner` or `postgres`. `person_revoke.sh <username> <database>` takes the access to one database away and keeps the login for the others; `person_revoke.sh <username>` terminates its sessions, deletes the Vault entry (needs the current policy `databases-write` of `infra/kubectl/kube-vault-config.yaml`) and drops the login. Both support `--dry-run`, report an absent login or access as `unchanged` and refuse logins that `person_grant.sh` did not create (`user_delete.sh` expects `<database> <username>` and does not fit these logins). The rights of the two roles come from `db_create.sh` and `schema_create.sh`. MariaDB (`scripts/mariadb/`) has the same two scripts with the same arguments, `--dry-run` and Vault path (`databases/mariadb/<username>`). The difference: MariaDB enables only one default role per connection, so the login gets a role of its own, `<username>_role_person`, as default role, and `person_grant.sh` puts `<db>_role_ro` or `<db>_role_rw` into that role. The role is also the marker for a personal login (MariaDB has no comment on a user), and `person_revoke.sh <username>` drops it with the login. Open connections stay until they end, like with `user_delete.sh`.
 - Other scripts of the same family: `schema_create.sh <db> <schema>` (PostgreSQL schema with the privileges of the three roles), `copy_db.sh [source target]` (MariaDB: the target gets the tables of the source, default `fivem` to `fivem_dev`) and `list_user_roles.sh` (read only).
 
@@ -191,26 +191,6 @@ people:                # personal logins, ro or rw per database
 - **`ownerPrivileges`** gives the owner role of a database `create` (make schemas) and/or `temporary` (temporary tables) on it, which `db_create.sh` withholds. An app that manages its own schemas needs both: Backstage creates one schema per plugin and the catalog uses temporary tables. A privilege that is not listed is revoked again, like removed access. With `create` the script also lets every schema that the owner login makes later give `USAGE` to the roles `ro` and `rw` (default privileges), so the other logins of the database can read the tables of the new schemas as they can in `public`. A schema that exists before the first run stays closed to them.
 - **Deleting is not automatic:** a database or an application login that is not declared is only reported. `apply_declared.sh --prune` deletes the undeclared databases (`db_delete.sh`), it asks for the name of each one and needs a terminal, so no timer can run it. Application logins are removed with `user_delete.sh`.
 - Backstage (the Developer Portal) only reads this file to show the databases and never writes to the server. A change of the rights is a pull request on the file.
-
-### MongoDB (scripts)
-
-MongoDB is not assigned to a host yet (`mongodb_hosts` is empty). The role `mongodb` starts it with `authorization: enabled`. The scripts in `scripts/mongodb/` use `mongosh` on the host.
-
-**Admin login for the scripts:** MongoDB has no peer authentication like PostgreSQL, so the scripts read the admin login from `/etc/mongodb-admin.cred` if the file exists (without it they run without credentials, which only works through the localhost exception before the first user exists). Create the first admin user through the localhost exception (`mongosh`, `use admin`, `db.createUser({user: "admin", pwd: "...", roles: ["root"]})`), then the file:
-
-```
-ADMIN_USER="admin"
-ADMIN_PASS="..."
-```
-
-with `chown root:root` and `chmod 600`. The scripts log in through a statement on stdin of `mongosh`, so the admin password never shows up in the process list. All scripts need `jq`, `curl` and, for the Vault access, the files from [Database passwords in Vault](#database-passwords-in-vault); usernames must match `^[a-z][a-z0-9_]*$`.
-
-| Script | Purpose |
-|---|---|
-| `create_db_user.sh <db>` | Ensures the owner `<db>_owner` with the role `dbOwner`; the database itself appears with its first data. The password goes to Vault (`databases/mongodb/<db>/<db>_owner`), an existing login keeps its password. |
-| `create_user.sh <db> <user> [role ...]` | Ensures a user with exactly these roles in the database; the password goes to Vault (`databases/mongodb/<db>/<user>`). Roles: `ro` (`read`), `rw` (`readWrite`), `owner` (`dbOwner`) or any MongoDB role such as `dbAdmin`. Without roles it asks interactively, without a terminal it takes `readWrite`. Example: `create_user.sh shop app rw dbAdmin`. |
-| `reset_password.sh <db> <user>` | Sets a new random password and stores it in Vault (`databases/mongodb/<db>/<user>`), never printed. |
-| `cleanup_db_user.sh <db>` | Drops the users of the database and the database (`--dry-run` first). Refuses `admin`, `local` and `config`. |
 
 ## Updates (Renovate)
 
@@ -331,7 +311,7 @@ flowchart LR
 | leantime-backup | Nightly CronJob in the cluster: backs up the two upload volumes of Leantime while it runs | bucket `leantime`, repository `leantime/restic`, keeps its own retention, see [Leantime (project management)](#leantime-project-management) |
 | Offsite sync | Copies the whole S3 to pCloud and verifies the copy | Keeps deleted or overwritten files 30 days in `Backups-deleted` |
 
-Everything writes to the S3 only, pCloud is written by the offsite sync alone. Not covered: the PVCs of the Kubernetes apps, except the ones of Forgejo and Leantime. MariaDB (`docker01`) is not backed up until `MARIADB_PASSWORD` of its backup login is in the Vault secret `docker/restic-backup`. MongoDB is not operated (`mongodb_hosts` is empty), if it is, `backup.sh` needs a dump step for it.
+Everything writes to the S3 only, pCloud is written by the offsite sync alone. Not covered: the PVCs of the Kubernetes apps, except the ones of Forgejo and Leantime. MariaDB (`docker01`) is not backed up until `MARIADB_PASSWORD` of its backup login is in the Vault secret `docker/restic-backup`.
 
 #### Retention, checks and schedule
 
@@ -818,7 +798,7 @@ Sync-wave annotations (`argocd.argoproj.io/sync-wave`) additionally order resour
 #### 0. Prerequisites (outside of GitOps, done once manually)
 
 1. Kubernetes cluster reachable, `kubectl`/`helm` configured against it.
-2. Istio installed via `istioctl` (base + istiod + ingressgateway) — still needed for the remaining public apps (`microcks.rjst.de`, `rjst.de`). See [Istio installation](#istio-installation-istioctl-by-hand).
+2. Istio installed via `istioctl` (base + istiod + ingressgateway) — still needed for the remaining public apps (`rjst.de`). See [Istio installation](#istio-installation-istioctl-by-hand).
 3. NetBird self-hosted server running (per the [quickstart script](https://docs.netbird.io/selfhosted/selfhosted-quickstart)), reachable at `proxy.rjst.de`, with its own Traefik reverse proxy.
 4. A NetBird personal access token (Management API scope) for the Kubernetes operator.
 
@@ -1071,13 +1051,6 @@ kubectl apply -f kubernetes/kube-app-cicd.yaml        # 3.
 kubectl apply -f kubernetes/kube-app-kafka.yaml       # 4. onwards: order doesn't matter, all only need infra
 kubectl apply -f kubernetes/kube-app-management.yaml
 kubectl apply -f kubernetes/kube-app-spring.yaml
-```
-
-Microcks is parked in `kubernetes/parked/microcks/` and not deployed. It is its own domain with its own MongoDB inside the chart, no Vault secret needed. To deploy or remove it, once `infra` is healthy:
-
-```bash
-kubectl apply -f kubernetes/parked/microcks/kube-app-microcks.yaml
-kubectl delete -f kubernetes/parked/microcks/kube-app-microcks.yaml
 ```
 
 Why the secrets are a separate app that comes first: some Helm apps need their Secret at start (the NetBird operator needs `netbird-mgmt-api-key`), but `helm/` runs before `kubectl/`, so those Secrets can't wait for the domain's `kubectl/` folder. `secrets` holds them (plus the namespaces they live in) and is the only place that runs the AVP plugin, so **every** Secret that is filled from Vault lives there. Don't set the plugin on an app whose files contain no `<path` / `avp.kubernetes.io` marker: the plugin's discovery check finds nothing and ArgoCD fails with "could not find cmp-server plugin". Never put the AVP plugin on a `helm/` app: it would resolve every `<path:...>` in the child Applications' `HELM_VALUES` and write those passwords in plain text into the Application objects.

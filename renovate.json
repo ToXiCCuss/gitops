@@ -7,10 +7,6 @@
   ],
   "timezone": "Europe/Berlin",
   "minimumReleaseAge": "3 days",
-  "ignorePaths": [
-    "kubernetes/archive/**",
-    "kubernetes/parked/**"
-  ],
   "argocd": {
     "managerFilePatterns": [
       "/^kubernetes/[^/]+/helm/.+\\.yaml$/",

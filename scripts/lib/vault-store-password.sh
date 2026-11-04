@@ -42,7 +42,7 @@ vault_login() {
 }
 
 # vault_store_password <secret name> <username> <password>
-# The secret name is the path below the engine, e.g. postgresql/shop_app or mongodb/shop/app.
+# The secret name is the path below the engine, e.g. postgresql/shop_app.
 # The password reaches jq through the environment and curl through stdin, the token curl through a
 # file descriptor, so none of them shows up in the process list
 vault_store_password() {

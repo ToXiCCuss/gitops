@@ -16,8 +16,6 @@ postgresql_hosts:
 postgres_exporter_hosts:
    - docker01
 
-mongodb_hosts: []
-
 # The exporter on the host replaces the node-exporter pod of the Prometheus stack on k8sdev01 (it writes the
 # textfile metrics there too, see README: Node exporter and update monitoring)
 node_exporter_hosts:
