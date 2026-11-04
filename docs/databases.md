@@ -112,6 +112,7 @@ Role sets `bind-address` and `event_scheduler = ON` (`/etc/mysql/mariadb.conf.d/
 | `audit_disable.sh [--dry-run] <db> <table> ...` | removes triggers; logged rows stay until retention drops them |
 | `audit_list.sh <db>` | audited tables, retention, partitions with row counts |
 | `backup_user_create.sh [user] [reset]` | read-only backup login (`backup`, host `%`): `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, `LOCK TABLES`; password to Vault `databases/mariadb/backup` |
+| `superuser_create.sh [--dry-run] <user> [reset]` | personal login (host `localhost`) with `ALL PRIVILEGES ON *.* WITH GRANT OPTION`; password typed at the prompt, **not** stored in Vault |
 
 - Audit log lives in the database (`db_delete.sh` takes it along), holds personal data in clear text; roles of `db_create.sh` can change it
 - Costs one extra INSERT (all columns as JSON) per audited write: enable only where history is needed
