@@ -30,8 +30,8 @@
         - k3s
       when: ansible_hostname in lookup('vars', item ~ '_hosts')
 
-# Before the firewall: the host joins NetBird first, so it stays reachable once UFW denies
-# everything that is not allowed.
+# Before the firewall: installs the client. The join itself is manual (one-time setup key), and
+# the firewall role only enables UFW once the host is connected, so it stays reachable.
 - name: Install NetBird
   hosts: has_netbird
   become: true

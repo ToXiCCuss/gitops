@@ -57,17 +57,14 @@
   register: netbird_status
   changed_when: false
   failed_when: false
+  check_mode: false
 
-- name: Ensure netbird_setup_key is provided
-  ansible.builtin.assert:
-    that:
-      - netbird_setup_key | length > 0
-    fail_msg: "netbird_setup_key must be set to join the NetBird network - run scripts/ansible/setup-secrets.sh."
+# The setup key is a one-time secret, so the join stays a manual step and no secret lives in Git.
+# The firewall role only enables UFW once the host is connected.
+- name: Warn that the host has not joined the NetBird network yet
+  ansible.builtin.debug:
+    msg: >-
+      This host is not connected to NetBird. Join it once by hand:
+      netbird up --setup-key <one-time key from the dashboard>
+      {{ ('--management-url ' + netbird_management_url) if netbird_management_url | length > 0 else '' }}
   when: "'Management: Connected' not in netbird_status.stdout"
-
-- name: Join NetBird network
-  command: >-
-    netbird up --setup-key {{ netbird_setup_key }}
-    {{ ('--management-url ' + netbird_management_url) if netbird_management_url | length > 0 else '' }}
-  when: "'Management: Connected' not in netbird_status.stdout"
-  no_log: true

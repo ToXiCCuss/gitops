@@ -1,8 +1,5 @@
 /.idea/
 
-# Ansible vault password - NEVER commit. Created by scripts/ansible/setup-secrets.sh
-/ansible/.vault_pass
-
 # The secrets of the Docker projects are in Vault, there is no override.env any more. A leftover file must not be committed
 override.env
 

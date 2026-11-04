@@ -34,8 +34,8 @@ firewall_hosts:
    - docker01
    - k8sdev01
 
-# Add hostnames here once netbird_setup_key is set in the vault
-# (scripts/ansible/setup-secrets.sh --scope <hostname>)
+# The client is installed here, the join is manual (netbird up --setup-key ...). Hosts in
+# this list only get an active firewall once they are connected to NetBird.
 netbird_hosts:
    - k8sdev01
    - docker01
@@ -45,14 +45,13 @@ ssh_authorized_keys:
    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ557k6uQaq3TV0Li8Y3+S3tOgQUPU6y0IM8E/TWSJGA robert@pc"
 
 # k3s nodes: installed by the k3s role (flags in host_config) and pulling images
-# through the Harbor mirror. The mirror needs k3s_registries_harbor_password in the
-# vault on the first run (scripts/ansible/setup-secrets.sh).
+# through the public Harbor pull-through mirror.
 k3s_hosts:
    - k8sdev01
 
 # ── Per-host configuration (plain, NOT secret) ───────────────────────────────
-# Non-confidential settings that differ per host. Same resolution as the
-# secrets below: an entry under the hostname wins over the one under "all".
+# Non-confidential settings that differ per host: an entry under the hostname wins
+# over the one under "all".
 host_config:
   all: {}
   docker01:
@@ -101,16 +100,7 @@ host_config:
 # the lookups working if facts were not gathered.
 _scope_host: "{{ ansible_hostname | default(inventory_hostname) }}"
 _config: "{{ (host_config | default({})).get('all', {}) | combine((host_config | default({})).get(_scope_host, {})) }}"
-_secrets: "{{ (vault_secrets | default({})).get('all', {}) | combine((vault_secrets | default({})).get(_scope_host, {})) }}"
 
 # ── Per-host settings resolved from host_config ──────────────────────────────
 firewall_rules: "{{ _config['firewall_rules'] | default([]) }}"
 k3s_config: "{{ _config['k3s_config'] | default({}) }}"
-
-# ── Secrets ──────────────────────────────────────────────────────────────────
-# The values live ansible-vault encrypted in secrets.yml, in the nested dict
-# "vault_secrets" (same host/all layering as host_config above).
-# An unset secret resolves to "" and the role's assert task reports it.
-# Maintain the values with scripts/ansible/setup-secrets.sh.
-netbird_setup_key: "{{ _secrets['netbird_setup_key'] | default('') }}"
-k3s_registries_harbor_password: "{{ _secrets['k3s_registries_harbor_password'] | default('') }}"

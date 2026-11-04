@@ -1,8 +1,3 @@
 ---
-# Setup key for joining the NetBird network (from the NetBird dashboard).
-# Set it in the vault file group_vars/all/secrets.yml via
-# scripts/ansible/setup-secrets.sh - never commit it in plain text.
-netbird_setup_key: ""
-
 # Management URL for self-hosted NetBird. Leave empty to use NetBird Cloud.
 netbird_management_url: ""

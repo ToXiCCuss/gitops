@@ -13,11 +13,32 @@
   loop_control:
     label: "{{ item.comment }}"
 
+# Port 22 is closed to the Internet, the host is reached through NetBird. Denying everything
+# before the host has joined would lock us out, so the policy waits for the connection.
+- name: Check the NetBird connection
+  command: netbird status
+  register: firewall_netbird_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: ansible_hostname in netbird_hosts
+
+- name: Decide whether the firewall may be enabled
+  ansible.builtin.set_fact:
+    firewall_can_be_enabled: "{{ ansible_hostname not in netbird_hosts or 'Management: Connected' in (firewall_netbird_status.stdout | default('')) }}"
+
+- name: Warn that the firewall stays off until NetBird is connected
+  ansible.builtin.debug:
+    msg: "NetBird is not connected, so UFW is neither set to deny nor enabled. Join NetBird, then run the playbook again."
+  when: not firewall_can_be_enabled
+
 - name: Deny all other incoming traffic
   community.general.ufw:
     default: deny
     direction: incoming
+  when: firewall_can_be_enabled
 
 - name: Enable the firewall
   community.general.ufw:
     state: enabled
+  when: firewall_can_be_enabled

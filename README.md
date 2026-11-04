@@ -4,7 +4,7 @@ Infrastructure as code for the two servers (a Docker host and a k3s node).
 
 | Folder | Content |
 |---|---|
-| `ansible/` | Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter, mysqld exporter, the deploy timer of the Docker host. Secrets in an ansible-vault file. |
+| `ansible/` | Host setup with Ansible: base system, firewall (UFW), Docker, NetBird, k3s and its registry mirror, database servers, node exporter, postgres exporter, mysqld exporter, the deploy timer of the Docker host. No secrets in Ansible. |
 | `docker/` | One Docker Compose project per service on the Docker host (restic-backup, RustFS, offsite sync, ...), deployed by `scripts/docker/deploy.sh`, on the Docker host hourly from 08:00 to 20:00 by a systemd timer. Images are pinned by digest and updated by Renovate. |
 | `istio/` | `IstioOperator` file for the manual `istioctl install` (outside ArgoCD). |
 | `kubernetes/` | ArgoCD app-of-apps, one folder per domain (infra, monitoring, cicd, management, kafka, spring). |
@@ -65,13 +65,23 @@ host_config:
 ```
 
 - UFW only filters traffic to host processes (sshd, PostgreSQL, node_exporter, the NetBird client). Ports published by Docker bypass it (FORWARD chain), a rule here neither opens nor closes them.
-- There is no UFW rule for SSH: `docker01` is reached through NetBird and port 22 is closed to the Internet.
+- There is no UFW rule for SSH: `docker01` is reached through NetBird and port 22 is closed to the Internet. So on the hosts in `netbird_hosts` the role only sets the default to deny and enables UFW while `netbird status` reports `Management: Connected`. Otherwise it prints a warning and leaves the policy untouched (a firewall that is already active stays as it is). Join NetBird first (see [NetBird client](#netbird-client)), then run the playbook again.
 - The role never removes rules. A rule that is no longer wanted is removed by hand once (`ufw delete ...`) after it is deleted from `firewall_rules`.
 - Run only this role with `--tags firewall`. Do a dry run (`ansible-playbook -i inventory.ini site.yml --tags firewall --check --diff`) before the first real run and compare it with `ufw status verbose` on the host. Adding a comment to an existing rule counts as a change once.
 
+### NetBird client
+
+The role `netbird` runs on the hosts in `netbird_hosts` and installs the client from the NetBird repository. The join is a manual step, because the setup key is a one-time secret and no secret lives in Git. Create a one-time setup key in the NetBird dashboard (Setup Keys) and run once on the host:
+
+```bash
+netbird up --setup-key <key> --management-url <url of the self-hosted server>
+```
+
+Without a connection the playbook only prints a warning, and the [firewall](#firewall) stays off.
+
 ### k3s
 
-The role `k3s` runs on the hosts in `k3s_hosts` (`group_vars/all/main.yml`). It installs the pinned `k3s_version` with the official install script, writes `/etc/rancher/k3s/config.yaml` and keeps the service running. The server flags are the keys of `host_config.<host>.k3s_config` (`node-ip` defaults to the primary IPv4 address), the registry mirror stays in the role `k3s_registries`.
+The role `k3s` runs on the hosts in `k3s_hosts` (`group_vars/all/main.yml`). It installs the pinned `k3s_version` with the official install script, writes `/etc/rancher/k3s/config.yaml` and keeps the service running. The server flags are the keys of `host_config.<host>.k3s_config` (`node-ip` defaults to the primary IPv4 address), the registry mirror stays in the role `k3s_registries`. It writes `/etc/rancher/k3s/registries.yaml` with the Harbor pull-through mirrors for `docker.io` and `ghcr.io`; these Harbor projects must be public, the file holds no credentials.
 
 - Change a flag: edit `k3s_config`, run `ansible-playbook -i inventory.ini site.yml --tags k3s`. k3s is restarted once (the API server is gone for a moment, the pods keep running).
 - Upgrade: change `k3s_version` (a release from https://github.com/k3s-io/k3s/releases) and run the same command. Do a dry run (`--tags k3s --check --diff`) first.
@@ -201,98 +211,6 @@ with `chown root:root` and `chmod 600`. The scripts log in through a statement o
 | `create_user.sh <db> <user> [role ...]` | Ensures a user with exactly these roles in the database; the password goes to Vault (`databases/mongodb/<db>/<user>`). Roles: `ro` (`read`), `rw` (`readWrite`), `owner` (`dbOwner`) or any MongoDB role such as `dbAdmin`. Without roles it asks interactively, without a terminal it takes `readWrite`. Example: `create_user.sh shop app rw dbAdmin`. |
 | `reset_password.sh <db> <user>` | Sets a new random password and stores it in Vault (`databases/mongodb/<db>/<user>`), never printed. |
 | `cleanup_db_user.sh <db>` | Drops the users of the database and the database (`--dry-run` first). Refuses `admin`, `local` and `config`. |
-
-### Secrets (ansible-vault)
-
-Secrets do **not** live in `group_vars/all/main.yml` but in `group_vars/all/secrets.yml`. That file is encrypted with `ansible-vault` (AES256) and **is committed to Git** in encrypted form. Ansible loads it automatically, so no playbook or role needs changing.
-
-Managed secrets:
-
-| Variable | Used by | Source |
-|---|---|---|
-| `netbird_setup_key` | `roles/netbird` | NetBird dashboard -> Setup Keys |
-| `k3s_registries_harbor_password` | `roles/k3s_registries` | Harbor account / robot account |
-
-#### Per-host values
-
-Values are stored per scope in the nested dict `vault_secrets`:
-
-```yaml
-vault_secrets:
-  all:                                        # fallback for every host
-    k3s_registries_harbor_password: ...
-  docker01:                                   # overrides "all" on that host
-    netbird_setup_key: ...
-  k8sdev01:
-    netbird_setup_key: ...
-```
-
-The very same layering exists in plain text for **non-secret** per-host settings, in `host_config` in `group_vars/all/main.yml`:
-
-```yaml
-host_config:
-  all: {}
-  docker01:
-    some_setting: "value"
-```
-
-`group_vars/all/main.yml` merges the `all` layer with the current host's layer once (`_secrets` / `_config`) and resolves each variable in this order:
-
-1. `vault_secrets[<ansible_hostname>][<name>]` - host specific
-2. `vault_secrets["all"][<name>]` - shared by every host
-3. `""` - the role's `assert` task reports the missing value
-
-> **Why not `host_vars/`?** `inventory.ini` only knows `localhost`, and Ansible resolves `host_vars/` by _inventory_ name - `host_vars/docker01.yml` would never be loaded. `ansible_hostname` is a fact and holds the real hostname, which is also what the `*_hosts` gates compare against.
-
-Note that this is organisation, not isolation: the encrypted file is in Git and every host with `.vault_pass` can decrypt **all** scopes. Real per-host separation would need several vault IDs (`vault_identity_list`).
-
-#### First setup on a host
-
-```bash
-../scripts/ansible/setup-secrets.sh
-```
-
-Without arguments the script uses **this machine's own short hostname** as the scope (`hostname -s`, falling back to `uname -n`) - that is exactly the key `ansible_hostname` resolves to later, since the playbook runs locally on each host. It then asks for each secret; input is not echoed. It writes the encrypted `group_vars/all/secrets.yml` and creates the vault password file `ansible/.vault_pass` (`chmod 600`, gitignored). On a fresh setup it can generate a random vault password - **store it in your password manager**, otherwise the committed `secrets.yml` is unreadable everywhere else.
-
-Afterwards commit the encrypted file:
-
-```bash
-git add ansible/group_vars/all/secrets.yml && git commit -m "Update Ansible vault secrets"
-```
-
-#### Additional host (secrets.yml already in Git)
-
-Only the password file is missing there:
-
-```bash
-../scripts/ansible/setup-secrets.sh --password
-```
-
-The script asks for the vault password and verifies it against the checked-out `secrets.yml` before writing `.vault_pass`.
-
-#### Day-to-day
-
-```bash
-../scripts/ansible/setup-secrets.sh                    # THIS host (auto-detected)
-../scripts/ansible/setup-secrets.sh --scope all        # shared by every host
-../scripts/ansible/setup-secrets.sh --scope docker01   # another host
-../scripts/ansible/setup-secrets.sh --view             # show the decrypted content
-../scripts/ansible/setup-secrets.sh --edit             # raw edit in $EDITOR
-../scripts/ansible/setup-secrets.sh --rekey            # rotate the vault password
-```
-
-At each prompt: Enter keeps the current value, `-` removes the entry. A removed host entry falls back to the value from scope `all`. Scopes that run empty are dropped from the file.
-
-The script prints the scope it is about to write to, and warns when the detected hostname appears in none of the `*_hosts` lists in `main.yml` - usually a sign that the host has not been wired into the playbook yet.
-
-#### Adding a new secret
-
-1. Add the variable with an empty default to the role's `defaults/main.yml`.
-2. Append its name to `SECRET_NAMES` and a description to `SECRET_HINTS` in `scripts/ansible/setup-secrets.sh`.
-3. Add the host -> all -> `""` look-up to the _Secrets_ block in `group_vars/all/main.yml` (copy an existing one).
-4. Run the script - existing values are preserved.
-
-> **Note:** `ansible.cfg` sets `vault_password_file = .vault_pass`. If that file is missing, _every_ `ansible-playbook` run aborts with `The vault password file .vault_pass was not found` - run the script first. Tasks that use secrets already have `no_log: true`, so the values do not show up in the output or in `--check --diff`.
 
 ## Updates (Renovate)
 
@@ -521,7 +439,7 @@ Keep these in the password manager, nothing can be read without them and they ar
 
 - the restic passwords of the repositories `docker` and `databases` (project `restic-backup`), `vault` (project `vault-backup`) and `netbird` (`/root/restic`)
 - the `rclone.conf` of pCloud (the token)
-- the Vault unseal keys and the root token (printed once by `vault operator init`) and the Ansible vault password (`ansible/.vault_pass`)
+- the Vault unseal keys and the root token (printed once by `vault operator init`)
 
 | Data | Restore with |
 |---|---|

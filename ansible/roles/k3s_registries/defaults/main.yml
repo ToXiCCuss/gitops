@@ -1,16 +1,9 @@
 ---
 # Harbor host that acts as pull-through cache for the mirrored registries.
+# The proxy-cache projects are public, so k3s pulls without credentials.
 k3s_registries_harbor_host: harbor.k8sdev.rjst.de
 
-# Harbor account used to pull (a robot account is better than admin).
-k3s_registries_harbor_username: admin
-
-# Set it in the vault file group_vars/all/secrets.yml via
-# scripts/ansible/setup-secrets.sh - never commit it in plain text.
-# If empty and /etc/rancher/k3s/registries.yaml already exists, the file is left untouched.
-k3s_registries_harbor_password: ""
-
-# Upstream registries mirrored through Harbor. Each needs a Harbor proxy-cache
+# Upstream registries mirrored through Harbor. Each needs a public Harbor proxy-cache
 # project with exactly this name (docker.io, ghcr.io, ...).
 k3s_registries_mirrored:
   - docker.io

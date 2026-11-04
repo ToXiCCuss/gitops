@@ -30,12 +30,12 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 - Rights for the Jenkins deployer (`helm-deployer`) stay namespaced and without RBAC or cluster-wide permissions. If the chart needs a new resource type, extend the role identically in `dev` and `prod` (there is no `qa` yet).
 
 ## Secrets
-- No plaintext secrets in Git, not even base64. Runtime secrets live in Vault; Ansible secrets are encrypted in `ansible/group_vars/all/secrets.yml` (ansible-vault).
-- Never read, print or commit: `ansible/.vault_pass`, `override.env` (only on the server, gitignored). Do not fill secrets manifests under `kubernetes/secrets/` with real values.
+- No plaintext secrets in Git, not even base64. Runtime secrets live in Vault. Ansible holds no secrets (no ansible-vault): the NetBird join with its one-time setup key is a manual step.
+- Never read, print or commit: `override.env` (only on the server, gitignored). Do not fill secrets manifests under `kubernetes/secrets/` with real values.
 - Found a plaintext secret: report it, do not delete it silently (it is in the history, rotate the secret).
 
 ## Ansible and Docker
-- Ansible: dry run first (see `README.adoc`, section "Dry Run"), apply only on explicit request. I do not touch the vault password.
+- Ansible: dry run first (see `README.adoc`, section "Dry Run"), apply only on explicit request.
 - Database access is declared in `databases/postgresql.yaml`; `scripts/postgresql/apply_declared.sh` applies it on docker01 (`--dry-run` first). I change the file, I do not run the script against the host unless asked.
 - Docker projects: defaults in `default.env`, overrides in `override.env` (not in Git, keep the template `override.env.example` up to date).
 
