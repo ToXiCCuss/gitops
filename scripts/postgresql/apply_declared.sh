@@ -16,10 +16,13 @@
 # A database or an application login that is not declared is only reported. --prune also deletes the undeclared
 # databases (db_delete.sh), after you typed the name of each one at the terminal.
 #
-# Usage: apply_declared.sh [--dry-run] [--prune] [--file <path>]
-#        --dry-run  only report what would be changed
-#        --prune    delete the databases that are not declared (asks for each one, needs a terminal)
-#        --file     the declared state, default databases/postgresql.yaml of this repository
+# Usage: apply_declared.sh [--dry-run] [--prune] [--file <path>] [--pull] [--metrics-file <path>]
+#        --dry-run       only report what would be changed
+#        --prune         delete the databases that are not declared (asks for each one, needs a terminal)
+#        --file          the declared state, default databases/postgresql.yaml of this repository
+#        --pull          git pull --ff-only in this repository first (the postgresql-apply timer)
+#        --metrics-file  leave the result of the run for the textfile collector of the node_exporter
+#                        (gitops_databases_* metrics, see docs/databases.md). Not written by a --dry-run
 set -euo pipefail
 
 # shellcheck source=../lib/database-common.sh
@@ -46,9 +49,12 @@ readonly RECORDS_FILTER='
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 readonly SCRIPT_DIR
+readonly REPOSITORY_DIR="$SCRIPT_DIR/../.."
 
-DECLARED_FILE="$SCRIPT_DIR/../../databases/postgresql.yaml"
+DECLARED_FILE="$REPOSITORY_DIR/databases/postgresql.yaml"
 PRUNE=false
+PULL=false
+METRICS_FILE=""
 HAS_PEOPLE_SECTION=false
 DECLARED_DATABASES=()
 DECLARED_LOGINS=()
@@ -60,7 +66,7 @@ declare -A DECLARED_PERSON_SET=()
 declare -A DECLARED_PERSON_ACCESS=()
 
 usage() {
-  log "Usage: $0 [--dry-run] [--prune] [--file <path>]"
+  log "Usage: $0 [--dry-run] [--prune] [--file <path>] [--pull] [--metrics-file <path>]"
   exit "$EXIT_USAGE"
 }
 
@@ -69,9 +75,15 @@ parse_arguments() {
   while (($# > 0)); do
     case $1 in
     --prune) PRUNE=true ;;
+    --pull) PULL=true ;;
     --file)
       (($# >= 2)) || usage
       DECLARED_FILE=$2
+      shift
+      ;;
+    --metrics-file)
+      (($# >= 2)) || usage
+      METRICS_FILE=$2
       shift
       ;;
     *) remaining+=("$1") ;;
@@ -370,9 +382,52 @@ report_undeclared_databases() {
   done <<<"$databases"
 }
 
+# The checkout of the host is brought up to date before the file is read, so a merge to master reaches the server
+pull_repository() {
+  git -C "$REPOSITORY_DIR" pull --ff-only >&2 ||
+    die "git pull failed (local changes or a diverged branch?), nothing is applied"
+}
+
+# The time of the last successful run from the previous metrics file, 0 if there is none
+previous_success_time() {
+  local previous
+  previous=$(sed -n 's/^gitops_databases_last_success_timestamp_seconds //p' "$METRICS_FILE" 2>/dev/null | head -n 1) || true
+  echo "${previous:-0}"
+}
+
+# render_metrics <exit status of the run>: the result in the format of the textfile collector. A failed run keeps the
+# time of the last success, Prometheus alerts when it gets too old
+render_metrics() {
+  local now last_success apply_success=0 revision
+  now=$(date +%s)
+  last_success=$(previous_success_time)
+  if (($1 == 0)); then
+    apply_success=1
+    last_success=$now
+  fi
+  revision=$(git -C "$REPOSITORY_DIR" rev-parse --short HEAD 2>/dev/null) || revision="unknown"
+  printf 'gitops_databases_apply_success %s\ngitops_databases_last_run_timestamp_seconds %s\n' "$apply_success" "$now"
+  printf 'gitops_databases_last_success_timestamp_seconds %s\ngitops_databases_revision_info{revision="%s"} 1\n' "$last_success" "$revision"
+}
+
+# Runs when the script ends, whatever the reason. Written to a temporary file and moved, so the node_exporter never
+# reads a half written file.
+write_metrics() {
+  local exit_status=$?
+  if ! render_metrics "$exit_status" >"$METRICS_FILE.tmp" || ! mv "$METRICS_FILE.tmp" "$METRICS_FILE"; then
+    log "Writing the metrics to $METRICS_FILE failed"
+  fi
+}
+
 main() {
   parse_arguments "$@"
+  if [[ -n $METRICS_FILE && $DRY_RUN == false ]]; then
+    trap write_metrics EXIT
+  fi
   require_commands sudo psql yq jq
+  if [[ $PULL == true ]]; then
+    pull_repository
+  fi
   load_declared_state
 
   ensure_databases

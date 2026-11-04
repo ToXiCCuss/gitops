@@ -76,7 +76,7 @@ flowchart LR
 | Kubernetes (`kubernetes/`) | merge to `master`, Argo CD syncs at once | `git revert` | [kubernetes.md](docs/kubernetes.md) |
 | Docker (`docker/`) | `gitops-deploy.timer`, hourly 08:00-20:00 (NetBird project: by hand) | `git revert` | [docker.md](docs/docker.md) |
 | Hosts (`ansible/`) | by hand: dry run (`--check --diff`), then apply, on explicit request | `git revert` + re-run | [ansible.md](docs/ansible.md) |
-| Databases (`databases/`) | by hand: `apply_declared.sh --dry-run`, then apply | `git revert` + re-apply | [databases.md](docs/databases.md#declared-access) |
+| Databases (`databases/`) | `postgresql-apply.timer`, hourly 08:30-20:30 (no `--prune`, MariaDB by hand) | `git revert` | [databases.md](docs/databases.md#declared-access) |
 | Versions | Renovate PRs (3 days minimum age); some Docker digests auto-merge | `git revert` | [updates.md](docs/updates.md) |
 
 ## Secrets
@@ -158,6 +158,7 @@ Overview, retention, restore and per-service setup: [backups.md](docs/backups.md
 | Backup now | `sudo scripts/docker/backup-now.sh [--background]` |
 | Restore key files / dumps | `sudo scripts/docker/restore.sh snapshots docker` ([backups.md](docs/backups.md#restore)) |
 | Declared DB access | `sudo scripts/postgresql/apply_declared.sh --dry-run` |
+| DB apply timer log | `journalctl -u postgresql-apply -n 100` |
 | Join NetBird (once) | `netbird up --setup-key <key> --management-url <url>` |
 | Argo CD apps | `kubectl get applications -n argocd` |
 

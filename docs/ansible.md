@@ -10,7 +10,7 @@ Host setup for `docker01` (Docker host) and `k8sdev01` (k3s node). Run everythin
 | Collections | `cd gitops/ansible && ansible-galaxy collection install -r requirements.yml` |
 | Dry run | `ansible-playbook -i inventory.ini site.yml --check --diff` |
 | Apply | `ansible-playbook -i inventory.ini site.yml` |
-| One role | add `--tags <firewall\|k3s\|node_exporter\|gitops_deploy>` |
+| One role | add `--tags <firewall\|k3s\|node_exporter\|gitops_deploy\|postgresql_apply>` |
 
 - Playbook runs **locally on each host** (`/root/gitops/ansible`), the checkout comes via `git pull`
 - Hosts cannot push to Git; edit on the workstation
@@ -29,6 +29,7 @@ Host lists are in `group_vars/all/main.yml`; per-host settings under `host_confi
 | `docker` | `docker01` | Docker CE, `daemon.json`, restart of socket containers |
 | `gitops_deploy` | `docker01` | timer that runs `deploy.sh` |
 | `postgresql`, `postgres_exporter` | `docker01` | PostgreSQL 18 (`pg_cron`, `pg_partman`), exporter on 9187 |
+| `postgresql_apply` | `docker01` | timer that runs `apply_declared.sh` |
 | `mariadb`, `mariadb_exporter` | `docker01` | MariaDB, exporter on 9104 |
 | `database_tuning` | via `postgresql`, `mariadb` | sysctls, limits, THP |
 | `k3s`, `k3s_registries` | `k8sdev01` | k3s + Harbor pull-through mirror |
@@ -131,6 +132,7 @@ All systemd timers set up by Ansible (no cron):
 | Timer | Host | When | What |
 |---|---|---|---|
 | `gitops-deploy.timer` | `docker01` | hourly 08:00-20:00 (`gitops_deploy_calendar`) | `deploy.sh --pull --metrics-file ...`, see [docker.md](docker.md#automatic-deploy) |
+| `postgresql-apply.timer` | `docker01` | hourly 08:30-20:30 (`postgresql_apply_calendar`) | `apply_declared.sh --pull --metrics-file ...`, see [databases.md](databases.md#automatic-apply) |
 | `node-update-status.timer` | `docker01`, `k8sdev01` | 2 min after boot, then hourly | update metrics (above) |
 | unattended-upgrades | all | apt default | security updates, no reboot |
 

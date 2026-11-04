@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+# Makes the PostgreSQL of this host match databases/postgresql.yaml: git pull --ff-only, then apply_declared.sh
+# (never --prune: databases are only deleted by hand). A failed run shows up in the metrics (gitops_databases_*)
+# and in the alerts.
+[Unit]
+Description=Apply the declared PostgreSQL access from the gitops repository
+Wants=network-online.target
+After=network-online.target postgresql.service gitops-deploy.service
+# Without the AppRole of Vault no new password can be stored, so nothing is created (docs/databases.md: Passwords in Vault)
+ConditionPathExists=/etc/gitops/databases_role_id
+ConditionPathExists=/etc/gitops/databases_secret_id
+
+[Service]
+Type=oneshot
+ExecStart={{ postgresql_apply_repository_dir }}/scripts/postgresql/apply_declared.sh --pull --metrics-file {{ postgresql_apply_metrics_dir }}/postgresql-apply.prom
+TimeoutStartSec=15min

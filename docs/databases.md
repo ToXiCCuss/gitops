@@ -72,11 +72,34 @@ people:                # personal logins, ro or rw per database
 | Topic | Behavior |
 |---|---|
 | First time | `sudo scripts/postgresql/export_declared.sh > databases/postgresql.yaml` prints the real state (read only); databases without the `db_create.sh` roles get a comment, check before applying; commit the file |
-| Apply | `sudo scripts/postgresql/apply_declared.sh --dry-run`, then without; each part reported as created/updated/unchanged |
+| Apply | the timer applies it after a merge to `master` ([Automatic apply](#automatic-apply)); by hand `sudo scripts/postgresql/apply_declared.sh --dry-run`, then without; each part reported as created/updated/unchanged |
 | Removing access | automatic **only with the key `people:`** (unlisted personal logins dropped, unlisted databases revoked); without the key personal logins stay |
 | `ownerPrivileges` | `create` (schemas) and/or `temporary` on the database; unlisted privileges are revoked. With `create`, default privileges give `ro`/`rw` `USAGE` on schemas the owner creates later (existing schemas stay closed) |
 | Deleting | never automatic: undeclared databases/logins are only reported. `--prune` deletes undeclared databases (`db_delete.sh`), asks for each name and needs a terminal |
 | Backstage | reads the file to show databases, never writes; rights change = pull request |
+
+### Automatic apply
+
+Timer `postgresql-apply.timer` (role `postgresql_apply`, `docker01`) runs `apply_declared.sh --pull --metrics-file ...` in `/root/gitops` hourly 08:30-20:30 (`postgresql_apply_calendar`), half an hour after `gitops-deploy.timer`. A merge to `master` that changes `databases/postgresql.yaml` is live on the server within the hour, **including every revoke** (`ownerPrivileges`, `people:`). **Rollback = `git revert` on `master`.**
+
+```bash
+sudo ansible-playbook -i inventory.ini site.yml --tags postgresql_apply --check --diff   # in /root/gitops/ansible
+sudo ansible-playbook -i inventory.ini site.yml --tags postgresql_apply
+systemctl list-timers postgresql-apply.timer
+journalctl -u postgresql-apply -n 100
+sudo systemctl stop postgresql-apply.timer     # pause, e.g. while editing /root/gitops by hand
+```
+
+| Topic | Detail |
+|---|---|
+| Never automatic | `--prune`: databases are only deleted by hand at a terminal. Undeclared databases and logins are only reported in the journal |
+| Preconditions | AppRole files `/etc/gitops/databases_role_id`, `databases_secret_id`; without them the run is skipped |
+| Pull fails | local changes or a commit not on `master` stop the run (also `DockerDeployPullFailed`) |
+| Metrics | `/var/lib/prometheus/node-exporter/postgresql-apply.prom`: `gitops_databases_apply_success`, `gitops_databases_last_run_timestamp_seconds`, `gitops_databases_last_success_timestamp_seconds`, `gitops_databases_revision_info{revision}` |
+| Alerts | `kubernetes/monitoring/kubectl/alert-rules.yaml` (`postgresql-apply`): `DatabasesApplyFailed` after 30 min, `DatabasesApplyStale`, `DatabasesApplyNeverReported` after 2 h, via Alertmanager to Discord |
+| First rollout | merge to `master`, `git pull` on the host, run the Ansible command; `--dry-run` of `apply_declared.sh` first must report only `unchanged` |
+| Manual run | still allowed (`apply_declared.sh --dry-run`, then without); without `--metrics-file` it does not touch the metrics |
+| Not covered | MariaDB (scripts only), schemas (`schema_create.sh`), audit setup, the `backup` login |
 
 ## MariaDB
 

@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Apply the declared PostgreSQL access from the gitops repository regularly
+
+[Timer]
+OnCalendar={{ postgresql_apply_calendar }}
+RandomizedDelaySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -12,6 +12,11 @@ mariadb_exporter_hosts:
 postgresql_hosts:
    - docker01
 
+# Applies databases/postgresql.yaml regularly (systemd timer). Needs PostgreSQL on the same host and the AppRole of
+# the database scripts in Vault, so only hosts from postgresql_hosts
+postgresql_apply_hosts:
+   - docker01
+
 # Needs PostgreSQL on the same host (local socket), so only hosts from postgresql_hosts
 postgres_exporter_hosts:
    - docker01

@@ -25,6 +25,7 @@
         - mariadb
         - mariadb_exporter
         - postgresql
+        - postgresql_apply
         - postgres_exporter
         - k3s
       when: ansible_hostname in lookup('vars', item ~ '_hosts')
@@ -82,6 +83,14 @@
   become: true
   roles:
     - postgresql
+
+# After PostgreSQL and the node_exporter: it needs the database server and the textfile collector directory
+- name: Apply the declared PostgreSQL access regularly
+  hosts: has_postgresql_apply
+  become: true
+  roles:
+    - role: postgresql_apply
+      tags: postgresql_apply
 
 - name: Install postgres_exporter
   hosts: has_postgres_exporter

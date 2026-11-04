@@ -227,3 +227,45 @@ spec:
             severity: warning
           annotations:
             summary: "The gitops-deploy timer on docker01 never reported a successful run"
+---
+# apply_declared.sh --metrics-file (started by the postgresql-apply timer on docker01, Ansible role postgresql_apply)
+# leaves the result of every run in the textfile collector of the node_exporter. databases/postgresql.yaml reaches
+# the server within an hour of a merge to master, so a run that stays failed or a timer that does not run means the
+# access on docker01 differs from Git.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: postgresql-apply
+  namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  groups:
+    - name: postgresql-apply
+      rules:
+        # also covers a failed git pull and a declared file that cannot be applied (journalctl -u postgresql-apply)
+        - alert: DatabasesApplyFailed
+          expr: gitops_databases_apply_success == 0
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "databases/postgresql.yaml cannot be applied on {{ $labels.instance }} (journalctl -u postgresql-apply)"
+        # also fires when the timer is stopped or the AppRole files of Vault are missing (the unit is then skipped).
+        # The timer runs hourly from 08:30 to 20:30 local time (postgresql_apply_calendar), so the rule only looks
+        # at 08:00-18:00 UTC and allows two missed runs.
+        - alert: DatabasesApplyStale
+          expr: time() - gitops_databases_last_success_timestamp_seconds > 7200 and on() (hour() >= 8 and hour() < 18)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The last successful apply of the declared PostgreSQL access on {{ $labels.instance }} is more than two hours ago"
+        # for: 2h so that the alert does not fire between the merge of the rule and the Ansible run on the host
+        - alert: DatabasesApplyNeverReported
+          expr: absent(gitops_databases_last_success_timestamp_seconds)
+          for: 2h
+          labels:
+            severity: warning
+          annotations:
+            summary: "The postgresql-apply timer on docker01 never reported a successful run"
