@@ -18,7 +18,7 @@ flowchart TD
   git[("Git: master")] --> argocd["Argo CD"]
   argocd --> vaultapp["kube-vault.yaml (standalone)"]
   argocd --> secretsapp["kube-app-secrets.yaml (AVP, all Secrets from Vault)"]
-  argocd --> domains["kube-app-domain.yaml (infra, monitoring, cicd, kafka, management, spring)"]
+  argocd --> domains["kube-app-domain.yaml (infra, monitoring, cicd, management, spring)"]
   domains --> apps["domain/apps.yaml"]
   apps --> helm["domain-helm (wave 0): charts"]
   apps --> kubectl["domain-kubectl (wave 1): manifests"]
@@ -31,7 +31,6 @@ flowchart TD
 | `infra` | cert-manager, ClusterIssuer, Hetzner webhook, Istio internal gateway + security policies + telemetry, NetBird operator/router/access/API proxy, CoreDNS custom, Vault Config Operator, vault-unsealer |
 | `monitoring` | Prometheus/Grafana, Alloy, Loki, Tempo, blackbox exporter, alert rules, dashboards, probes |
 | `cicd` | Harbor, Jenkins, Forgejo (+ backup), `helm-deployer` role |
-| `kafka` | Strimzi operator, Apicurio Registry (+ operator), AKHQ |
 | `management` | Leantime (+ backup), frame of the Developer Portal |
 | `spring` | namespaces `dev`, `prod`, `helm-deployer` role (Spring apps themselves are deployed by Jenkins) |
 
@@ -131,9 +130,8 @@ All of it is in [vault.md](vault.md): initialize and unseal, KV engines, Kuberne
 ```bash
 kubectl apply -f kubernetes/kube-app-secrets.yaml     # 0. renders the Secrets from Vault via AVP, must be healthy before infra
 kubectl apply -f kubernetes/kube-app-infra.yaml       # 1. cert-manager, ClusterIssuer, NetBird operator
-kubectl apply -f kubernetes/kube-app-monitoring.yaml  # 2. needed before kafka (PodMonitor CRDs)
-kubectl apply -f kubernetes/kube-app-cicd.yaml        # 3.
-kubectl apply -f kubernetes/kube-app-kafka.yaml       # 4. onwards: order doesn't matter, all only need infra
+kubectl apply -f kubernetes/kube-app-monitoring.yaml  # 2.
+kubectl apply -f kubernetes/kube-app-cicd.yaml        # 3. onwards: order doesn't matter, all only need infra
 kubectl apply -f kubernetes/kube-app-management.yaml
 kubectl apply -f kubernetes/kube-app-spring.yaml
 ```

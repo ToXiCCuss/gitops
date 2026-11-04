@@ -73,8 +73,6 @@ NetBird separates access per destination, not per hostname, so every app has its
 | Harbor | `harbor.k8sdev.rjst.de` | `harbor.harbor:80` | 8446 |
 | Jenkins | `jenkins.k8sdev.rjst.de` | `jenkins.jenkins:8080` | 8447 |
 | Developer Portal | `developer-portal.k8sdev.rjst.de` | `developer-portal.developer-portal:7007` | 8448 |
-| AKHQ | `akhq.k8sdev.rjst.de` | `akhq.kafka:80` | 8449 |
-| Apicurio Registry | `apicurio.k8sdev.rjst.de` | `example-apicurioregistry-mem-service.kafka:8080` | 8450 |
 | Prometheus | `prometheus.k8sdev.rjst.de` | `prometheus-prometheus.prometheus:9090` | 8452 |
 | Forgejo | `forgejo.k8sdev.rjst.de` | `forgejo-http.forgejo:3000` | 8453 |
 | Leantime | `leantime.k8sdev.rjst.de` | `leantime.leantime:80` | 8454 |

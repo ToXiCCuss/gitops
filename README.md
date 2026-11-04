@@ -26,7 +26,7 @@ flowchart TB
     argocd["Argo CD"]
     vault[("Vault")]
     mesh["Istio gateways (public + internal)"]
-    apps["Harbor, Jenkins, Forgejo, Leantime, Kafka, Developer Portal"]
+    apps["Harbor, Jenkins, Forgejo, Leantime, Developer Portal"]
     obs["Prometheus, Grafana, Loki, Tempo"]
     nbop["NetBird operator + router"]
   end
@@ -57,7 +57,7 @@ flowchart TB
 
 | Host | Runs | Reached via |
 |---|---|---|
-| `k8sdev01` | k3s: Argo CD, Vault, Istio, Harbor, Jenkins, Forgejo, Leantime, Kafka (Strimzi, Apicurio, AKHQ), Developer Portal frame, Prometheus/Grafana, Loki/Alloy, Tempo | NetBird only (`https://<app>.k8sdev.rjst.de`); public hosts only through the public Istio gateway |
+| `k8sdev01` | k3s: Argo CD, Vault, Istio, Harbor, Jenkins, Forgejo, Leantime, Developer Portal frame, Prometheus/Grafana, Loki/Alloy, Tempo | NetBird only (`https://<app>.k8sdev.rjst.de`); public hosts only through the public Istio gateway |
 | `docker01` | Compose projects (NetBird server, Keycloak, RustFS, backups, Pelican, cAdvisor), PostgreSQL 18, MariaDB, Ansible-managed timers | NetBird only (SSH as `root`, repo at `/root/gitops`) |
 
 ## How a change goes live

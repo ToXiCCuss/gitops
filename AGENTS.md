@@ -3,7 +3,7 @@
 Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`). Fill in project-specific details at the bottom.
 
 ## Scope
-- This repo is only for **external (third-party) apps**, deployed via Argo CD (Kubernetes: Vault, Harbor, Jenkins, Kafka, Prometheus, cert-manager, NetBird, Argo itself), Ansible (hosts) or Docker Compose (Docker host).
+- This repo is only for **external (third-party) apps**, deployed via Argo CD (Kubernetes: Vault, Harbor, Jenkins, Prometheus, cert-manager, NetBird, Argo itself), Ansible (hosts) or Docker Compose (Docker host).
 - **Own Spring applications** are never deployed from here: Jenkins deploys them with Helm (repos `cicd-library`, `kubernetes-values`, `spring-boot-chart`). Only the deployer's permissions live here (`kubernetes/spring/kubectl/helm-deployer.yaml`).
 - The **Developer Portal** (Backstage) is our own build and is deployed by Jenkins the same way. Only its frame lives here: Gateway/VirtualService/NetBird (`kubernetes/management/kubectl/developer-portal.yaml`), Secret, namespace, Keycloak client and the Role of the deployer in the namespace `developer-portal`.
 - Layout: `kubernetes/` (Argo CD), `ansible/` (hosts, roles), `docker/` (Compose projects), `databases/` (declared PostgreSQL access of docker01), `scripts/`, `docs/` (documentation per topic, entry point `README.md`), `istio/` (input for a manual `istioctl install`, not synced by Argo CD).
@@ -14,7 +14,7 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 - Do not repair drift in the cluster (`selfHeal` would revert it anyway); fix it in Git or report it.
 
 ## Structure (app of apps)
-- `kubernetes/kube-app-<domain>.yaml`: one Argo Application per domain (`cicd`, `infra`, `kafka`, `management`, `monitoring`, `secrets`, `spring`); it points to `kubernetes/<domain>/apps.yaml`.
+- `kubernetes/kube-app-<domain>.yaml`: one Argo Application per domain (`cicd`, `infra`, `management`, `monitoring`, `secrets`, `spring`); it points to `kubernetes/<domain>/apps.yaml`.
 - `kubernetes/<domain>/apps.yaml`: two Applications, `<domain>-helm` (sync wave 0) and `<domain>-kubectl` (sync wave 1). Helm charts come before the plain manifests.
 - `<domain>/helm/<app>.yaml`: one Application per third-party chart (`repoURL` = chart repo, `targetRevision` = chart version, values inline via `plugin.env: HELM_VALUES`). `<domain>/kubectl/*.yaml`: plain manifests (CRDs, gateways, RBAC, network rules).
 - Naming: file and Application names in lowercase `kebab-case`; Helm apps are named after the chart (`cert-manager.yaml`). Follow the neighboring files in the folder (e.g. `infra/kubectl` uses `kube-<topic>.yaml`).
@@ -25,7 +25,7 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 - Pin chart versions exactly (`targetRevision: v1.2.3`), never `*`, `latest` or branches. Renovate raises versions (minimum age 3 days); do not guess or raise them by hand without a request.
 - New Applications: `project: default`, `CreateNamespace=true`, resource requests and limits like the existing charts, explicit namespace.
 - Deleting a file means deleting the resource (`prune`). For resources with data or dependencies (PVC, namespace, operators, CRDs, Vault) only after explicit confirmation.
-- Never read or edit huge upstream files (`monitoring/crds/prometheus-crds.yaml`, `kafka/kubectl/kube-apicurio-registry-operator.yaml`) completely, only search them in a targeted way.
+- Never read or edit huge upstream files (`monitoring/crds/prometheus-crds.yaml`) completely, only search them in a targeted way.
 - Rights for the Jenkins deployer (`helm-deployer`) stay namespaced and without RBAC or cluster-wide permissions. If the chart needs a new resource type, extend the role identically in `dev` and `prod` (there is no `qa` yet).
 
 ## Secrets
