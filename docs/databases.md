@@ -131,6 +131,7 @@ Audit log as for MariaDB. Role `postgresql` preloads `pg_cron` (`shared_preload_
 | `audit_disable.sh [--dry-run] <db> <table> ...` | removes triggers |
 | `audit_list.sh <db>` | audited tables, retention, `pg_cron` job, partitions with size and rows |
 | `backup_user_create.sh [user] [reset]` | login `backup` with `pg_read_all_data` + `CONNECT` on all databases; password to Vault `databases/postgresql/backup` |
+| `superuser_create.sh [--dry-run] <user> [reset]` | personal login with `SUPERUSER` (full rights on everything); password typed at the psql prompt, **not** stored in Vault; not part of `databases/postgresql.yaml`, `apply_declared.sh` does not touch it |
 
 - Application roles of `db_create.sh` cannot read or change `audit.audit_log`; the trigger function runs as its owner. `postgres` and the backup role can read it
 - The `pg_cron` job lives in the `pg_cron` database (`cron.database_name`, default `postgres`). After a restore from dump run `audit_setup.sh` again; `db_delete.sh` removes the job. Without `pg_cron` the default partition keeps logging, only maintenance stops
