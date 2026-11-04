@@ -83,16 +83,16 @@ Only needed **once** (the `node-ip` moves from the public IP to `k3s_node_ip`) o
 
 On `k8sdev01` as root. **All apps are down for a few minutes.**
 
-1. Snapshot (the local snapshots are not part of the backups): `k3s etcd-snapshot save --name vor-node-ip`
-2. `systemctl stop k3s`
+1. Snapshot while k3s still runs (the local snapshots are not part of the backups): `k3s etcd-snapshot save --name vor-node-ip`
+2. `systemctl stop k3s`. If k3s did not run (so no snapshot was possible) copy the etcd data cold instead: `cp -a /var/lib/rancher/k3s/server/db /root/k3s-db-vor-node-ip`
 3. Create the address without touching k3s: `ansible-playbook -i inventory.ini site.yml --tags k3s_node_address`, check with `ip -4 addr show dummy0`
 4. Set the new address in the config: `sed -i 's/^node-ip:.*/node-ip: 10.254.0.1/' /etc/rancher/k3s/config.yaml` (use the value of `k3s_node_ip`)
 5. Reset the etcd membership: `k3s server --cluster-reset`. It reads `config.yaml`, keeps the data and exits after "restart without --cluster-reset flag now"
-6. First start with the network policy controller off, as a temporary unit (otherwise k3s stops with "failed to find interface with specified node ip": the node object still holds the old IP until the kubelet has updated it): `systemd-run --unit k3s-migrate /usr/local/bin/k3s server --disable-network-policy`. Wait until `kubectl get nodes -o wide` shows the new `INTERNAL-IP`
-7. `systemctl stop k3s-migrate`, then `systemctl start k3s`
+6. First start with the network policy controller off (otherwise k3s stops with "failed to find interface with specified node ip": the node object still holds the old IP until the kubelet has updated it): `echo 'disable-network-policy: true' >> /etc/rancher/k3s/config.yaml`, then `systemctl start k3s`. Wait until `kubectl get nodes -o wide` shows the new `INTERNAL-IP`
+7. Remove the line again and restart: `sed -i '/^disable-network-policy:/d' /etc/rancher/k3s/config.yaml && systemctl restart k3s`
 8. Check: `kubectl get nodes -o wide`, `kubectl get pods -A`, `kubectl get --raw /healthz/etcd`; then `ansible-playbook -i inventory.ini site.yml --tags k3s --check --diff` must show no change
 
-Fallback if a step fails: restore the snapshot of step 1 (`k3s server --cluster-reset --cluster-reset-restore-path=<snapshot file in /var/lib/rancher/k3s/server/db/snapshots>`, see the k3s docs; not tested here). Steps 5-7 were tested in a local container with the pinned k3s version, not on the real host.
+Fallback if a step fails: restore the snapshot of step 1 (`k3s server --cluster-reset --cluster-reset-restore-path=<snapshot file in /var/lib/rancher/k3s/server/db/snapshots>`, see the k3s docs; not tested here). Steps 5-7 were tested in a local container with the pinned k3s version (the flag as command line argument, here as `config.yaml` key), not on the real host.
 
 ### Change the public IP
 
