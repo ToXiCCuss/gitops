@@ -63,7 +63,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: leantime
-          image: leantime/leantime:3.12.0@sha256:8e093293224cf48a24cfac7f32631aa5335014a065cd62b8ced4a74e4d548b80
+          image: leantime/leantime:3.13.2@sha256:57ceab3bf418e3314195037bd3733e521b6481e6407f7af0256093c3a340b99f
           ports:
             - name: http
               containerPort: 8080
