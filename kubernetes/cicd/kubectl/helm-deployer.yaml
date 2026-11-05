@@ -16,7 +16,8 @@ metadata:
 ---
 
 # --- platform namespaces, only used by the spring-boot chart ------------------------
-# istio-system: Certificate for public hosts (Let's Encrypt)
+# istio-system: Certificate for public hosts (Let's Encrypt). Only used by apps without istio.public: true, which
+# have their own Gateway and Certificate; apps with the flag use the shared Gateway (kube-istio-public.yaml).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

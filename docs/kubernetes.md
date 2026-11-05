@@ -47,9 +47,11 @@ Rules:
 
 The public `istio-ingressgateway` (installed by hand, see [Istio installation](#istio-installation)) is the only way into the cluster from the Internet. Everything else stays on the internal gateway. The former public status page (Gatus at `status.rjst.de`) is gone.
 
-- `AuthorizationPolicy` `ingress-policy-public` (`infra/kubectl/kube-istio-security.yaml`) allows only `rjst.de` and `www.rjst.de` and denies every other host: a new public host needs an entry there
+- **Public apps** set `istio.public: true` in their values (`kubernetes-values`, chart `spring-boot`) and are served at `<name>.cloud.rjst.de`. The chart creates only a VirtualService bound to `istio-system/public`; the Gateway `public` and its certificate (`rjst.de`, `www.rjst.de`, `*.cloud.rjst.de`, secret `public-tls`) live in `infra/kubectl/kube-istio-public.yaml`. A new public app needs no change in this repository, no DNS record and no `internalPort`. A wildcard covers one label: `shop.cloud.rjst.de`, not `a.shop.cloud.rjst.de`
+- `AuthorizationPolicy` `ingress-policy-public` (`infra/kubectl/kube-istio-security.yaml`) allows only `rjst.de`, `www.rjst.de` and `*.cloud.rjst.de` and denies every other host: a public host outside these needs an entry there (and, without `istio.public`, its own Gateway and Certificate from the chart, the previous behavior)
+- **`rjst.de` and `www.rjst.de`** are in the shared Gateway for the move of the app `rjst-frontend`. As long as its release has its own Gateway and Certificate (values without `istio.public`), these two hosts are defined twice: move the app in the same step (set `istio.public: true` in `prod/rjst-frontend.yaml`, deploy prod), then check `istioctl analyze` and `curl -I https://rjst.de`. When no app uses its own Certificate any more, drop the Role for `certificates` in `istio-system` from `cicd/kubectl/helm-deployer.yaml`
 - Ports 80/443 are open on `k8sdev01` (`host_config.k8sdev01.firewall_rules`). Whether UFW passes ServiceLB ports depends on the FORWARD chain: check from outside with `curl -I https://<host>`
-- DNS records of public hosts are set by hand at Hetzner (A, public IP of `k8sdev01`); after an IP change update them, see [ansible.md](ansible.md#change-the-public-ip)
+- DNS records are set by hand at Hetzner (A, public IP of `k8sdev01`): once the wildcard `*.cloud.rjst.de`, plus `rjst.de` and `www.rjst.de`. After an IP change update them, see [ansible.md](ansible.md#change-the-public-ip)
 
 ## Deployment guide
 

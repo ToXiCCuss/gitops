@@ -19,3 +19,5 @@ spec:
             hosts:
               - "rjst.de"
               - "www.rjst.de"
+              # every public app with `istio.public: true`, see kube-istio-public.yaml
+              - "*.cloud.rjst.de"

@@ -1,0 +1,66 @@
+# Shared public HTTPS entry for all public apps (istio-ingressgateway in istio-system, installed by hand).
+#
+# An app is public with `istio.public: true` in its values (kubernetes-values, chart spring-boot): it is served at
+# <name>.cloud.rjst.de and the chart creates only a VirtualService bound to istio-system/public. Nothing else is
+# needed per app: no Gateway, no Certificate, no entry in ingress-policy-public (kube-istio-security.yaml allows
+# the same hosts), no DNS record. One certificate and one wildcard A record cover every app.
+#
+# One-time manual step at Hetzner: A record *.cloud.rjst.de -> public IP of k8sdev01 (docs/kubernetes.md,
+# "Public ingress gateway"). A wildcard covers one label only: shop.cloud.rjst.de, not a.shop.cloud.rjst.de.
+#
+# rjst.de and www.rjst.de are listed for the move of the app rjst-frontend. As long as its chart release still has
+# its own Gateway and Certificate (values without `istio.public`), these two hosts are defined twice: move that app
+# in the same step (docs/kubernetes.md).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: public
+  namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  secretName: public-tls
+  dnsNames:
+    - "rjst.de"
+    - "www.rjst.de"
+    - "*.cloud.rjst.de"
+  issuerRef:
+    name: letsencrypt
+    kind: ClusterIssuer
+  privateKey:
+    rotationPolicy: Always
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: public
+  namespace: istio-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "rjst.de"
+        - "www.rjst.de"
+        - "*.cloud.rjst.de"
+      tls:
+        httpsRedirect: true
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      hosts:
+        - "rjst.de"
+        - "www.rjst.de"
+        - "*.cloud.rjst.de"
+      tls:
+        mode: SIMPLE
+        credentialName: public-tls
