@@ -164,7 +164,7 @@ services:
         max-file: "2"
 
   crowdsec:
-    image: crowdsecurity/crowdsec:v1.8.1
+    image: crowdsecurity/crowdsec:v1.8.2
     container_name: netbird-crowdsec
     restart: unless-stopped
     networks: [netbird]
