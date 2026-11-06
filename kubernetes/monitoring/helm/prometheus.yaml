@@ -225,9 +225,14 @@ spec:
                     scrape_interval: 30s
                     metrics_path: /metrics
                     static_configs:
+                      # The Kubernetes dashboards filter on cluster="$cluster", and the Kubernetes node has no cluster
+                      # label. A label on the Docker host keeps it out of those views (it has its own dashboards).
                       - targets:
                           - docker01.server.lan:9100
-                          # k8sdev01 by its NetBird name, like docker01 (the pod CIDR may reach the host in UFW)
+                        labels:
+                          cluster: docker
+                      # k8sdev01 by its NetBird name, like docker01 (the pod CIDR may reach the host in UFW)
+                      - targets:
                           - k8sdev01.server.lan:9100
                     relabel_configs:
                       - target_label: job
