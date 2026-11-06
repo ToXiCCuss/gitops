@@ -53,6 +53,7 @@ metadata:
     portal.rjst.de/group: CI/CD
     portal.rjst.de/description: Container registry
     portal.rjst.de/icon: harbor
+    portal.rjst.de/databases: harbor
 spec:
   hosts:
     - harbor.k8sdev.rjst.de

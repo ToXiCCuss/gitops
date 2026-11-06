@@ -53,6 +53,7 @@ metadata:
     portal.rjst.de/group: Management
     portal.rjst.de/description: Git and package registry
     portal.rjst.de/icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/forgejo.svg
+    portal.rjst.de/databases: forgejo
 spec:
   hosts:
     - forgejo.k8sdev.rjst.de
