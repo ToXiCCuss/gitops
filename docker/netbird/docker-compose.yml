@@ -77,6 +77,13 @@ services:
       - traefik.http.routers.netbird-dashboard.priority=1
       - traefik.http.routers.netbird-dashboard.middlewares=netbird-dashboard-crowdsec@file
       - traefik.http.services.dashboard.loadbalancer.server.port=80
+      # Catalog link (portal.* labels)
+      - portal.name=NetBird
+      - portal.url=https://proxy.rjst.de
+      - portal.group=Management
+      - portal.public=true
+      - portal.description=VPN dashboard
+      - portal.icon=https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/netbird.svg
     logging:
       driver: "json-file"
       options:
