@@ -76,7 +76,7 @@ people:                # personal logins, ro or rw per database
 | Removing access | automatic **only with the key `people:`** (unlisted personal logins dropped, unlisted databases revoked); without the key personal logins stay |
 | `ownerPrivileges` | `create` (schemas) and/or `temporary` on the database; unlisted privileges are revoked. With `create`, default privileges give `ro`/`rw` `USAGE` on schemas the owner creates later (existing schemas stay closed) |
 | Deleting | never automatic: undeclared databases/logins are only reported. `--prune` deletes undeclared databases (`db_delete.sh`), asks for each name and needs a terminal |
-| Backstage | reads the file to show databases, never writes; rights change = pull request |
+| Backstage | reads the file to show databases and never writes to `master`; the template "Request database access" opens a pull request for an application login (`logins:`) or a new database, never for `people:`. Merge = live, as for every change of this file |
 
 ### Automatic apply
 
