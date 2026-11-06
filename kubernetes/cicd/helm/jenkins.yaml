@@ -29,6 +29,8 @@ spec:
                 limits:
                   cpu: "1"
                   memory: "2Gi"
+              # The image runs in UTC; cron triggers, Date in pipelines and log timestamps follow the JVM time zone.
+              javaOpts: "-Duser.timezone=Europe/Berlin"
               # Install the plugins only on the first start of a volume, so that a restart neither downloads nor
               # updates them. A new plugin in this list is then not added to an existing volume, install it in the UI.
               initializeOnce: true
