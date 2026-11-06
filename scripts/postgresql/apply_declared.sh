@@ -13,8 +13,17 @@
 #   access that is no longer declared        person_revoke.sh (only if the file has the key "people": a personal
 #                                            login that is not listed is dropped, a database that is not listed for
 #                                            it is taken away)
+#   removed databases and logins            db_delete.sh, user_delete.sh (only what the key "removed:" lists, see below)
 # A database or an application login that is not declared is only reported. --prune also deletes the undeclared
 # databases (db_delete.sh), after you typed the name of each one at the terminal.
+#
+# The key "removed:" is the only way to delete without a terminal: what it lists is deleted for good (the databases
+# with all their data, the logins with their password in Vault), what it does not list is never deleted. The merge
+# of the file is the confirmation. A name that is both declared and removed stops the run before anything is changed.
+#   removed:
+#     databases: [shop]
+#     logins:
+#       forgejo: [app]        # <database>: [<name>], the login <database>_<name>
 #
 # Usage: apply_declared.sh [--dry-run] [--prune] [--file <path>] [--pull] [--metrics-file <path>]
 #        --dry-run       only report what would be changed
@@ -47,8 +56,12 @@ readonly RECORDS_FILTER='
     | "login\t\($database)\t\(.key)\t\(.value)"),
   ((.people // {}) | to_entries[] | .key as $person | (.value // {}) as $access
     | if ($access | length) == 0 then "person\t\($person)\t-\t-"
-      else ($access | to_entries[] | "person\t\($person)\t\(.key)\t\(.value)") end)
+      else ($access | to_entries[] | "person\t\($person)\t\(.key)\t\(.value)") end),
+  ((.removed.logins // {}) | to_entries[] | .key as $database | (.value // [])[]
+    | "removed-login\t\($database)\t\(.)\t-"),
+  ((.removed.databases // [])[] | "removed-database\t\(.)\t-\t-")
 '
+readonly OWNER_LOGIN_NAME="owner"
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 readonly SCRIPT_DIR
@@ -62,6 +75,8 @@ HAS_PEOPLE_SECTION=false
 DECLARED_DATABASES=()
 DECLARED_LOGINS=()
 DECLARED_PEOPLE=()
+REMOVED_DATABASES=()
+REMOVED_LOGINS=()
 declare -A DECLARED_DATABASE_SET=()
 declare -A DECLARED_OWNER_PRIVILEGE_SET=()
 declare -A DECLARED_LOGIN_ROLE=()
@@ -170,6 +185,25 @@ register_person() {
   fi
 }
 
+# register_removed_database <database>: a database cannot be declared and removed at the same time
+register_removed_database() {
+  validate_name "removed database name" "$1" "$MAX_NAME_LENGTH"
+  [[ -z ${DECLARED_DATABASE_SET[$1]+declared} ]] ||
+    die "the database $1 is declared under 'databases:' and listed under 'removed:', keep only one of them"
+  REMOVED_DATABASES+=("$1")
+}
+
+# register_removed_login <database> <name>: the owner login belongs to the database, db_delete.sh removes it with it
+register_removed_login() {
+  validate_name "database name of a removed login" "$1" "$MAX_NAME_LENGTH"
+  validate_name "removed login name" "$2" "$MAX_NAME_LENGTH"
+  [[ $2 != "$OWNER_LOGIN_NAME" ]] ||
+    die "the login ${1}_$OWNER_LOGIN_NAME belongs to the database $1 and is removed with it (removed: databases)"
+  [[ -z ${DECLARED_LOGIN_ROLE[${1}_$2]+declared} ]] ||
+    die "the login ${1}_$2 is declared under 'logins:' and listed under 'removed:', keep only one of them"
+  REMOVED_LOGINS+=("$1 $2")
+}
+
 load_declared_state() {
   local json records kind first second third
   [[ -f $DECLARED_FILE ]] || die "the declared state $DECLARED_FILE does not exist"
@@ -181,6 +215,9 @@ load_declared_state() {
   if jq -e 'has("people")' <<<"$json" >/dev/null; then
     HAS_PEOPLE_SECTION=true
   fi
+  jq -e '(.removed // {}) | type == "object" and ((.databases // []) | type == "array") and ((.logins // {}) | type == "object")
+    and ((.logins // {}) | to_entries | all(.value == null or (.value | type == "array")))' <<<"$json" >/dev/null ||
+    die "'removed:' in $DECLARED_FILE needs 'databases:' as a list and 'logins:' as a map of <database>: [<name>, ...]"
 
   records=$(jq -r "$RECORDS_FILTER" <<<"$json")
   while IFS=$'\t' read -r kind first second third; do
@@ -189,6 +226,8 @@ load_declared_state() {
     privilege) register_privilege "$first" "$second" ;;
     login) register_login "$first" "$second" "$third" ;;
     person) register_person "$first" "$second" "$third" ;;
+    removed-login) register_removed_login "$first" "$second" ;;
+    removed-database) register_removed_database "$first" ;;
     esac
   done <<<"$records"
 }
@@ -296,6 +335,23 @@ ensure_people() {
     elif database_ready "$database" "access of $person to $database"; then
       run_script person_grant.sh "$person" "$database" "$role"
     fi
+  done
+}
+
+# The logins go first, while their database still exists and their objects can be handed to <db>_role_owner. The scripts
+# are idempotent, so a login or database that is already gone is only reported as unchanged.
+ensure_removed_logins() {
+  local entry database name
+  for entry in "${REMOVED_LOGINS[@]}"; do
+    read -r database name <<<"$entry"
+    run_script user_delete.sh "$database" "$name"
+  done
+}
+
+ensure_removed_databases() {
+  local database
+  for database in "${REMOVED_DATABASES[@]}"; do
+    run_script db_delete.sh "$database"
   done
 }
 
@@ -453,6 +509,8 @@ main() {
   if [[ $HAS_PEOPLE_SECTION == true ]]; then
     revoke_undeclared_access
   fi
+  ensure_removed_logins
+  ensure_removed_databases
   report_undeclared_logins
   report_undeclared_databases
 }

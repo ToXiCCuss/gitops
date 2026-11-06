@@ -10,6 +10,9 @@
 #                    Only with this key the script removes access: a person or a database that is missing here is
 #                    taken away from the login. Leave the key out and personal logins stay as they are. There is no
 #                    personal login on docker01 yet, so the key is left out until the first one is declared.
+# removed:           what the timer deletes for good after a merge: databases: [<db>] (with all data, roles and logins) and
+#                    logins: {<db>: [<name>]} (the login <db>_<name> with its password in Vault). Nothing else is ever
+#                    deleted. A name must not be declared and removed at once. Entries may be deleted once they ran.
 #
 # The state of docker01 as exported on 2026-11-01, plus the database of the Developer Portal.
 databases:

@@ -75,12 +75,13 @@ people:                # personal logins, ro or rw per database
 | Apply | the timer applies it after a merge to `master` ([Automatic apply](#automatic-apply)); by hand `sudo scripts/postgresql/apply_declared.sh --dry-run`, then without; each part reported as created/updated/unchanged |
 | Removing access | automatic **only with the key `people:`** (unlisted personal logins dropped, unlisted databases revoked); without the key personal logins stay |
 | `ownerPrivileges` | `create` (schemas) and/or `temporary` on the database; unlisted privileges are revoked. With `create`, default privileges give `ro`/`rw` `USAGE` on schemas the owner creates later (existing schemas stay closed) |
-| Deleting | never automatic: undeclared databases/logins are only reported. `--prune` deletes undeclared databases (`db_delete.sh`), asks for each name and needs a terminal |
-| Backstage | reads the file to show databases and never writes to `master`; the template "Request database access" opens a pull request for an application login (`logins:`) or a new database, never for `people:`. Merge = live, as for every change of this file |
+| Deleting | only what the key `removed:` lists (below); undeclared databases/logins are only reported. `--prune` deletes undeclared databases (`db_delete.sh`), asks for each name and needs a terminal |
+| `removed:` | `databases: [shop]` and `logins: {forgejo: [app]}` (`<database>: [<name>]`) are deleted for good by the timer: databases with all data, roles and logins (`db_delete.sh`), logins with their password in Vault (`user_delete.sh`, objects go to `<db>_role_owner`). A name that is declared **and** removed stops the run before anything changes; `<db>_owner` is removed only with its database; `postgres` and the templates are refused. The entries are idempotent and can be deleted once the timer ran |
+| Backstage | reads the file to show databases and never writes to `master`; the templates "Request database access" and "Remove database access" open a pull request for an application login (`logins:`), a new database or a deletion (`removed:`), never for `people:`. Merge = live, as for every change of this file |
 
 ### Automatic apply
 
-Timer `postgresql-apply.timer` (role `postgresql_apply`, `docker01`) runs `apply_declared.sh --pull --metrics-file ...` in `/root/gitops` hourly 08:30-20:30 (`postgresql_apply_calendar`), half an hour after `gitops-deploy.timer`. A merge to `master` that changes `databases/postgresql.yaml` is live on the server within the hour, **including every revoke** (`ownerPrivileges`, `people:`). **Rollback = `git revert` on `master`.** A failed `git pull` (e.g. DNS) is tried 4 times, 30 seconds apart, before the run counts as failed.
+Timer `postgresql-apply.timer` (role `postgresql_apply`, `docker01`) runs `apply_declared.sh --pull --metrics-file ...` in `/root/gitops` hourly 08:30-20:30 (`postgresql_apply_calendar`), half an hour after `gitops-deploy.timer`. A merge to `master` that changes `databases/postgresql.yaml` is live on the server within the hour, **including every revoke** (`ownerPrivileges`, `people:`) **and every deletion** that `removed:` lists. **Rollback = `git revert` on `master`** (deleted data is only in the backup). A failed `git pull` (e.g. DNS) is tried 4 times, 30 seconds apart, before the run counts as failed.
 
 ```bash
 sudo ansible-playbook -i inventory.ini site.yml --tags postgresql_apply --check --diff   # in /root/gitops/ansible
@@ -92,7 +93,7 @@ sudo systemctl stop postgresql-apply.timer     # pause, e.g. while editing /root
 
 | Topic | Detail |
 |---|---|
-| Never automatic | `--prune`: databases are only deleted by hand at a terminal. Undeclared databases and logins are only reported in the journal |
+| Never automatic | `--prune`: undeclared databases are only deleted by hand at a terminal. Undeclared databases and logins are only reported in the journal; only `removed:` deletes |
 | Preconditions | AppRole files `/etc/gitops/databases_role_id`, `databases_secret_id`; without them the run is skipped |
 | Pull fails | local changes or a commit not on `master` stop the run (also `DockerDeployPullFailed`) |
 | Metrics | `/var/lib/prometheus/node-exporter/postgresql-apply.prom`: `gitops_databases_apply_success`, `gitops_databases_last_run_timestamp_seconds`, `gitops_databases_last_success_timestamp_seconds`, `gitops_databases_revision_info{revision}` |
