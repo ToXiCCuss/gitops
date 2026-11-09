@@ -9,6 +9,8 @@ uses the separate PostgreSQL timer; Jenkins jobs still require manual commission
 - Management deployment: `kubernetes/management/kubectl/metabase.yaml`, official image `metabase/metabase:v0.64.1`.
 - Internal URL: `https://metabase.k8sdev.rjst.de`, dedicated Istio listener **8455**, NetBird group `kubernetes-services`.
 - Application database: `metabase` on `docker01.server.lan:5432`, login `metabase_owner`.
+  Its owner role needs database `CREATE` (declared in `databases/postgresql.yaml`) so the initial
+  migration can install the trusted `citext` extension; no superuser grant is needed.
 - Analytics database: `edgerunner_balance`, separate logins `edgerunner_balance_writer` (rw) and `edgerunner_balance_metabase` (ro).
 - Jenkins entry point: `balancePipeline()` in `cicd-library`; Edgerunner job Script Path `Jenkinsfile.balance`.
 
