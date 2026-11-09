@@ -1,0 +1,103 @@
+# Third-party reporting UI; application data lives in PostgreSQL on docker01.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metabase
+  namespace: metabase
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: metabase
+  template:
+    metadata:
+      labels:
+        app: metabase
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 2000
+        runAsGroup: 2000
+        fsGroup: 2000
+      containers:
+        - name: metabase
+          # Exact version from Metabase's official production deployment guide; Renovate may update it.
+          image: metabase/metabase:v0.64.1
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: metabase
+          env:
+            - name: MB_DB_TYPE
+              value: postgres
+            - name: MB_DB_HOST
+              value: docker01.server.lan
+            - name: MB_DB_PORT
+              value: "5432"
+            - name: MB_DB_DBNAME
+              value: metabase
+            - name: MB_SITE_URL
+              value: https://metabase.k8sdev.rjst.de
+            - name: JAVA_TIMEZONE
+              value: Europe/Berlin
+            - name: JAVA_OPTS
+              value: -Xmx1g
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 90
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 768Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: plugins
+              mountPath: /plugins
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: plugins
+          emptyDir: {}
+        - name: temporary
+          emptyDir: {}
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: metabase
+  namespace: metabase
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    app: metabase
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

@@ -1,0 +1,84 @@
+# metabase: https://metabase.k8sdev.rjst.de -> metabase.metabase:3000
+# Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: metabase
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    istio: internal-gateway
+  servers:
+    - port:
+        number: 8455
+        name: https-metabase
+        protocol: HTTPS
+      hosts:
+        - metabase.k8sdev.rjst.de
+      tls:
+        mode: SIMPLE
+        credentialName: k8sdev-wildcard-tls
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gw-metabase
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  type: ClusterIP
+  selector:
+    app: internal-gateway
+    istio: internal-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8455
+
+---
+
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: metabase
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    portal.rjst.de/name: Metabase
+    portal.rjst.de/group: Management
+    portal.rjst.de/description: Balance simulation analytics
+    portal.rjst.de/icon: metabase
+spec:
+  hosts:
+    - metabase.k8sdev.rjst.de
+  gateways:
+    - metabase
+  http:
+    - route:
+        - destination:
+            host: metabase.metabase.svc.cluster.local
+            port:
+              number: 3000
+
+---
+
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: gw-metabase
+  namespace: istio-internal
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  networkRouterRef:
+    name: proxy
+    namespace: netbird
+  serviceRef:
+    name: gw-metabase
+  groups:
+    - name: kubernetes-services

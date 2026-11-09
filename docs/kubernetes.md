@@ -31,7 +31,7 @@ flowchart TD
 | `infra` | cert-manager, ClusterIssuer, Hetzner webhook, Istio internal gateway + security policies + telemetry, NetBird operator/router/access/API proxy, CoreDNS custom, Vault Config Operator, vault-unsealer |
 | `monitoring` | Prometheus/Grafana, Alloy, Loki, Tempo, blackbox exporter, alert rules, dashboards, probes |
 | `cicd` | Harbor, Jenkins, Forgejo (+ backup), `helm-deployer` role |
-| `management` | Leantime (+ backup), frame of the Developer Portal |
+| `management` | Leantime (+ backup), Metabase (pending bootstrap), frame of the Developer Portal |
 | `spring` | namespaces `dev`, `prod`, `helm-deployer` role (Spring apps themselves are deployed by Jenkins) |
 
 Rules:

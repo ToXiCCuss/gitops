@@ -16,6 +16,11 @@
 #
 # The state of docker01 as exported on 2026-11-01, plus the database of the Developer Portal.
 databases:
+  metabase: {}
+  edgerunner_balance:
+    logins:
+      writer: rw
+      metabase: ro
   developer_portal:
     # Backstage creates one schema per plugin (backend.database.ensureSchemaExists) and the catalog uses temporary tables
     ownerPrivileges: [create, temporary]

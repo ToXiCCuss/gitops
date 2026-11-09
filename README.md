@@ -134,6 +134,8 @@ Overview, retention, restore and per-service setup: [backups.md](docs/backups.md
 
 ## Docs
 
+Metabase and balance pipeline commissioning: [docs/metabase.md](docs/metabase.md).
+
 | Topic | File |
 |---|---|
 | Kubernetes, deployment guide, Istio, tracing, logs | [docs/kubernetes.md](docs/kubernetes.md) |
