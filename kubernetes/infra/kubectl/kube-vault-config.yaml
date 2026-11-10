@@ -126,7 +126,7 @@ spec:
 
 ---
 
-# What setup-rustfs.sh writes besides reading: new S3 keys (create only: an existing key is never overwritten) and the keys of an
+# What setup-rustfs.sh writes besides reading: new S3 keys (create, never update: an existing key is never overwritten) and the keys of an
 # app in its own secret (patch merges them into the secret, so the other keys stay; create only when the secret does not exist).
 # The host cannot read dev/ or prod/. A new app with S3 keys: add its path here and "vaultCopy" in docker/rustfs/identities.json
 apiVersion: redhatcop.redhat.io/v1alpha1
@@ -142,8 +142,10 @@ spec:
       name: vault-config
   type: acl
   policy: |
+    # Vault applies only the most specific matching path and does not merge capabilities from the shorter path docker/data/*
+    # of the policy docker: read has to be repeated here, otherwise deploy.sh could not read the S3 keys any more
     path "docker/data/s3/*" {
-      capabilities = ["create"]
+      capabilities = ["create", "read"]
     }
     path "dev/data/er-launcher-service" {
       capabilities = ["create", "patch"]
