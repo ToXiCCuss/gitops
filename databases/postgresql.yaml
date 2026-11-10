@@ -17,6 +17,7 @@
 # The state of docker01 as exported on 2026-11-01, plus the database of the Developer Portal.
 databases:
   edgerunner: {}
+  er_launcher: {}
   er_launcher_dev: {}
   metabase:
     # Metabase initializes the trusted citext extension during its first DB migration.
