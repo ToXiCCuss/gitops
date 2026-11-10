@@ -1,5 +1,5 @@
 {
-  "buckets": ["backups", "databases", "vault", "pelican", "netbird", "forgejo", "leantime"],
+  "buckets": ["backups", "databases", "vault", "pelican", "netbird", "forgejo", "leantime", "er-launcher-dev", "er-launcher"],
   "identities": [
     { "name": "restic-backup", "access": "readwrite", "buckets": ["backups", "databases", "vault", "netbird", "forgejo", "leantime"] },
     { "name": "vault", "access": "readwrite", "buckets": ["vault"] },
@@ -7,6 +7,8 @@
     { "name": "netbird", "access": "readwrite", "buckets": ["netbird"] },
     { "name": "forgejo", "access": "readwrite", "buckets": ["forgejo"] },
     { "name": "leantime", "access": "readwrite", "buckets": ["leantime"] },
+    { "name": "er-launcher-dev", "access": "readwrite", "buckets": ["er-launcher-dev"] },
+    { "name": "er-launcher", "access": "readwrite", "buckets": ["er-launcher"] },
     { "name": "offsite-sync", "access": "read", "buckets": ["backups", "databases", "vault", "pelican", "netbird", "forgejo", "leantime"] }
   ]
 }
