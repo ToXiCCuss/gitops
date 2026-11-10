@@ -1,0 +1,89 @@
+---
+# Retained only to restore historical upload snapshots into the preserved PVCs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: leantime-restore
+  namespace: leantime
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+data:
+  restore.sh: |
+    #!/bin/sh
+    # Restore historical uploads into the retained PVCs. Started by hand only.
+    set -eu
+
+    readonly SNAPSHOT="${SNAPSHOT:-latest}"
+    readonly RETRY_LOCK=30m
+
+    main() {
+        apk add --no-cache restic >/dev/null
+        restic restore "$SNAPSHOT" --host leantime --target / \
+            --retry-lock "$RETRY_LOCK"
+        echo "Restore of $SNAPSHOT finished" >&2
+    }
+
+    main "$@"
+
+---
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: leantime-restore
+  namespace: leantime
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  suspend: true
+  schedule: "0 0 1 1 *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: restore
+              image: alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+              command: ["/bin/sh", "/scripts/restore.sh"]
+              env:
+                - name: RESTIC_REPOSITORY
+                  value: s3:http://docker01.server.lan:9000/leantime/restic
+                - name: RESTIC_CACHE_DIR
+                  value: /cache
+              envFrom:
+                - secretRef:
+                    name: leantime-backup
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: "1", memory: 512Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: userfiles
+                  mountPath: /userfiles
+                - name: public-userfiles
+                  mountPath: /public-userfiles
+                - name: cache
+                  mountPath: /cache
+          volumes:
+            - name: scripts
+              configMap:
+                name: leantime-restore
+            - name: userfiles
+              persistentVolumeClaim:
+                claimName: leantime-userfiles
+            - name: public-userfiles
+              persistentVolumeClaim:
+                claimName: leantime-public-userfiles
+            - name: cache
+              emptyDir: {}

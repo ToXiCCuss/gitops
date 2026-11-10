@@ -3,8 +3,7 @@
 # never fight over the repository lock:
 #   repository docker:        backup of the key files, forget, prune, check
 #   repository databases:     logical dumps of PostgreSQL and MariaDB, forget, prune, check
-#   repositories vault, netbird, forgejo, leantime: check only (vault-backup, netbird_backup.sh and the CronJobs
-#   forgejo-backup and leantime-backup in the cluster write and prune them)
+#   repositories vault, netbird, forgejo, leantime: check only (the leantime repository is a retained archive)
 #   every repository:         stats, its size and snapshots as metrics
 # Every step leaves its result for the node_exporter textfile collector, Prometheus alerts on it.
 set -u

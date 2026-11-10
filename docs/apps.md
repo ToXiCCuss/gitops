@@ -45,7 +45,7 @@ CronJob `forgejo-backup` (`cicd/kubectl/forgejo-backup.yaml`, [Forgejo guide](ht
 
 - `app.ini` not in the backup (the chart rebuilds it; `SECRET_KEY` is in Vault, covered by `vault-backup`). The SQL dump of `restic-backup` covers the database a second time
 - Application ignores `spec.replicas` of the Deployment (`ignoreDifferences` + `RespectIgnoreDifferences`), so Argo CD does not start it during the backup; the script's trap restarts it on failure. If it stays at 0 (pod killed) `ProbeFailed` on `forgejo.k8sdev.rjst.de` fires: `kubectl -n forgejo scale deployment forgejo --replicas=1`
-- Alerts: `CronJobBackupFailed`, `CronJobBackupTooOld` (26 h), `CronJobBackupNeverReported` (kube-state-metrics), `ResticStepFailed` of the nightly check; they also cover `leantime-backup`
+- Alerts: `CronJobBackupFailed`, `CronJobBackupTooOld` (26 h), `CronJobBackupNeverReported` (kube-state-metrics), `ResticStepFailed` of the nightly check
 - Set up before the merge (admin token): S3 keys of identity `forgejo`, restic password `argocd/forgejo#backup.restic_password` and the copies (S3 keys to `argocd/forgejo`, restic password to `docker/restic-backup#RESTIC_PASSWORD_FORGEJO`) come with [vault.md](vault.md#secrets). Keep the restic password in the password manager. Without these values the Secret `forgejo-backup` cannot render and the `secrets` app fails
 - After the merge on `docker01` (checkout with the new `docker/rustfs/identities.json`): `sudo scripts/docker/setup-rustfs.sh` (bucket + identity `forgejo`, rights of `restic-backup`/`offsite-sync`), `sudo scripts/docker/deploy.sh restic-backup`, before the first run at 02:00 UTC
 - Pods reach the S3 as `docker01.server.lan:9000` through NetBird: the node needs a policy for `docker01` on TCP 9000
@@ -63,17 +63,17 @@ kubectl -n forgejo create job forgejo-restore-$(date +%s) --from=cronjob/forgejo
    Older snapshot: `kubectl -n forgejo create job forgejo-restore-1 --from=cronjob/forgejo-restore --dry-run=client -o yaml | kubectl set env --local -f - SNAPSHOT=<id> -o yaml | kubectl apply -f -`
 3. `kubectl -n forgejo logs -f job/<name>`, log in, check a package. If the search index looks wrong run the cron jobs under **Site administration > Monitoring > Cron**
 
-## Leantime
+## Leantime (retired)
 
-`management/kubectl/leantime.yaml`: plain manifests (no official Helm chart). Database `leantime` on the MariaDB of `docker01`; environment in Secret `leantime` (`secrets/leantime.yaml`). Backup: [backups.md](backups.md).
+The app, ingress, Keycloak client, app Secret and scheduled backup job have been removed from Git. The namespace and two upload PVCs remain managed in `management/kubectl/leantime-data.yaml`; `leantime-restore.yaml` keeps a suspended, manual restore template for existing snapshots. The MariaDB database, Vault values and Restic archive are retained. The archive is still checked nightly and copied to pCloud; the PVCs are no longer backed up after the app shutdown. See [backups.md](backups.md).
 
-- **Before the first sync:** `scripts/mariadb/db_create.sh leantime` on `docker01`, then `put_new` creates `argocd/data/leantime` (`oidc.client_secret`, `session.password`), last block copies DB user and password. The node needs a NetBird policy for `docker01` on TCP 3306, else the pod never gets ready
-- **Keycloak:** client `leantime`, secret `LEANTIME_CLIENT_SECRET`
-- **NetBird:** CNAME `leantime`
-- **First start:** open `https://leantime.k8sdev.rjst.de/install` as soon as the pod runs (creates tables and the local admin; until then anyone in `k8s-users` can). Use the email of your Keycloak user, then the Keycloak login works for this account
-- **Users:** Leantime creates no users at Keycloak login and reads no roles. A user first gets an account in Leantime with the email from Keycloak (must be verified there), role is set in Leantime. The login form stays as emergency login
-- **Update:** a new image can bring DB migrations; log in as admin and confirm the update
-- Uploads live only in the two Leantime volumes; **deleting `leantime.yaml` deletes the volumes** (`prune`)
+To restore the latest upload snapshot, list available snapshots on `docker01` with `sudo scripts/docker/restore.sh snapshots leantime`, then start the suspended `leantime-restore` CronJob manually:
+
+```bash
+kubectl -n leantime create job leantime-restore-$(date +%s) --from=cronjob/leantime-restore
+```
+
+Removing the Keycloak client from `docker/keycloak-config/realms/rjst.yaml` takes effect when the `keycloak-config` project is next deployed.
 
 ## Developer Portal
 

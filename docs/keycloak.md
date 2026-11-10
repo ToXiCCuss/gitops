@@ -35,7 +35,6 @@ Login for all apps. Runs on the **Docker host, not in the cluster**, on purpose:
 | Argo CD | `argocd/data/argocd#oidc.client_secret` | `ARGOCD_CLIENT_SECRET` |
 | Vault | `argocd/data/vault#oidc.client_secret` | `VAULT_CLIENT_SECRET` |
 | Forgejo | `argocd/data/forgejo#oidc.client_secret` | `FORGEJO_CLIENT_SECRET` |
-| Leantime | `argocd/data/leantime#oidc.client_secret` | `LEANTIME_CLIENT_SECRET` |
 | Developer Portal | `argocd/data/developer-portal#oidc.client_secret` | `DEVELOPER_PORTAL_CLIENT_SECRET` |
 | RustFS | typed (`openssl rand -base64 32`) | `RUSTFS_CLIENT_SECRET` |
 

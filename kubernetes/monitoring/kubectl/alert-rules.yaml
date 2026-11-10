@@ -152,11 +152,11 @@ spec:
             severity: critical
           annotations:
             summary: "Step {{ $labels.step }} of the restic repository {{ $labels.repository }} failed"
-        # The backups of Forgejo and Leantime are CronJobs in the cluster (forgejo-backup.yaml, leantime-backup.yaml), their
-        # result comes from kube-state-metrics. A failed job stays in the history, so only jobs of the last day count.
+        # Forgejo backup is a CronJob in the cluster (forgejo-backup.yaml); its result comes from kube-state-metrics.
+        # A failed job stays in the history, so only jobs of the last day count.
         - alert: CronJobBackupFailed
           expr: |
-            kube_job_status_failed{job_name=~"(forgejo|leantime)-backup-.*"} > 0
+            kube_job_status_failed{job_name=~"forgejo-backup-.*"} > 0
               and on (namespace, job_name) time() - kube_job_created < 24 * 3600
           for: 5m
           labels:
@@ -164,19 +164,19 @@ spec:
           annotations:
             summary: "The backup job {{ $labels.job_name }} failed (kubectl -n {{ $labels.namespace }} logs job/{{ $labels.job_name }})"
         - alert: CronJobBackupTooOld
-          expr: time() - kube_cronjob_status_last_successful_time{cronjob=~"(forgejo|leantime)-backup"} > 26 * 3600
+          expr: time() - kube_cronjob_status_last_successful_time{cronjob="forgejo-backup"} > 26 * 3600
           for: 15m
           labels:
             severity: critical
           annotations:
             summary: "The backup {{ $labels.cronjob }} has no successful run for more than 26 hours"
         - alert: CronJobBackupNeverReported
-          expr: absent(kube_cronjob_status_last_successful_time{cronjob="forgejo-backup"}) or absent(kube_cronjob_status_last_successful_time{cronjob="leantime-backup"})
+          expr: absent(kube_cronjob_status_last_successful_time{cronjob="forgejo-backup"})
           for: 26h
           labels:
             severity: critical
           annotations:
-            summary: "forgejo-backup or leantime-backup never had a successful run"
+            summary: "forgejo-backup never had a successful run"
 
 ---
 

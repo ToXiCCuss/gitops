@@ -26,7 +26,7 @@ flowchart TB
     argocd["Argo CD"]
     vault[("Vault")]
     mesh["Istio gateways (public + internal)"]
-    apps["Harbor, Jenkins, Forgejo, Leantime, Developer Portal"]
+    apps["Harbor, Jenkins, Forgejo, Developer Portal"]
     obs["Prometheus, Grafana, Loki, Tempo"]
     nbop["NetBird operator + router"]
   end
@@ -57,7 +57,7 @@ flowchart TB
 
 | Host | Runs | Reached via |
 |---|---|---|
-| `k8sdev01` | k3s: Argo CD, Vault, Istio, Harbor, Jenkins, Forgejo, Leantime, Developer Portal frame, Prometheus/Grafana, Loki/Alloy, Tempo | NetBird only (`https://<app>.k8sdev.rjst.de`); public hosts only through the public Istio gateway |
+| `k8sdev01` | k3s: Argo CD, Vault, Istio, Harbor, Jenkins, Forgejo, Developer Portal frame, Prometheus/Grafana, Loki/Alloy, Tempo | NetBird only (`https://<app>.k8sdev.rjst.de`); public hosts only through the public Istio gateway |
 | `docker01` | Compose projects (NetBird server, Keycloak, RustFS, backups, Pelican, cAdvisor), PostgreSQL 18, MariaDB, Ansible-managed timers | NetBird only (SSH as `root`, repo at `/root/gitops`) |
 
 ## How a change goes live
@@ -106,7 +106,8 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  src["Key files, PostgreSQL, MariaDB, Vault, NetBird, Forgejo, Leantime"] -->|"restic, nightly"| s3[("RustFS S3 on docker01")]
+  src["Key files, PostgreSQL, MariaDB, Vault, NetBird, Forgejo"] -->|"restic, nightly"| s3[("RustFS S3 on docker01")]
+  leantime["Existing Leantime upload archive"] -.->|"retained bucket"| s3
   s3 -->|"rclone sync 05:00 UTC"| pcloud(["pCloud"])
   s3 -.->|"failures"| discord["Discord"]
   s3 -.->|"age metrics"| prom["Prometheus alerts"]
@@ -116,7 +117,6 @@ flowchart LR
 |---|---|
 | 02:00 | `forgejo-backup` (CronJob) |
 | 02:30 | `vault-backup` |
-| 02:45 | `leantime-backup` (CronJob) |
 | 03:00 | `restic-backup` (key files, SQL dumps, prune, checks) |
 | 05:00 | offsite sync to pCloud + check |
 
@@ -147,7 +147,7 @@ Metabase and balance pipeline commissioning: [docs/metabase.md](docs/metabase.md
 | Databases: scripts, audit log, declared access | [docs/databases.md](docs/databases.md) |
 | NetBird: server, CrowdSec, Kubernetes access | [docs/netbird.md](docs/netbird.md) |
 | Keycloak and OIDC logins | [docs/keycloak.md](docs/keycloak.md) |
-| Jenkins, Forgejo, Leantime, Developer Portal | [docs/apps.md](docs/apps.md) |
+| Jenkins, Forgejo, Developer Portal | [docs/apps.md](docs/apps.md) |
 | Renovate | [docs/updates.md](docs/updates.md) |
 
 ## Quick commands

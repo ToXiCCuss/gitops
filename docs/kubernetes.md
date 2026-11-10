@@ -31,7 +31,7 @@ flowchart TD
 | `infra` | cert-manager, ClusterIssuer, Hetzner webhook, Istio internal gateway + security policies + telemetry, NetBird operator/router/access/API proxy, CoreDNS custom, Vault Config Operator, vault-unsealer |
 | `monitoring` | Prometheus/Grafana, Alloy, Loki, Tempo, blackbox exporter, alert rules, dashboards, probes |
 | `cicd` | Harbor, Jenkins, Forgejo (+ backup), `helm-deployer` role |
-| `management` | Leantime (+ backup), Metabase (pending bootstrap), frame of the Developer Portal |
+| `management` | Retained Leantime data and restore template, Metabase (pending bootstrap), frame of the Developer Portal |
 | `spring` | namespaces `dev`, `prod`, `helm-deployer` role (Spring apps themselves are deployed by Jenkins) |
 
 Rules:
@@ -156,4 +156,4 @@ kubectl get networkresources -A
 
 All `Application` rows `Synced`/`Healthy`; each `NetworkResource` has an entry in the NetBird dashboard under zone `k8sdev.rjst.de`.
 
-App-specific setup (Jenkins, Forgejo, Leantime, Developer Portal): [apps.md](apps.md).
+App-specific setup (Jenkins, Forgejo, Developer Portal) and retained Leantime data: [apps.md](apps.md).

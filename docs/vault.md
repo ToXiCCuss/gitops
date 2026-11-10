@@ -111,7 +111,7 @@ for name in $(jq -r '.identities[].name' docker/rustfs/identities.json); do
 done
 ```
 
-Forgejo and Leantime backups need their S3 keys in the cluster, `restic-backup` needs their restic passwords. The AVP plugin may only read `argocd/` and the Docker host only `docker/`, so the values are copied (re-run after a change):
+Forgejo backups and the retained Leantime archive restore need their S3 keys in the cluster; `restic-backup` needs the archive restic passwords for integrity checks. The AVP plugin may only read `argocd/` and the Docker host only `docker/`, so the values are copied (re-run after a change):
 
 ```bash
 for app in forgejo leantime; do
@@ -131,7 +131,6 @@ Database logins come from the scripts on `docker01` (`db_create.sh <name>` first
 
 ```bash
 kv_set -mount=argocd forgejo database.username=forgejo_owner "database.password=$(vault kv get -mount=databases -field=password postgresql/forgejo_owner)"
-kv_set -mount=argocd leantime database.username=leantime_owner "database.password=$(vault kv get -mount=databases -field=password mariadb/leantime_owner)"
 kv_set -mount=argocd developer-portal database.username=developer_portal_owner "database.password=$(vault kv get -mount=databases -field=password postgresql/developer_portal_owner)"
 kv_set -mount=argocd harbor database.username=<owner> "database.password=$(vault kv get -mount=databases -field=password postgresql/<owner>)"
 ```
@@ -146,7 +145,7 @@ kv_set -mount=argocd harbor database.username=<owner> "database.password=$(vault
 | `argocd/data/argocd` | `oidc.client_secret` (client `argocd`) |
 | `argocd/data/vault` | `oidc.client_secret` (client `vault`) |
 | `argocd/data/forgejo` | `admin.password`, `oidc.client_secret`, `security.secret_key`, `security.internal_token`, `database.*`, `backup.*` |
-| `argocd/data/leantime` | `oidc.client_secret`, `session.password`, `database.*`, `backup.*` |
+| `argocd/data/leantime` | Legacy app values retained; `backup.*` keeps the historical upload archive readable |
 | `argocd/data/developer-portal` | `oidc.client_secret`, `backend.secret`, `database.*` |
 
 ## Vault Config Operator

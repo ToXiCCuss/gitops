@@ -57,7 +57,7 @@ By hand in the dashboard ([guide](https://docs.netbird.io/use-cases/kubernetes/r
 
 - Router: one routing peer (`workloadOverride.replicas: 1`, single-node cluster); 3+ for failover
 - A re-joined peer loses its groups (then `server.lan` names give NXDOMAIN): re-add it
-- Pods that need the S3 (`forgejo-backup`, `leantime-backup`) use `docker01.server.lan:9000` through NetBird: the node needs a policy for `docker01` on TCP 9000 (and 5432 / 3306 for databases)
+- The Forgejo backup pod uses `docker01.server.lan:9000` through NetBird: the node needs a policy for `docker01` on TCP 9000.
 
 ## Internal apps
 
@@ -75,9 +75,8 @@ NetBird separates access per destination, not per hostname, so every app has its
 | Developer Portal | `developer-portal.k8sdev.rjst.de` | `developer-portal.developer-portal:7007` | 8448 |
 | Prometheus | `prometheus.k8sdev.rjst.de` | `prometheus-prometheus.prometheus:9090` | 8452 |
 | Forgejo | `forgejo.k8sdev.rjst.de` | `forgejo-http.forgejo:3000` | 8453 |
-| Leantime | `leantime.k8sdev.rjst.de` | `leantime.leantime:80` | 8454 |
 
-- Ports 8443-8454 belong to platform apps here; 9000-9999 are Spring apps (`kubernetes-values/PORTS.md`)
+- Ports 8443-8453 serve platform apps here; 8454 was Leantime's listener and is free. Ports 9000-9999 are Spring apps (`kubernetes-values/PORTS.md`)
 - Nodes pull from Harbor through NetBird: valid certificate, no insecure-registry setting; put the node peers into `k8s-users`
 
 ## kubectl through NetBird
