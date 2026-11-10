@@ -133,12 +133,23 @@ vault_answer_errors() {
     vault_errors "$(cat "$WORK_DIR/vault-answer.json" 2>/dev/null)"
 }
 
-# ensure_identity_keys <name>: generates the keys of an identity in docker/s3/<name> when it has none. cas=0 makes Vault refuse
-# to overwrite an existing key, so a run never changes a key that is in use
+# vault_read <path>: reads a path of Vault and prints the HTTP status (the answer is in $WORK_DIR/vault-answer.json)
+vault_read() {
+    vault_header | curl -sS -m "$VAULT_TIMEOUT_SECONDS" -o "$WORK_DIR/vault-answer.json" -w '%{http_code}' -H @-         "$VAULT_ADDR/v1/$1" || echo "000"
+}
+
+# ensure_identity_keys <name>: generates the keys of an identity in docker/s3/<name> when it has none. Only a 404 counts as
+# "none": any other answer (e.g. 403 when the policy docker-s3-keys is missing) is reported and nothing is written. cas=0
+# makes Vault refuse to overwrite an existing key, so a run never changes a key that is in use
 ensure_identity_keys() {
     local name="$1" access secret code
-    if identity_keys "$name" >/dev/null 2>&1; then
+    code=$(vault_read "$VAULT_KV_MOUNT/data/s3/$name")
+    if [[ "$code" == "$HTTP_OK" ]]; then
         return 0
+    fi
+    if [[ "$code" != "$HTTP_NOT_FOUND" ]]; then
+        error "$name: cannot read $VAULT_KV_MOUNT/s3/$name (HTTP $code: $(vault_answer_errors))"
+        return 1
     fi
     access=$(generate_secret "$ACCESS_KEY_LENGTH" 'A-Z0-9') && secret=$(generate_secret "$SECRET_KEY_LENGTH" 'A-Za-z0-9') || return 1
     jq -n --arg access "$access" --arg secret "$secret"         '{options: {cas: 0}, data: {access_key: $access, secret_key: $secret}}' > "$WORK_DIR/$name.keys.json"
