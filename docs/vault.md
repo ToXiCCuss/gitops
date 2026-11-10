@@ -102,7 +102,7 @@ put_new() { vault kv get -mount=argocd -field="$2" "$1" >/dev/null 2>&1 || kv_se
 grep -vE '^(#|$)' scripts/vault/generated-secrets.txt | while read -r secret key length; do put_new "$secret" "$key" "$length"; done
 ```
 
-S3 keys of the RustFS identities (`docker/rustfs/identities.json`; run on the Docker host or anywhere with the checkout and `jq`; an existing key is never changed):
+S3 keys of the RustFS identities: `sudo scripts/docker/setup-rustfs.sh` generates missing keys itself (an existing key is never changed) and copies the keys of an identity with `vaultCopy` into the secret of its app (e.g. `dev/er-launcher-service`), see [backup-services.md](backup-services.md#rustfs). By hand, on the Docker host or anywhere with the checkout and `jq`:
 
 ```bash
 for name in $(jq -r '.identities[].name' docker/rustfs/identities.json); do
@@ -175,7 +175,7 @@ vault write auth/kubernetes/role/vault-config bound_service_account_names=vault-
 
 ## AppRole logins of the hosts
 
-`docker01` logs in with AppRole `docker01` (reads `docker/data/*`, used by `deploy.sh`), the DB scripts with `dbadmin` (writes `databases/data/*`). Policies and roles are in Git. By hand with an admin token (inside the Vault pod or any machine reaching Vault):
+`docker01` logs in with AppRole `docker01` (reads `docker/data/*`, creates `docker/data/s3/*` and merges the S3 keys into the secrets named in `identities.json`; used by `deploy.sh` and `setup-rustfs.sh`), the DB scripts with `dbadmin` (writes `databases/data/*`). Policies and roles are in Git. By hand with an admin token (inside the Vault pod or any machine reaching Vault):
 
 ```bash
 vault secrets enable -path=docker -version=2 kv

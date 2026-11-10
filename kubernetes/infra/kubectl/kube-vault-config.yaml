@@ -126,6 +126,34 @@ spec:
 
 ---
 
+# What setup-rustfs.sh writes besides reading: new S3 keys (create only: an existing key is never overwritten) and the keys of an
+# app in its own secret (patch merges them into the secret, so the other keys stay; create only when the secret does not exist).
+# The host cannot read dev/ or prod/. A new app with S3 keys: add its path here and "vaultCopy" in docker/rustfs/identities.json
+apiVersion: redhatcop.redhat.io/v1alpha1
+kind: Policy
+metadata:
+  name: docker-s3-keys
+  namespace: vault
+spec:
+  authentication:
+    path: kubernetes
+    role: vault-config
+    serviceAccount:
+      name: vault-config
+  type: acl
+  policy: |
+    path "docker/data/s3/*" {
+      capabilities = ["create"]
+    }
+    path "dev/data/er-launcher-service" {
+      capabilities = ["create", "patch"]
+    }
+    path "prod/data/er-launcher-service" {
+      capabilities = ["create", "patch"]
+    }
+
+---
+
 # Not bound to an address: Vault runs in the cluster and sees the address of a pod, a CIDR binding makes every login fail
 apiVersion: redhatcop.redhat.io/v1alpha1
 kind: AppRoleAuthEngineRole
@@ -141,6 +169,7 @@ spec:
   path: approle
   tokenPolicies:
     - docker
+    - docker-s3-keys
   tokenTTL: 5m
   tokenMaxTTL: 10m
 

@@ -7,8 +7,10 @@
     { "name": "netbird", "access": "readwrite", "buckets": ["netbird"] },
     { "name": "forgejo", "access": "readwrite", "buckets": ["forgejo"] },
     { "name": "leantime", "access": "readwrite", "buckets": ["leantime"] },
-    { "name": "er-launcher-dev", "access": "readwrite", "buckets": ["er-launcher-dev"] },
-    { "name": "er-launcher", "access": "readwrite", "buckets": ["er-launcher"] },
+    { "name": "er-launcher-dev", "access": "readwrite", "buckets": ["er-launcher-dev"],
+      "vaultCopy": { "path": "dev/er-launcher-service", "accessKey": "launcher.storage.access-key", "secretKey": "launcher.storage.secret-key" } },
+    { "name": "er-launcher", "access": "readwrite", "buckets": ["er-launcher"],
+      "vaultCopy": { "path": "prod/er-launcher-service", "accessKey": "launcher.storage.access-key", "secretKey": "launcher.storage.secret-key" } },
     { "name": "offsite-sync", "access": "read", "buckets": ["backups", "databases", "vault", "pelican", "netbird", "forgejo", "leantime"] }
   ]
 }

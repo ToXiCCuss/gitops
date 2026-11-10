@@ -2,9 +2,10 @@
 # =============================================================================
 # setup-rustfs.sh
 # Creates the buckets, users and policies in RustFS from docker/rustfs/identities.json. The S3 keys
-# of the identities are read from Vault (docker/s3/<name>, created as in docs/vault.md, Secrets),
-# the root key of RustFS from the secret docker/rustfs (RUSTFS_ACCESS_KEY, RUSTFS_SECRET_KEY). Idempotent: run it again after a change of
-# identities.json or after a new RustFS.
+# of the identities are read from Vault (docker/s3/<name>); keys that do not exist yet are generated and stored there first
+# (never overwritten). An identity with a "vaultCopy" entry also gets its keys written to the secret of its app in the Vault of
+# the cluster (e.g. dev/er-launcher-service), so no hand copying is needed. The root key of RustFS comes from the secret docker/rustfs
+# (RUSTFS_ACCESS_KEY, RUSTFS_SECRET_KEY). Idempotent: run it again after a change of identities.json or after a new RustFS.
 #
 #   sudo scripts/docker/setup-rustfs.sh [--endpoint http://127.0.0.1:9000]
 #
@@ -46,6 +47,9 @@ VAULT_KV_MOUNT="docker"
 VAULT_ROLE_ID_FILE="/etc/gitops/role_id"
 VAULT_SECRET_ID_FILE="/etc/gitops/secret_id"
 VAULT_TIMEOUT_SECONDS=15
+ACCESS_KEY_LENGTH=20
+SECRET_KEY_LENGTH=40
+HTTP_NOT_FOUND=404
 VAULT_TOKEN=""
 WORK_DIR=""
 ROOT_ACCESS_KEY=""
@@ -54,7 +58,7 @@ ROOT_SECRET_KEY=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --endpoint) S3_ENDPOINT="${2:?--endpoint needs an address}"; shift 2 ;;
-        -h|--help)  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) error "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -106,6 +110,61 @@ identity_keys() {
         || { error "$1: $VAULT_ADDR is not reachable"; return 1; }
     jq -er '.data.data | select(.access_key and .secret_key) | "\(.access_key) \(.secret_key)"' <<<"$response" 2>/dev/null \
         || { error "$1: no keys in $VAULT_KV_MOUNT/s3/$1 ($(vault_errors "$response")). Create the keys as in docs/vault.md, Secrets"; return 1; }
+}
+
+# generate_secret <length> <characters>: random text of the given characters. head closes the pipe early, so tr and openssl
+# may end with SIGPIPE: only the length of the result counts
+generate_secret() {
+    local value
+    value=$(openssl rand -base64 300 | tr -dc "$2" | head -c "$1" || true)
+    [[ ${#value} -eq $1 ]] || { error "could not generate $1 characters"; return 1; }
+    printf '%s' "$value"
+}
+
+# vault_write <POST|PATCH> <path> <body file> <content type>: sends the body to Vault and prints the HTTP status (the answer is
+# in $WORK_DIR/vault-answer.json). The token goes in a header file on stdin, the body is in WORK_DIR, which is removed on exit
+vault_write() {
+    local method="$1" path="$2" body_file="$3" content_type="$4"
+    { vault_header; printf 'Content-Type: %s
+' "$content_type"; }         | curl -sS -m "$VAULT_TIMEOUT_SECONDS" -o "$WORK_DIR/vault-answer.json" -w '%{http_code}' -X "$method" -H @-             --data-binary "@$body_file" "$VAULT_ADDR/v1/$path" || echo "000"
+}
+
+vault_answer_errors() {
+    vault_errors "$(cat "$WORK_DIR/vault-answer.json" 2>/dev/null)"
+}
+
+# ensure_identity_keys <name>: generates the keys of an identity in docker/s3/<name> when it has none. cas=0 makes Vault refuse
+# to overwrite an existing key, so a run never changes a key that is in use
+ensure_identity_keys() {
+    local name="$1" access secret code
+    if identity_keys "$name" >/dev/null 2>&1; then
+        return 0
+    fi
+    access=$(generate_secret "$ACCESS_KEY_LENGTH" 'A-Z0-9') && secret=$(generate_secret "$SECRET_KEY_LENGTH" 'A-Za-z0-9') || return 1
+    jq -n --arg access "$access" --arg secret "$secret"         '{options: {cas: 0}, data: {access_key: $access, secret_key: $secret}}' > "$WORK_DIR/$name.keys.json"
+    code=$(vault_write POST "$VAULT_KV_MOUNT/data/s3/$name" "$WORK_DIR/$name.keys.json" application/json)
+    [[ "$code" =~ ^2[0-9][0-9]$ ]] || { error "$name: Vault refused to store new keys (HTTP $code: $(vault_answer_errors))"; return 1; }
+    success "Keys of '$name' generated in $VAULT_KV_MOUNT/s3/$name"
+}
+
+# copy_keys_to_app <name>: for an identity with a "vaultCopy" entry (path, accessKey, secretKey) the keys are merged into the
+# secret of the app: PATCH keeps the other keys of the secret. A secret that does not exist yet is created with the two keys
+copy_keys_to_app() {
+    local name="$1" target keys mount path code
+    target=$(jq -c --arg name "$name" '.identities[] | select(.name == $name) | .vaultCopy // empty' "$IDENTITIES_FILE")
+    [[ -n "$target" ]] || return 0
+    keys=$(identity_keys "$name") || return 1
+    path=$(jq -r .path <<<"$target")
+    mount="${path%%/*}"
+    jq -n --argjson target "$target" --arg access "${keys%% *}" --arg secret "${keys#* }"         '{data: {($target.accessKey): $access, ($target.secretKey): $secret}}' > "$WORK_DIR/$name.copy.json"
+    code=$(vault_write PATCH "$mount/data/${path#*/}" "$WORK_DIR/$name.copy.json" application/merge-patch+json)
+    if [[ "$code" == "$HTTP_NOT_FOUND" ]]; then
+        warn "$path does not exist yet: it is created with the S3 keys only, add the other keys of the app to it"
+        jq '. + {options: {cas: 0}}' "$WORK_DIR/$name.copy.json" > "$WORK_DIR/$name.create.json"
+        code=$(vault_write POST "$mount/data/${path#*/}" "$WORK_DIR/$name.create.json" application/json)
+    fi
+    [[ "$code" =~ ^2[0-9][0-9]$ ]] || { error "$name: Vault refused to write $path (HTTP $code: $(vault_answer_errors))"; return 1; }
+    success "Keys of '$name' written to $path"
 }
 
 # ── Root key and tools ────────────────────────────────────────────────────────
@@ -287,11 +346,15 @@ step "RustFS"
 wait_for_s3
 step "Buckets"
 create_buckets
+step "Keys in Vault"
+for_each_identity ensure_identity_keys
 step "Policies and users"
 apply_identities
 step "Rights check with the keys of each identity"
 check_root_write
 verify_identities
+step "Keys for the apps in the Vault of the cluster"
+for_each_identity copy_keys_to_app
 
 echo
 success "RustFS is prepared. The keys of an identity: vault kv get $VAULT_KV_MOUNT/s3/<name>"

@@ -90,13 +90,14 @@ Nightly `rclone sync` of the S3 to pCloud (05:00 UTC, `SYNC_HOUR`) followed by `
 
 Buckets, users and policies come from `docker/rustfs/identities.json` (names and buckets, no keys); keys live in Vault `docker/s3/<name>`.
 
-1. Create missing keys once with the loop over `identities.json` ([vault.md](vault.md#secrets), never changes an existing key). Read: `vault kv get -field=secret_key docker/s3/<name>`
+1. Keys: `setup-rustfs.sh` (step 7) generates missing keys itself and never changes an existing one (the loop in [vault.md](vault.md#secrets) does the same by hand). Read: `vault kv get -field=secret_key docker/s3/<name>`
 2. Vault secret `docker/rustfs` (names in `docker/rustfs/vault.env.example`): `RUSTFS_ACCESS_KEY`, `RUSTFS_SECRET_KEY` (root login, not `rustfsadmin`), `RUSTFS_IDENTITY_OPENID_CLIENT_SECRET` (= `RUSTFS_CLIENT_SECRET`)
 3. Firewall rule for port 9000 from the Docker networks is in `ansible/group_vars/all/main.yml`
 4. Keycloak: set `RUSTFS_CLIENT_SECRET` in Vault `docker/keycloak-config` (`openssl rand -base64 32`), `sudo scripts/docker/deploy.sh keycloak-config` creates client `rustfs` with roles `consoleAdmin`, `readwrite`, `readonly` (= RustFS policy names). The deploy stops with an undefined variable until the secret is set
 5. Keycloak UI: give your user client role `consoleAdmin` of client `rustfs` (**Users > Role mapping**)
 6. `sudo scripts/docker/deploy.sh rustfs` (`pre-deploy.sh` makes the data directories belong to user `10001`)
-7. `sudo scripts/docker/setup-rustfs.sh` (RustFS running, AppRole files in place): buckets with the root key, then policy and user per identity via the admin API (`curl --aws-sigv4`, curl 7.75+). Last it tests every identity: lists its buckets, writes (`readwrite`) or must not write (`read`), neither write nor list outside its list
+7. `sudo scripts/docker/setup-rustfs.sh` (RustFS running, AppRole files in place): keys for identities without them, buckets with the root key, then policy and user per identity via the admin API (`curl --aws-sigv4`, curl 7.75+). Last it tests every identity: lists its buckets, writes (`readwrite`) or must not write (`read`), neither write nor list outside its list
+   An identity with `vaultCopy` in `identities.json` (`path`, `accessKey`, `secretKey`) gets its keys merged into that secret of the app in Vault at the end (e.g. `er-launcher-dev` into `dev/er-launcher-service`; the other keys of the secret stay, a missing secret is created with the two keys). The policy `docker-s3-keys` (`kubernetes/infra/kubectl/kube-vault-config.yaml`) allows exactly these paths: a new app needs its path there.
 8. NetBird dashboard: reverse proxy service `s3-admin.proxy.rjst.de` to port `9001` of the Docker host, restricted to your peers
 
 OIDC details:
