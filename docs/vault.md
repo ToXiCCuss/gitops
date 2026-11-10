@@ -111,13 +111,13 @@ for name in $(jq -r '.identities[].name' docker/rustfs/identities.json); do
 done
 ```
 
-Forgejo backups and the retained Leantime archive restore need their S3 keys in the cluster; `restic-backup` needs the archive restic passwords for integrity checks. The AVP plugin may only read `argocd/` and the Docker host only `docker/`, so the values are copied (re-run after a change):
+Forgejo backups need their S3 keys in the cluster; `restic-backup` needs the restic password of Forgejo for integrity checks. The AVP plugin may only read `argocd/` and the Docker host only `docker/`, so the values are copied (re-run after a change):
 
 ```bash
-for app in forgejo leantime; do
+for app in forgejo; do
   kv_set -mount=argocd "$app" "backup.s3_access_key=$(vault kv get -mount=docker -field=access_key s3/$app)" "backup.s3_secret_key=$(vault kv get -mount=docker -field=secret_key s3/$app)"
 done
-kv_set -mount=docker restic-backup "RESTIC_PASSWORD_FORGEJO=$(vault kv get -mount=argocd -field=backup.restic_password forgejo)" "RESTIC_PASSWORD_LEANTIME=$(vault kv get -mount=argocd -field=backup.restic_password leantime)"
+kv_set -mount=docker restic-backup "RESTIC_PASSWORD_FORGEJO=$(vault kv get -mount=argocd -field=backup.restic_password forgejo)"
 ```
 
 Values that must match reality are typed, never generated (`read -s` keeps them out of history and process list):
@@ -145,7 +145,6 @@ kv_set -mount=argocd harbor database.username=<owner> "database.password=$(vault
 | `argocd/data/argocd` | `oidc.client_secret` (client `argocd`) |
 | `argocd/data/vault` | `oidc.client_secret` (client `vault`) |
 | `argocd/data/forgejo` | `admin.password`, `oidc.client_secret`, `security.secret_key`, `security.internal_token`, `database.*`, `backup.*` |
-| `argocd/data/leantime` | Legacy app values retained; `backup.*` keeps the historical upload archive readable |
 | `argocd/data/developer-portal` | `oidc.client_secret`, `backend.secret`, `database.*` |
 
 ## Vault Config Operator

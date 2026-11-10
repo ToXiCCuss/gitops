@@ -3,7 +3,7 @@
 # never fight over the repository lock:
 #   repository docker:        backup of the key files, forget, prune, check
 #   repository databases:     logical dumps of PostgreSQL and MariaDB, forget, prune, check
-#   repositories vault, netbird, forgejo, leantime: check only (the leantime repository is a retained archive)
+#   repositories vault, netbird, forgejo: check only
 #   every repository:         stats, its size and snapshots as metrics
 # Every step leaves its result for the node_exporter textfile collector, Prometheus alerts on it.
 set -u
@@ -219,7 +219,7 @@ run_nightly() {
     run_step docker check check_repository
     run_step docker stats write_repository_metrics
     run_databases
-    for repository in vault netbird forgejo leantime; do
+    for repository in vault netbird forgejo; do
         select_repository "$repository" s3
         run_step "$repository" check check_repository
         run_step "$repository" stats write_repository_metrics

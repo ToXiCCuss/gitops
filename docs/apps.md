@@ -63,18 +63,6 @@ kubectl -n forgejo create job forgejo-restore-$(date +%s) --from=cronjob/forgejo
    Older snapshot: `kubectl -n forgejo create job forgejo-restore-1 --from=cronjob/forgejo-restore --dry-run=client -o yaml | kubectl set env --local -f - SNAPSHOT=<id> -o yaml | kubectl apply -f -`
 3. `kubectl -n forgejo logs -f job/<name>`, log in, check a package. If the search index looks wrong run the cron jobs under **Site administration > Monitoring > Cron**
 
-## Leantime (retired)
-
-The app, ingress, Keycloak client, app Secret and scheduled backup job have been removed from Git. The namespace and two upload PVCs remain managed in `management/kubectl/leantime-data.yaml`; `leantime-restore.yaml` keeps a suspended, manual restore template for existing snapshots. The MariaDB database, Vault values and Restic archive are retained. The archive is still checked nightly and copied to pCloud; the PVCs are no longer backed up after the app shutdown. See [backups.md](backups.md).
-
-To restore the latest upload snapshot, list available snapshots on `docker01` with `sudo scripts/docker/restore.sh snapshots leantime`, then start the suspended `leantime-restore` CronJob manually:
-
-```bash
-kubectl -n leantime create job leantime-restore-$(date +%s) --from=cronjob/leantime-restore
-```
-
-Removing the Keycloak client from `docker/keycloak-config/realms/rjst.yaml` takes effect when the `keycloak-config` project is next deployed.
-
 ## Developer Portal
 
 Backstage as our own build (repository `developer-portal` in RJST-DEVELOP), deployed by Jenkins like the Spring apps: build image, push to Harbor, `helm upgrade --install developer-portal` of chart `ghcr.io/backstage/charts/backstage` into namespace `developer-portal`. Replaces the Portal step by step (both run side by side). This repo holds only the frame:

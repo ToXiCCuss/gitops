@@ -8,7 +8,7 @@
 #   sudo scripts/docker/restore.sh [--from pcloud] [--tag <tag>] files <repository> [snapshot]
 #   sudo scripts/docker/restore.sh [--from pcloud] [--tag <tag>] restore <repository> [snapshot] [--include <path>]
 #
-#   repository  docker (key files), databases (SQL dumps), vault (Raft snapshots), netbird, forgejo or leantime
+#   repository  docker (key files), databases (SQL dumps), vault (Raft snapshots), netbird or forgejo
 #               (historical upload archive, see docs/backups.md)
 #   snapshot    an id from "snapshots", default latest
 #   --from      s3 (default, the local RustFS) or pcloud (the copy of the offsite sync, for a lost S3)

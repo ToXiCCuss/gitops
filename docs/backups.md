@@ -17,7 +17,6 @@ flowchart LR
     s3 -->|read-only identity| sync["offsite-sync (rclone, 05:00 UTC)"]
   end
   forgejobackup["forgejo-backup (CronJob in Kubernetes, restic)"] -->|bucket forgejo| s3
-  leantimearchive["Existing Leantime upload snapshots"] -.->|retained bucket leantime| s3
   sync -->|"rclone sync, deleted files go to Backups-deleted"| pcloud(["pCloud"])
 ```
 
@@ -28,11 +27,10 @@ flowchart LR
 | vault-backup | daily Raft snapshot of Vault | periodic read-only token, repository `vault/raft`, own retention |
 | NetBird backup | config + database of the NetBird server (`scripts/netbird/`) | repository `netbird/restic`, own retention, runs before each upgrade and by hand |
 | forgejo-backup | CronJob: stops Forgejo, dump + data volume in one snapshot, starts it | repository `forgejo/restic`, see [apps.md](apps.md#forgejo) |
-| Leantime archive | Historical upload snapshots; no new app backups are written | repository `leantime/restic`, kept for restore and nightly integrity checks |
 | Offsite sync | copies the whole S3 to pCloud and verifies | deleted/overwritten files stay 30 days in `Backups-deleted` |
 
 - Everything writes to the S3 only; pCloud is written by the offsite sync alone
-- **Not covered:** Kubernetes PVCs except Forgejo; the retained Leantime PVCs are no longer backed up after app retirement. Pelican Panel and Wings config (on purpose), etcd snapshots, Jenkins build history, Traces and Loki logs are also not covered
+- **Not covered:** Kubernetes PVCs except Forgejo. Pelican Panel and Wings config (on purpose), etcd snapshots, Jenkins build history, Traces and Loki logs are also not covered
 - MariaDB is only backed up once `MARIADB_PASSWORD` is in the Vault secret `docker/restic-backup`
 
 ## Retention, checks and schedule
@@ -44,12 +42,11 @@ flowchart LR
 | Key files | 7 | 4 | 6 | `restic-backup` (`KEEP_*`) |
 | NetBird | 0 | 8 | 6 | `netbird_backup.sh` (`RESTIC_KEEP_*` in `/etc/netbird-backup.cred`) |
 | Forgejo | 14 | 8 | 6 | `kubernetes/cicd/kubectl/forgejo-backup.yaml` (`KEEP_*`) |
-| Leantime archive | — | — | — | Existing snapshots retained; no further Leantime backup or prune job |
 | Deleted files in pCloud | 30 days | | | `RETENTION_DAYS` of the offsite sync |
 
 | Check | How |
 |---|---|
-| Repository + data sample | `restic-backup` nightly on `docker`, `databases`, `vault`, `netbird`, `forgejo`, and the Leantime archive: `restic check` with 10% read-data subset (`CHECK_READ_DATA_SUBSET`), whole repo read after ~10 nights |
+| Repository + data sample | `restic-backup` nightly on `docker`, `databases`, `vault`, `netbird` and `forgejo`: `restic check` with 10% read-data subset (`CHECK_READ_DATA_SUBSET`), whole repo read after ~10 nights |
 | Offsite copy | `rclone check --one-way --size-only` S3 -> pCloud after each sync (no common hash); mismatch fails the sync |
 | Failed jobs | Discord for offsite sync, `vault-backup`, `netbird_backup.sh`, optional `restic-backup` |
 | Missing runs | Prometheus age alerts ([below](#backup-age-alerts)) |
@@ -59,7 +56,7 @@ flowchart LR
 |---|---|
 | 02:00 | forgejo-backup (Forgejo stopped 1-2 min) |
 | 02:30 | vault-backup |
-| 03:00 | restic-backup (key files, SQL dumps, forget, prune, checks of active and retained repositories, including the Leantime archive) |
+| 03:00 | restic-backup (key files, SQL dumps, forget, prune, checks of the repositories) |
 | 05:00 | offsite sync + check (nothing writes to the S3 any more) |
 
 ## Discord alerts
@@ -149,11 +146,10 @@ A backup never restored is not a backup. After the first nightly sync, then quar
 | Vault | `scripts/vault/vault_restore.sh` |
 | NetBird server | `netbird_restore.sh` |
 | Forgejo | CronJob `forgejo-restore`, see [apps.md](apps.md#forgejo) |
-| Leantime uploads | Suspended CronJob `leantime-restore`, see [apps.md](apps.md#leantime-retired) |
 | Pelican game servers | Pelican Panel, or unpack the `.tar.gz` by hand |
 | Whole S3 lost | restic directly from pCloud |
 
-`restore.sh` takes `docker`, `databases`, `vault`, `netbird`, `forgejo`, `leantime` (the last four can be browsed this way; Leantime uploads are restored with the retained suspended job). Needs the running container `restic-backup`; with the S3 gone use `--from pcloud`.
+`restore.sh` takes `docker`, `databases`, `vault`, `netbird`, `forgejo` (the last three can be browsed this way). Needs the running container `restic-backup`; with the S3 gone use `--from pcloud`.
 
 ### Key files
 

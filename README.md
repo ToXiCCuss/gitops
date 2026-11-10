@@ -107,7 +107,6 @@ flowchart LR
 ```mermaid
 flowchart LR
   src["Key files, PostgreSQL, MariaDB, Vault, NetBird, Forgejo"] -->|"restic, nightly"| s3[("RustFS S3 on docker01")]
-  leantime["Existing Leantime upload archive"] -.->|"retained bucket"| s3
   s3 -->|"rclone sync 05:00 UTC"| pcloud(["pCloud"])
   s3 -.->|"failures"| discord["Discord"]
   s3 -.->|"age metrics"| prom["Prometheus alerts"]

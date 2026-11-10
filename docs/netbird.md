@@ -76,7 +76,7 @@ NetBird separates access per destination, not per hostname, so every app has its
 | Prometheus | `prometheus.k8sdev.rjst.de` | `prometheus-prometheus.prometheus:9090` | 8452 |
 | Forgejo | `forgejo.k8sdev.rjst.de` | `forgejo-http.forgejo:3000` | 8453 |
 
-- Ports 8443-8453 serve platform apps here; 8454 was Leantime's listener and is free. Ports 9000-9999 are Spring apps (`kubernetes-values/PORTS.md`)
+- Ports 8443-8453 serve platform apps here; 8454 is free. Ports 9000-9999 are Spring apps (`kubernetes-values/PORTS.md`)
 - Nodes pull from Harbor through NetBird: valid certificate, no insecure-registry setting; put the node peers into `k8s-users`
 
 ## kubectl through NetBird
