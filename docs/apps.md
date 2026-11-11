@@ -5,7 +5,7 @@ Setup that goes beyond "merge and sync". Common pattern for apps with Keycloak l
 | Step | Where |
 |---|---|
 | Database | declare in `databases/postgresql.yaml` (`apply_declared.sh`) or `db_create.sh <name>` on `docker01`; owner password lands in Vault `databases/...` |
-| Generated secrets | `put_new` block and DB-copy block in [vault.md](vault.md#secrets) |
+| Generated secrets | `scripts/vault/Generate-Secrets.ps1` and DB-copy block in [vault.md](vault.md#secrets) |
 | Keycloak client | `docker/keycloak-config/realms/rjst.yaml`, secret into Vault `docker/keycloak-config` **before the merge**, then `deploy.sh keycloak-config` ([keycloak.md](keycloak.md#realm-as-code)) |
 | NetBird | CNAME `<app>` in the zone ([netbird.md](netbird.md#configuration-for-kubernetes)) |
 
@@ -34,7 +34,7 @@ kubectl -n jenkins rollout restart statefulset jenkins
 
 `cicd/helm/forgejo.yaml`: Forgejo (LTS, rootless) as package registry for own libraries (Maven; npm/Helm if needed). Container images stay in Harbor (pull-through cache feeds k3s), Git stays on GitHub: SSH and Actions are off. The chart recreates config, the local admin `localadmin` (emergency login, password from Vault) and auth source `keycloak` at every start. Keycloak login only, no registration, no anonymous access.
 
-- **Before the first sync:** `scripts/postgresql/db_create.sh forgejo` on `docker01`, then `put_new` creates `argocd/data/forgejo` (`admin.password`, `oidc.client_secret`, `security.secret_key`, `security.internal_token`), last block copies DB user and password. **Never change `security.secret_key`** (encrypts auth-source secret, 2FA)
+- **Before the first sync:** `scripts/postgresql/db_create.sh forgejo` on `docker01`, then `Generate-Secrets.ps1 -Mount argocd` creates `argocd/data/forgejo` (`admin.password`, `oidc.client_secret`, `security.secret_key`, `security.internal_token`), last block copies DB user and password. **Never change `security.secret_key`** (encrypts auth-source secret, 2FA)
 - **Keycloak:** client `forgejo`, secret `FORGEJO_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/forgejo`). Client role `forgejo` `user` or `admin` (`admin` = site admin); a user without one is refused. First login creates the user (claim `nickname`)
 - **NetBird:** CNAME `forgejo`
 - **Maven:** packages belong to a user or organization (e.g. `rjst`). URL `https://forgejo.k8sdev.rjst.de/api/packages/<owner>/maven` for `<distributionManagement>` (releases and snapshots) and `<repositories>`. Login with the Forgejo username + access token with scope `package` (**Settings > Applications**) in a `<server>` of `settings.xml`, never the Keycloak password. Pods reach the URL through the CoreDNS rewrite to the internal gateway
@@ -75,7 +75,7 @@ Backstage as our own build (repository `developer-portal` in RJST-DEVELOP), depl
 
 Before the first deploy:
 
-- **Database:** `developer_portal` is declared in `databases/postgresql.yaml` (`apply_declared.sh`, or `db_create.sh developer_portal`; underscores only), then `put_new` creates `argocd/data/developer-portal` (`oidc.client_secret`, `backend.secret`), last block copies DB user and password. Backstage creates a database per plugin unless `backend.database.pluginDivisionMode` is `schema`: set it, else the login needs the right to create databases. The chart's PostgreSQL subchart stays off
+- **Database:** `developer_portal` is declared in `databases/postgresql.yaml` (`apply_declared.sh`, or `db_create.sh developer_portal`; underscores only), then `Generate-Secrets.ps1 -Mount argocd` creates `argocd/data/developer-portal` (`oidc.client_secret`, `backend.secret`), last block copies DB user and password. Backstage creates a database per plugin unless `backend.database.pluginDivisionMode` is `schema`: set it, else the login needs the right to create databases. The chart's PostgreSQL subchart stays off
 - **Keycloak:** client `developer-portal` with roles `admin` and `user`; a user without one is refused: assign in the UI (**Users > Role mapping**) before the first login. Secret `DEVELOPER_PORTAL_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/developer-portal`) before the merge
 - **NetBird:** CNAME `developer-portal`
 - **Order:** Gateway and VirtualService exist after the merge; the app answers once Jenkins deployed the release. Add the probe in `monitoring/kubectl/probes.yaml` with the first release, not before (it would alert until then)

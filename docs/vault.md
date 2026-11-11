@@ -85,33 +85,30 @@ vault write auth/kubernetes/role/argocd bound_service_account_names=argocd-repo-
 
 ## Secrets
 
-Generated values are 32 or 64 alphanumeric characters. Helpers (define once per shell):
+Random values are created by one script for **all** KV engines (`argocd`, `docker`, `dev`, `prod`): `scripts/vault/Generate-Secrets.ps1` (Windows PowerShell 5.1 or 7 and the Vault CLI on your PC) creates every key of `scripts/vault/generated-secrets.txt` that does not exist yet and never changes one that does. A random value has the given length and consists of A-Z, a-z and 0-9, each kind at least once (the same format as `openssl rand -base64 96 | tr -dc 'A-Za-z0-9' | head -c 64`). Some keys have to hold the same value in two places (the OIDC client secrets of Keycloak and of the app, the restic passwords): a line `=<mount>/<secret>#<key>` copies the value of the other key when its own key is missing.
+
+Log in with your own Keycloak login first (the root token is refused), then run it; `-DryRun` shows what would be created, `-Mount argocd|docker|dev|prod` limits it to one engine. `argocd` and `docker` need the role `admin`, `dev` and `prod` only the role `developer`:
+
+```powershell
+$env:VAULT_ADDR = 'https://vault.k8sdev.rjst.de'
+vault login -method=oidc role=default
+.\scripts\vault\Generate-Secrets.ps1 -DryRun
+.\scripts\vault\Generate-Secrets.ps1
+```
+
+The values come from the random number generator of the system, go to Vault through the standard input of the vault process (the script keeps a byte order mark of a UTF-8 console out of them) and are never printed. The list holds only random values: what has to match reality is typed (see below), database logins come from `db_create.sh`, S3 keys from `setup-rustfs.sh`, the values of the NetBird installer from the installer. **Never replace `security.secret_key` of Forgejo** (it encrypts the database; the script never changes an existing key). A new app adds its lines to the list and runs the script again; a pod reads its secrets at start, so restart it after a change. The server has no Vault CLI and no browser for the login, so the script runs on your PC.
+
+Helpers for the manual blocks below (define once per shell):
 
 | Helper | Does |
 |---|---|
 | `gen` | random alphanumeric string |
 | `kv_set` | changes single keys, keeps others, creates the secret if missing (`vault kv patch` alone fails on a missing secret; `-cas=0` never overwrites) |
-| `put_new` | creates a key only when missing, so the block can be re-run |
-
-The generated keys are listed once in `scripts/vault/generated-secrets.txt` (`<secret> <key> <length>`); a new app adds its lines there. **Never replace `security.secret_key` of Forgejo** (it encrypts the database; `put_new` does not).
 
 ```bash
 gen() { openssl rand -base64 300 | tr -dc "${2:-A-Za-z0-9}" | head -c "${1:-32}"; }
 kv_set() { vault kv patch -method=rw "$@" 2>/dev/null || vault kv put -cas=0 "$@"; }
-put_new() { vault kv get -mount=argocd -field="$2" "$1" >/dev/null 2>&1 || kv_set -mount=argocd "$1" "$2=$(gen "${3:-32}")"; }
-grep -vE '^(#|$)' scripts/vault/generated-secrets.txt | while read -r secret key length; do put_new "$secret" "$key" "$length"; done
 ```
-
-Random secrets of the Spring apps (KV engines `dev` and `prod`, secret `<environment>/<app>`): `scripts/vault/Generate-AppSecrets.ps1` (Windows PowerShell 5.1 or 7 and the Vault CLI on your PC) creates every key of `scripts/vault/generated-app-secrets.txt` (`<app> <key> <length>`) that does not exist yet and never changes one that does. Log in with your own Keycloak login first (the root token is refused), then run it for one environment or both; `-DryRun` shows what would be created:
-
-```powershell
-$env:VAULT_ADDR = 'https://vault.k8sdev.rjst.de'
-vault login -method=oidc role=default
-.\scriptsault\Generate-AppSecrets.ps1 -Environment all -DryRun
-.\scriptsault\Generate-AppSecrets.ps1 -Environment all
-```
-
-The values come from the random number generator of the system, go to Vault through the standard input of the vault process (the script keeps a byte order mark of a UTF-8 console out of them) and are never printed. Only random values are in the list (for example `launcher.auth.publisher-token` of `er-launcher-service`, different for dev and prod); values from outside (Discord secret, webhooks) and from other scripts (database logins: `db_create.sh`, S3 keys: `setup-rustfs.sh`) are not. The login needs `keycloak_developer` (create, read, update in `dev/` and `prod/`); the AppRole of `docker01` cannot write there on purpose and the server has no Vault CLI and no browser for the login, so the script runs on your PC. A pod reads its secrets at start: restart it after a change.
 
 S3 keys of the RustFS identities: `sudo scripts/docker/setup-rustfs.sh` generates missing keys itself (an existing key is never changed) and copies the keys of an identity with `vaultCopy` into the secret of its app (e.g. `dev/er-launcher-service`), see [backup-services.md](backup-services.md#rustfs). By hand, on the Docker host or anywhere with the checkout and `jq`:
 
