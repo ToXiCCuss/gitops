@@ -102,15 +102,16 @@ put_new() { vault kv get -mount=argocd -field="$2" "$1" >/dev/null 2>&1 || kv_se
 grep -vE '^(#|$)' scripts/vault/generated-secrets.txt | while read -r secret key length; do put_new "$secret" "$key" "$length"; done
 ```
 
-Random secrets of the Spring apps (KV engines `dev` and `prod`, secret `<environment>/<app>`): `scripts/vault/generate_app_secrets.sh` creates every key of `scripts/vault/generated-app-secrets.txt` (`<app> <key> <length>`) that does not exist yet and never changes one that does. Log in with your own Keycloak login first (the root token is refused), then run it for one environment or both, `--dry-run` shows what would be created:
+Random secrets of the Spring apps (KV engines `dev` and `prod`, secret `<environment>/<app>`): `scripts/vault/Generate-AppSecrets.ps1` (Windows PowerShell 5.1 or 7 and the Vault CLI on your PC) creates every key of `scripts/vault/generated-app-secrets.txt` (`<app> <key> <length>`) that does not exist yet and never changes one that does. Log in with your own Keycloak login first (the root token is refused), then run it for one environment or both; `-DryRun` shows what would be created:
 
-```bash
+```powershell
+$env:VAULT_ADDR = 'https://vault.k8sdev.rjst.de'
 vault login -method=oidc role=default
-scripts/vault/generate_app_secrets.sh --dry-run all
-scripts/vault/generate_app_secrets.sh all
+.\scriptsault\Generate-AppSecrets.ps1 -Environment all -DryRun
+.\scriptsault\Generate-AppSecrets.ps1 -Environment all
 ```
 
-The values go to Vault through stdin and are never printed. Only random values are in the list (for example `launcher.auth.publisher-token` of `er-launcher-service`, different for dev and prod); values from outside (Discord secret, webhooks) and from other scripts (database logins: `db_create.sh`, S3 keys: `setup-rustfs.sh`) are not. The login needs `keycloak_developer` (create, read, update in `dev/` and `prod/`); the AppRole of `docker01` cannot write there on purpose, so the script runs from your PC. A pod reads its secrets at start: restart it after a change.
+The values come from the random number generator of the system, go to Vault through the standard input of the vault process (the script keeps a byte order mark of a UTF-8 console out of them) and are never printed. Only random values are in the list (for example `launcher.auth.publisher-token` of `er-launcher-service`, different for dev and prod); values from outside (Discord secret, webhooks) and from other scripts (database logins: `db_create.sh`, S3 keys: `setup-rustfs.sh`) are not. The login needs `keycloak_developer` (create, read, update in `dev/` and `prod/`); the AppRole of `docker01` cannot write there on purpose and the server has no Vault CLI and no browser for the login, so the script runs on your PC. A pod reads its secrets at start: restart it after a change.
 
 S3 keys of the RustFS identities: `sudo scripts/docker/setup-rustfs.sh` generates missing keys itself (an existing key is never changed) and copies the keys of an identity with `vaultCopy` into the secret of its app (e.g. `dev/er-launcher-service`), see [backup-services.md](backup-services.md#rustfs). By hand, on the Docker host or anywhere with the checkout and `jq`:
 
