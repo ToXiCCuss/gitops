@@ -1,5 +1,6 @@
 {
   "buckets": ["backups", "databases", "vault", "pelican", "netbird", "forgejo", "er-launcher-dev", "er-launcher"],
+  "removedBuckets": ["leantime", "tofu-state"],
   "identities": [
     { "name": "restic-backup", "access": "readwrite", "buckets": ["backups", "databases", "vault", "netbird", "forgejo"] },
     { "name": "vault", "access": "readwrite", "buckets": ["vault"] },

@@ -7,7 +7,11 @@
 # the cluster (e.g. dev/er-launcher-service), so no hand copying is needed. The root key of RustFS comes from the secret docker/rustfs
 # (RUSTFS_ACCESS_KEY, RUSTFS_SECRET_KEY). Idempotent: run it again after a change of identities.json or after a new RustFS.
 #
-#   sudo scripts/docker/setup-rustfs.sh [--endpoint http://127.0.0.1:9000]
+#   sudo scripts/docker/setup-rustfs.sh [--endpoint http://127.0.0.1:9000] [--dry-run]
+#
+# Buckets listed under "removedBuckets" are deleted with all their objects (irreversible; a bucket that is gone
+# already is skipped, one that is also listed under "buckets" is refused). --dry-run only reports which buckets
+# it would delete and changes nothing else.
 #
 # Buckets are created with rclone, users and policies through the admin API of RustFS (/rustfs/admin/v3,
 # signed with the root key, curl needs --aws-sigv4: 7.75 or newer). The policy of an identity is built from its entry:
@@ -54,11 +58,13 @@ VAULT_TOKEN=""
 WORK_DIR=""
 ROOT_ACCESS_KEY=""
 ROOT_SECRET_KEY=""
+IS_DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --endpoint) S3_ENDPOINT="${2:?--endpoint needs an address}"; shift 2 ;;
-        -h|--help)  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --dry-run)  IS_DRY_RUN=true; shift ;;
+        -h|--help)  sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) error "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -238,6 +244,33 @@ create_buckets() {
     done
 }
 
+# is_bucket_declared <bucket>: true if the bucket is listed under "buckets" in identities.json
+is_bucket_declared() {
+    jq -e --arg bucket "$1" '.buckets | index($bucket) != null' "$IDENTITIES_FILE" >/dev/null
+}
+
+# remove_buckets: deletes the buckets under "removedBuckets" with all their objects (irreversible)
+remove_buckets() {
+    local bucket existing has_failed=false
+    existing=$(run_rclone lsf "RUSTFS:") || { error "Cannot list the buckets of RustFS"; return 1; }
+    while IFS= read -r bucket; do
+        if is_bucket_declared "$bucket"; then
+            error "Bucket '$bucket' is listed under both buckets and removedBuckets"
+            has_failed=true
+        elif ! grep -qxF "$bucket/" <<<"$existing"; then
+            success "Bucket '$bucket' is already gone"
+        elif [[ "$IS_DRY_RUN" == true ]]; then
+            warn "Would delete the bucket '$bucket' with all its objects (dry run)"
+        elif run_rclone purge "RUSTFS:$bucket" >/dev/null; then
+            success "Bucket '$bucket' deleted"
+        else
+            error "Cannot delete the bucket '$bucket' (see the message above)"
+            has_failed=true
+        fi
+    done < <(jq -r '.removedBuckets // [] | .[]' "$IDENTITIES_FILE")
+    [[ "$has_failed" == false ]]
+}
+
 # policy_document <readwrite|read> <bucket>...: the IAM policy document of an identity
 policy_document() {
     jq -n --arg access "$1" '
@@ -355,6 +388,12 @@ success "Root key of RustFS read from $VAULT_KV_MOUNT/rustfs"
 WORK_DIR=$(mktemp -d)
 step "RustFS"
 wait_for_s3
+step "Removed buckets"
+remove_buckets
+if [[ "$IS_DRY_RUN" == true ]]; then
+    info "Dry run: nothing else was changed"
+    exit 0
+fi
 step "Buckets"
 create_buckets
 step "Keys in Vault"
