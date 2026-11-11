@@ -32,7 +32,7 @@ Host lists are in `group_vars/all/main.yml`; per-host settings under `host_confi
 | `postgresql_apply` | `docker01` | timer that runs `apply_declared.sh` |
 | `mariadb`, `mariadb_exporter` | `docker01` | MariaDB, exporter on 9104 |
 | `database_tuning` | via `postgresql`, `mariadb` | sysctls, limits, THP |
-| `k3s`, `k3s_registries` | `k8sdev01` | k3s + Harbor pull-through mirror |
+| `k3s` | `k8sdev01` | k3s server configuration |
 
 ## Firewall
 
@@ -68,7 +68,7 @@ netbird up --setup-key <key> --management-url <url of the self-hosted server>
 |---|---|
 | Install | pinned `k3s_version`, official install script, `/etc/rancher/k3s/config.yaml` |
 | Flags | keys of `host_config.<host>.k3s_config` (`node-ip` defaults to primary IPv4) |
-| Registry mirror | role `k3s_registries` writes `/etc/rancher/k3s/registries.yaml` for `docker.io`, `ghcr.io` via Harbor; Harbor projects must be **public**, no credentials |
+| Image pulls | k3s pulls from the registry named in each image reference |
 | Node address | fixed `k3s_node_ip` (`10.254.0.1`) on the dummy interface `dummy0`, created by the unit `k3s-node-address.service` before every start of k3s. It is the `node-ip`, so a new **public** IP does not touch the cluster. The role refuses to change an existing `node-ip` (see [below](#change-the-node-address)) |
 | Kernel | `/etc/sysctl.d/90-kubelet.conf` (`k3s_kernel_sysctls`): the parameters the kubelet expects (without `protect-kernel-defaults` it would set them itself, the file makes them persistent) |
 | Etcd | embedded (`cluster-init`); snapshots only local in `/var/lib/rancher/k3s/server/db/snapshots`, **not backed up** |
@@ -77,6 +77,7 @@ netbird up --setup-key <key> --management-url <url of the self-hosted server>
 
 - Change a flag: edit `k3s_config`, `--tags k3s` (k3s restarts once, pods keep running)
 - Upgrade: change `k3s_version`, dry run (`--tags k3s --check --diff`), then apply. Renovate only raises the version
+- Retiring the Harbor mirrors: the `k3s` role removes `/etc/rancher/k3s/registries.yaml` when it contains exactly the former Ansible mirror configuration for Docker Hub and GHCR. The removal triggers a k3s restart. For a customized file, remove the old Harbor mirror entries manually, keep any registry credentials, and restart k3s
 
 ### Change the node address
 

@@ -30,9 +30,22 @@ rm <downloaded>.pem
 kubectl -n jenkins rollout restart statefulset jenkins
 ```
 
+## Harbor
+
+In each Harbor project that receives builds, open **Policy → Tag Retention** and add these rules. Both use **Repositories matching** `**` and retain the 5 most recently pushed artifacts per repository. Leave **Untagged artifacts** unchecked in both rules.
+
+| Builds | Tag filter |
+|---|---|
+| Snapshots | **matching** `*SNAPSHOT*` |
+| Releases | **excluding** `*SNAPSHOT*` |
+
+Run **Dry Run** and review the affected artifacts before enabling a schedule. Harbor keeps every tag on a retained digest. To retain multiple snapshot builds, push each build with a distinct tag containing `SNAPSHOT`. [Harbor retention rules](https://goharbor.io/docs/2.15.0/working-with-projects/working-with-images/create-tag-retention-rules/)
+
+In **Administration → Clean Up → Garbage Collection**, enable **Allow garbage collection on untagged artifacts** and run **Dry Run** before scheduling collection. Garbage collection applies to the whole registry and frees storage used by unreferenced blobs. [Harbor garbage collection](https://goharbor.io/docs/2.15.0/administration/garbage-collection/)
+
 ## Forgejo
 
-`cicd/helm/forgejo.yaml`: Forgejo (LTS, rootless) as package registry for own libraries (Maven; npm/Helm if needed). Container images stay in Harbor (pull-through cache feeds k3s), Git stays on GitHub: SSH and Actions are off. The chart recreates config, the local admin `localadmin` (emergency login, password from Vault) and auth source `keycloak` at every start. Keycloak login only, no registration, no anonymous access.
+`cicd/helm/forgejo.yaml`: Forgejo (LTS, rootless) as package registry for own libraries (Maven; npm/Helm if needed). Container images stay in Harbor, Git stays on GitHub: SSH and Actions are off. The chart recreates config, the local admin `localadmin` (emergency login, password from Vault) and auth source `keycloak` at every start. Keycloak login only, no registration, no anonymous access.
 
 - **Before the first sync:** `scripts/postgresql/db_create.sh forgejo` on `docker01`, then `Generate-Secrets.ps1 -Mount argocd` creates `argocd/data/forgejo` (`admin.password`, `oidc.client_secret`, `security.secret_key`, `security.internal_token`), last block copies DB user and password. **Never change `security.secret_key`** (encrypts auth-source secret, 2FA)
 - **Keycloak:** client `forgejo`, secret `FORGEJO_CLIENT_SECRET` (`vault kv get -field=oidc.client_secret argocd/forgejo`). Client role `forgejo` `user` or `admin` (`admin` = site admin); a user without one is refused. First login creates the user (claim `nickname`)

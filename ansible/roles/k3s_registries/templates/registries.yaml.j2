@@ -1,6 +1,0 @@
-mirrors:
-{% for registry in k3s_registries_mirrored %}
-  {{ registry }}:
-    endpoint:
-      - "https://{{ k3s_registries_harbor_host }}/v2/{{ registry }}"
-{% endfor %}

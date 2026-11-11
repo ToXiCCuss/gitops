@@ -104,9 +104,3 @@
   roles:
     - role: k3s
       tags: k3s
-
-- name: Configure Harbor pull-through mirrors for k3s
-  hosts: has_k3s
-  become: true
-  roles:
-    - k3s_registries

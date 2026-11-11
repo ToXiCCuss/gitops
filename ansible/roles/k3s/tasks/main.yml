@@ -101,6 +101,32 @@
     mode: "0600"
   notify: restart k3s
 
+- name: Check the previous registry configuration checksum
+  ansible.builtin.stat:
+    path: /etc/rancher/k3s/registries.yaml
+    checksum_algorithm: sha256
+  register: k3s_registries_current
+
+# Match the file rendered by the old role to preserve custom registry settings.
+- name: Remove the legacy Harbor mirror configuration
+  ansible.builtin.file:
+    path: /etc/rancher/k3s/registries.yaml
+    state: absent
+  vars:
+    k3s_legacy_registries: |
+      mirrors:
+        docker.io:
+          endpoint:
+            - "https://harbor.k8sdev.rjst.de/v2/docker.io"
+        ghcr.io:
+          endpoint:
+            - "https://harbor.k8sdev.rjst.de/v2/ghcr.io"
+  when: >-
+    (k3s_registries_current.stat.checksum | default(''))
+    == (k3s_legacy_registries | hash('sha256'))
+  diff: false
+  notify: restart k3s
+
 - name: Ensure the k3s service is enabled and running
   ansible.builtin.systemd:
     name: k3s

@@ -47,8 +47,7 @@ netbird_hosts:
 ssh_authorized_keys:
    - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ557k6uQaq3TV0Li8Y3+S3tOgQUPU6y0IM8E/TWSJGA robert@pc"
 
-# k3s nodes: installed by the k3s role (flags in host_config) and pulling images
-# through the public Harbor pull-through mirror.
+# k3s nodes installed by the k3s role (flags in host_config).
 k3s_hosts:
    - k8sdev01
 
