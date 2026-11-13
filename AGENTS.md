@@ -35,7 +35,7 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 
 ## Ansible and Docker
 - Ansible: dry run first (see `docs/ansible.md`, section "Run"), apply only on explicit request.
-- Database access is declared in `databases/postgresql.yaml`; the timer `postgresql-apply` (role `postgresql_apply`) applies it on docker01 within an hour of a merge to `master`, **including revokes and the deletions that the key `removed:` lists** (databases with all data, logins), never with `--prune`. So a change to the file is live like a merge for Argo CD. I change the file, I do not run `apply_declared.sh` against the host unless asked (`--dry-run` first).
+- Database access is declared in `databases/postgresql.yaml`; the timer `postgresql-apply` (role `postgresql_apply`) applies it on docker01 within 3 hours of a merge to `master`, **including revokes and the deletions that the key `removed:` lists** (databases with all data, logins), never with `--prune`. So a change to the file is live like a merge for Argo CD. I change the file, I do not run `apply_declared.sh` against the host unless asked (`--dry-run` first).
 - Docker projects: defaults in `default.env`, overrides in `override.env` (not in Git, keep the template `override.env.example` up to date).
 
 ## Check before "done" (local, without cluster)

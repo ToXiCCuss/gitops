@@ -132,8 +132,8 @@ All systemd timers set up by Ansible (no cron):
 
 | Timer | Host | When | What |
 |---|---|---|---|
-| `gitops-deploy.timer` | `docker01` | hourly 08:00-20:00 (`gitops_deploy_calendar`) | `deploy.sh --pull --metrics-file ...`, see [docker.md](docker.md#automatic-deploy) |
-| `postgresql-apply.timer` | `docker01` | hourly 08:30-20:30 (`postgresql_apply_calendar`) | `apply_declared.sh --pull --metrics-file ...`, see [databases.md](databases.md#automatic-apply) |
+| `gitops-deploy.timer` | `docker01` | every 3 hours 08:00-20:00 (`gitops_deploy_calendar`) | `deploy.sh --pull --metrics-file ...`, see [docker.md](docker.md#automatic-deploy) |
+| `postgresql-apply.timer` | `docker01` | every 3 hours 08:30-20:30 (`postgresql_apply_calendar`) | `apply_declared.sh --pull --metrics-file ...`, see [databases.md](databases.md#automatic-apply) |
 | `node-update-status.timer` | `docker01`, `k8sdev01` | 2 min after boot, then hourly | update metrics (above) |
 | unattended-upgrades | all | apt default | security updates, no reboot |
 

@@ -2,11 +2,11 @@
 # Checkout of this repository on the host. The timer runs apply_declared.sh from here, after a git pull.
 postgresql_apply_repository_dir: /root/gitops
 
-# When the runs start (systemd calendar event, local time of the host): hourly from 08:30 to 20:30, half an hour
+# When the runs start (systemd calendar event, local time of the host): every 3 hours from 08:30 to 20:30, half an hour
 # after gitops-deploy.timer so that the two never pull the same checkout at the same moment. There is no run at
 # night. The DatabasesApplyStale alert (kubernetes/monitoring/kubectl/alert-rules.yaml) knows this window, change
 # both together.
-postgresql_apply_calendar: "*-*-* 08..20:30:00"
+postgresql_apply_calendar: "*-*-* 08,11,14,17,20:30:00"
 
 # Textfile collector directory of the node_exporter (the same as node_exporter_textfile_dir in the
 # node_exporter role). apply_declared.sh leaves the result of every run there, Prometheus alerts on it.

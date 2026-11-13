@@ -81,7 +81,7 @@ people:                # personal logins, ro or rw per database
 
 ### Automatic apply
 
-Timer `postgresql-apply.timer` (role `postgresql_apply`, `docker01`) runs `apply_declared.sh --pull --metrics-file ...` in `/root/gitops` hourly 08:30-20:30 (`postgresql_apply_calendar`), half an hour after `gitops-deploy.timer`. A merge to `master` that changes `databases/postgresql.yaml` is live on the server within the hour, **including every revoke** (`ownerPrivileges`, `people:`) **and every deletion** that `removed:` lists. **Rollback = `git revert` on `master`** (deleted data is only in the backup). A failed `git pull` (e.g. DNS) is tried 4 times, 30 seconds apart, before the run counts as failed.
+Timer `postgresql-apply.timer` (role `postgresql_apply`, `docker01`) runs `apply_declared.sh --pull --metrics-file ...` in `/root/gitops` every 3 hours 08:30-20:30 (`postgresql_apply_calendar`), half an hour after `gitops-deploy.timer`. A merge to `master` that changes `databases/postgresql.yaml` is live on the server within 3 hours, **including every revoke** (`ownerPrivileges`, `people:`) **and every deletion** that `removed:` lists. **Rollback = `git revert` on `master`** (deleted data is only in the backup). A failed `git pull` (e.g. DNS) is tried 4 times, 30 seconds apart, before the run counts as failed.
 
 ```bash
 sudo ansible-playbook -i inventory.ini site.yml --tags postgresql_apply --check --diff   # in /root/gitops/ansible
@@ -95,7 +95,7 @@ sudo systemctl stop postgresql-apply.timer     # pause, e.g. while editing /root
 |---|---|
 | Never automatic | `--prune`: undeclared databases are only deleted by hand at a terminal. Undeclared databases and logins are only reported in the journal; only `removed:` deletes |
 | Preconditions | AppRole files `/etc/gitops/databases_role_id`, `databases_secret_id`; without them the run is skipped |
-| Pull fails | local changes or a commit not on `master` stop the run (also `DockerDeployPullFailed`) |
+| Pull fails | local changes or a commit not on `master` stop the run |
 | Metrics | `/var/lib/prometheus/node-exporter/postgresql-apply.prom`: `gitops_databases_apply_success`, `gitops_databases_last_run_timestamp_seconds`, `gitops_databases_last_success_timestamp_seconds`, `gitops_databases_revision_info{revision}` |
 | Alerts | `kubernetes/monitoring/kubectl/alert-rules.yaml` (`postgresql-apply`): `DatabasesApplyFailed` after 30 min, `DatabasesApplyStale`, `DatabasesApplyNeverReported` after 2 h, via Alertmanager to Discord |
 | First rollout | merge to `master`, `git pull` on the host, run the Ansible command; `--dry-run` of `apply_declared.sh` first must report only `unchanged` |

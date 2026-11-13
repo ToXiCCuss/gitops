@@ -66,7 +66,7 @@ flowchart TB
 flowchart LR
   pr["PR (you, Renovate)"] --> master[("master")]
   master -->|"automated sync, prune, selfHeal"| argo["Argo CD: Kubernetes"]
-  master -->|"hourly 08-20h: git pull + deploy.sh"| dock["docker01: Compose projects"]
+  master -->|"every 3 h 08-20h: git pull + deploy.sh"| dock["docker01: Compose projects"]
   master -.->|"by hand: git pull + ansible-playbook"| hosts["Hosts: Ansible roles"]
   jenkins["Jenkins (own Spring apps)"] -->|"helm upgrade"| spring["Namespaces dev and prod"]
 ```
@@ -74,9 +74,9 @@ flowchart LR
 | Target | Trigger | Rollback | Details |
 |---|---|---|---|
 | Kubernetes (`kubernetes/`) | merge to `master`, Argo CD syncs at once | `git revert` | [kubernetes.md](docs/kubernetes.md) |
-| Docker (`docker/`) | `gitops-deploy.timer`, hourly 08:00-20:00 (NetBird project: by hand) | `git revert` | [docker.md](docs/docker.md) |
+| Docker (`docker/`) | `gitops-deploy.timer`, every 3 hours 08:00-20:00 (NetBird project: by hand) | `git revert` | [docker.md](docs/docker.md) |
 | Hosts (`ansible/`) | by hand: dry run (`--check --diff`), then apply, on explicit request | `git revert` + re-run | [ansible.md](docs/ansible.md) |
-| Databases (`databases/`) | `postgresql-apply.timer`, hourly 08:30-20:30 (no `--prune`, MariaDB by hand) | `git revert` | [databases.md](docs/databases.md#declared-access) |
+| Databases (`databases/`) | `postgresql-apply.timer`, every 3 hours 08:30-20:30 (no `--prune`, MariaDB by hand) | `git revert` | [databases.md](docs/databases.md#declared-access) |
 | Versions | Renovate PRs (3 days minimum age); some Docker digests auto-merge | `git revert` | [updates.md](docs/updates.md) |
 
 ## Secrets

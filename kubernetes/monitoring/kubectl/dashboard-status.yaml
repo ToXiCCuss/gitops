@@ -1013,7 +1013,7 @@ data:
         {
           "id": 13,
           "type": "stat",
-          "title": "Docker deploy: last success (hourly 08-20, alert after 2 h by day)",
+          "title": "Docker deploy: last success (every 3 h 08-20, alert after 6 h by day)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1132,7 +1132,7 @@ data:
         {
           "id": 19,
           "type": "stat",
-          "title": "Databases apply: last success (hourly 08:30-20:30, alert after 2 h by day)",
+          "title": "Databases apply: last success (every 3 h 08:30-20:30, alert after 6 h by day)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"

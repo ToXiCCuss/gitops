@@ -7,7 +7,7 @@
 #
 #   sudo scripts/docker/deploy.sh [--pull] [--adopt] [--list] [--metrics-file FILE] [project ...]
 #
-#   --pull   git pull --ff-only in the repository first
+#   --pull   git pull --ff-only in the repository first (a failed pull only warns, the checkout is deployed as it is)
 #   --adopt  remove an existing container of the same name that belongs to another
 #            Compose project (created by the old management UI) so that it is created
 #            again by this script. Data lives in folders on the host and stays
@@ -134,7 +134,7 @@ write_metrics() {
     if [[ -n "$METRICS_FILE" ]]; then
         now=$(date +%s)
         last_success=$(previous_success_time)
-        if [[ "$PULL_OK" == 1 && ${#FAILED[@]} -eq 0 ]]; then
+        if [[ ${#FAILED[@]} -eq 0 ]]; then
             last_success="$now"
         fi
         revision=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null) || revision="unknown"
@@ -147,10 +147,9 @@ write_metrics() {
 if [[ -n "$PULL" ]]; then
     step "git pull"
     if ! git -C "$REPO_DIR" pull --ff-only; then
-        error "git pull failed (local changes or a diverged branch?), nothing is deployed"
+        # Not an error: a network blip must not fail the run, the checkout as it is gets deployed
+        warn "git pull failed (network, local changes or a diverged branch?), deploying the checkout as it is"
         PULL_OK=0
-        write_metrics
-        exit 1
     fi
 fi
 

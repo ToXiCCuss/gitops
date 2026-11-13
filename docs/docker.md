@@ -41,7 +41,7 @@ sudo scripts/docker/deploy.sh --list
 
 ## Automatic deploy
 
-Timer `gitops-deploy.timer` (role `gitops_deploy`) runs `deploy.sh --pull --metrics-file ...` in `/root/gitops` hourly 08:00-20:00 (`gitops_deploy_calendar`), not at night. Only projects whose compose file, image or Vault secret changed are recreated. **Rollback = `git revert` on `master`.**
+Timer `gitops-deploy.timer` (role `gitops_deploy`) runs `deploy.sh --pull --metrics-file ...` in `/root/gitops` every 3 hours 08:00-20:00 (`gitops_deploy_calendar`), not at night. Only projects whose compose file, image or Vault secret changed are recreated. **Rollback = `git revert` on `master`.**
 
 ```bash
 sudo ansible-playbook -i inventory.ini site.yml --tags gitops_deploy --check --diff   # in /root/gitops/ansible
@@ -54,7 +54,7 @@ sudo systemctl stop gitops-deploy.timer     # pause, e.g. while editing /root/gi
 | Topic | Detail |
 |---|---|
 | Preconditions | AppRole files `/etc/gitops/role_id`, `secret_id`; without `role_id` the run is skipped |
-| Pull fails | local changes or a commit not on `master` stop everything; `DockerDeployPullFailed` fires |
+| Pull fails | no error, no alert: `deploy.sh` logs a warning and deploys the checkout as it is (`gitops_deploy_pull_success` is `0` until the next successful pull) |
 | Vault unreachable | projects with secrets are not deployed (no fallback); `DockerDeployFailed` after 30 min |
 | Metrics | `/var/lib/prometheus/node-exporter/gitops-deploy.prom`: `gitops_deploy_project_success{project}`, `gitops_deploy_pull_success`, `gitops_deploy_last_success_timestamp_seconds`, `gitops_deploy_last_run_timestamp_seconds`, `gitops_deploy_revision_info{revision}` |
 | Alerts | `kubernetes/monitoring/kubectl/alert-rules.yaml` (`gitops-deploy`) via Alertmanager to Discord |

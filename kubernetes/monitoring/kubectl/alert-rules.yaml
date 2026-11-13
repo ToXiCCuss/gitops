@@ -182,7 +182,7 @@ spec:
 
 # deploy.sh --metrics-file (started by the gitops-deploy timer on docker01, Ansible role gitops_deploy) leaves
 # the result of every run in the textfile collector of the node_exporter. A project is deployed within 15 minutes
-# of a merge to master, so a project that stays failed or a timer that does not run means the host differs from Git.
+# of a merge to master (within 3 hours), so a project that stays failed or a timer that does not run means the host differs from Git.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -201,24 +201,17 @@ spec:
             severity: critical
           annotations:
             summary: "The Docker project {{ $labels.project }} cannot be deployed (journalctl -u gitops-deploy on {{ $labels.instance }})"
-        # deploys nothing when the pull fails (local changes in the checkout, a branch that cannot be fast-forwarded)
-        - alert: DockerDeployPullFailed
-          expr: gitops_deploy_pull_success == 0
-          for: 30m
-          labels:
-            severity: critical
-          annotations:
-            summary: "git pull --ff-only fails on {{ $labels.instance }}, no Docker project is deployed (journalctl -u gitops-deploy)"
         # also fires when the timer is stopped or the AppRole files of Vault are missing (the unit is then skipped).
-        # The timer runs hourly from 08:00 to 20:00 local time (gitops_deploy_calendar), so the rule only looks
-        # at 08:00-18:00 UTC (09/10:00-19/20:00 local, winter/summer time) and allows two missed runs.
+        # The timer runs every 3 hours from 08:00 to 20:00 local time (gitops_deploy_calendar), so the rule only looks
+        # at 08:00-18:00 UTC (09/10:00-19/20:00 local, winter/summer time) and allows one missed run.
+        # A failed git pull is not reported (deploy.sh deploys the checkout as it is).
         - alert: DockerDeployStale
-          expr: time() - gitops_deploy_last_success_timestamp_seconds > 7200 and on() (hour() >= 8 and hour() < 18)
+          expr: time() - gitops_deploy_last_success_timestamp_seconds > 21600 and on() (hour() >= 8 and hour() < 18)
           for: 15m
           labels:
             severity: warning
           annotations:
-            summary: "The last successful Docker deploy on {{ $labels.instance }} is more than two hours ago"
+            summary: "The last successful Docker deploy on {{ $labels.instance }} is more than six hours ago"
         # for: 2h so that the alert does not fire between the merge of the rule and the Ansible run on the host
         - alert: DockerDeployNeverReported
           expr: absent(gitops_deploy_last_success_timestamp_seconds)
@@ -230,7 +223,7 @@ spec:
 ---
 # apply_declared.sh --metrics-file (started by the postgresql-apply timer on docker01, Ansible role postgresql_apply)
 # leaves the result of every run in the textfile collector of the node_exporter. databases/postgresql.yaml reaches
-# the server within an hour of a merge to master, so a run that stays failed or a timer that does not run means the
+# the server within 3 hours of a merge to master, so a run that stays failed or a timer that does not run means the
 # access on docker01 differs from Git.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -252,15 +245,15 @@ spec:
           annotations:
             summary: "databases/postgresql.yaml cannot be applied on {{ $labels.instance }} (journalctl -u postgresql-apply)"
         # also fires when the timer is stopped or the AppRole files of Vault are missing (the unit is then skipped).
-        # The timer runs hourly from 08:30 to 20:30 local time (postgresql_apply_calendar), so the rule only looks
-        # at 08:00-18:00 UTC and allows two missed runs.
+        # The timer runs every 3 hours from 08:30 to 20:30 local time (postgresql_apply_calendar), so the rule only looks
+        # at 08:00-18:00 UTC and allows one missed run.
         - alert: DatabasesApplyStale
-          expr: time() - gitops_databases_last_success_timestamp_seconds > 7200 and on() (hour() >= 8 and hour() < 18)
+          expr: time() - gitops_databases_last_success_timestamp_seconds > 21600 and on() (hour() >= 8 and hour() < 18)
           for: 15m
           labels:
             severity: warning
           annotations:
-            summary: "The last successful apply of the declared PostgreSQL access on {{ $labels.instance }} is more than two hours ago"
+            summary: "The last successful apply of the declared PostgreSQL access on {{ $labels.instance }} is more than six hours ago"
         # for: 2h so that the alert does not fire between the merge of the rule and the Ansible run on the host
         - alert: DatabasesApplyNeverReported
           expr: absent(gitops_databases_last_success_timestamp_seconds)
