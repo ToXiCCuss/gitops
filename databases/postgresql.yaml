@@ -19,13 +19,6 @@ databases:
   edgerunner: {}
   er_launcher: {}
   er_launcher_dev: {}
-  metabase:
-    # Metabase initializes the trusted citext extension during its first DB migration.
-    ownerPrivileges: [create]
-  edgerunner_balance:
-    logins:
-      writer: rw
-      metabase: ro
   developer_portal:
     # Backstage creates one schema per plugin (backend.database.ensureSchemaExists) and the catalog uses temporary tables
     ownerPrivileges: [create, temporary]
@@ -34,3 +27,7 @@ databases:
   fw_chaos_dev: {}
   harbor: {}
   keycloak: {}
+
+# Metabase and the Edgerunner balance simulations were dismantled: their databases go with all roles and logins.
+removed:
+  databases: [metabase, edgerunner_balance]
