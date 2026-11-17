@@ -10,6 +10,7 @@ metadata:
     grafana_dashboard: "1"
   annotations:
     argocd.argoproj.io/sync-wave: "4"
+    grafana_folder: "Infrastructure"
     argocd.argoproj.io/sync-options: ServerSideApply=true
 data:
   node-exporter-full.json: |

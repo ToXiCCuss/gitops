@@ -94,7 +94,12 @@ spec:
                 dashboards:
                   enabled: true
                   searchNamespace: ALL
-              # The dashboards are ConfigMaps in kubernetes/monitoring/kubectl/dashboard-*.yaml, all in the root folder.
+                  # The folder of a dashboard is the annotation grafana_folder of its ConfigMap, which only takes effect
+                  # together with foldersFromFilesStructure.
+                  folderAnnotation: grafana_folder
+                  provider:
+                    foldersFromFilesStructure: true
+              # The dashboards are ConfigMaps in kubernetes/monitoring/kubectl/dashboard-*.yaml, grouped in folders by that annotation.
             kubeApiServer:
               enabled: true
             kubelet:

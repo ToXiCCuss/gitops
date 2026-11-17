@@ -11,6 +11,7 @@ metadata:
     grafana_dashboard: "1"
   annotations:
     argocd.argoproj.io/sync-wave: "4"
+    grafana_folder: "Databases"
 data:
   postgresql.json: |
     {
