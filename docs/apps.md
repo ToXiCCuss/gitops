@@ -82,7 +82,7 @@ Backstage as our own build (repository `developer-portal` in RJST-DEVELOP), depl
 
 | File | Content |
 |---|---|
-| `management/kubectl/developer-portal.yaml` | Gateway (8448), Service, VirtualService, NetBird resource, groups `k8s-developer-portal`, `developer-portal-users`. VirtualService targets `developer-portal:7007`; chart default is `<release>-backstage`, so the pipeline sets `fullnameOverride: developer-portal` |
+| `management/kubectl/developer-portal.yaml` | Gateway (8448), Service, VirtualService, NetBird resource. VirtualService targets `developer-portal:7007`; chart default is `<release>-backstage`, so the pipeline sets `fullnameOverride: developer-portal` |
 | `secrets/namespaces.yaml`, `secrets/developer-portal.yaml` | namespace and environment (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `AUTH_OIDC_CLIENT_SECRET`, `BACKEND_SECRET`, `GITHUB_APP_*`); chart reads it with `extraEnvVarsSecrets` |
 | `cicd/kubectl/helm-deployer.yaml` | Role of `helm-deployer` in `developer-portal`, namespaced, no RBAC |
 

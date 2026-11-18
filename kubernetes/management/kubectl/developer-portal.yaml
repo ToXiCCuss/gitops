@@ -11,30 +11,7 @@
 # The Secret developer-portal (kubernetes/secrets/developer-portal.yaml) holds the database login, the OIDC client
 # secret and the backend secret. The database developer_portal lives on docker01 (see scripts/postgresql).
 #
-# NetBird groups exist only while this frame is deployed (destination k8s-developer-portal, users developer-portal-users).
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: k8s-developer-portal
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: k8s-developer-portal
-
----
-
-apiVersion: netbird.io/v1alpha1
-kind: Group
-metadata:
-  name: developer-portal-users
-  namespace: netbird
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  name: developer-portal-users
-
----
+# Access runs through the shared groups (policy k8s-users -> kubernetes-services), no group per app.
 
 # developer-portal: https://developer-portal.k8sdev.rjst.de -> developer-portal.developer-portal:7007
 # Own Gateway/Service/listener/NetBird resource per app - see kube-istio-internal.yaml.
@@ -120,7 +97,6 @@ spec:
   serviceRef:
     name: gw-developer-portal
   groups:
-    - name: k8s-developer-portal
     - name: kubernetes-services
 
 ---
