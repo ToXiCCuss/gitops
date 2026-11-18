@@ -50,7 +50,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "count(kube_pod_container_info{namespace=~\"$namespace\"} unless on (namespace, pod, container) kube_pod_container_resource_limits{resource=\"memory\"}) or vector(0)",
+              "expr": "count((kube_pod_container_info{namespace=~\"$namespace\"} or kube_pod_init_container_info{namespace=~\"$namespace\"}) unless on (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\",namespace=~\".*\"} or kube_pod_init_container_resource_limits{resource=\"memory\",namespace=~\".*\"})) or vector(0)",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -109,7 +109,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "count(kube_pod_container_info{namespace=~\"$namespace\"} unless on (namespace, pod, container) kube_pod_container_resource_limits{resource=\"cpu\"}) or vector(0)",
+              "expr": "count((kube_pod_container_info{namespace=~\"$namespace\"} or kube_pod_init_container_info{namespace=~\"$namespace\"}) unless on (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"cpu\",namespace=~\".*\"} or kube_pod_init_container_resource_limits{resource=\"cpu\",namespace=~\".*\"})) or vector(0)",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -290,7 +290,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum(kube_pod_container_resource_limits{resource=\"memory\"} * on (namespace, pod) group_left () (kube_pod_status_phase{phase=~\"Running|Pending\"} == 1)) / sum(kube_node_status_allocatable{resource=\"memory\"}) * 100",
+              "expr": "sum((kube_pod_container_resource_limits{resource=\"memory\"} or (kube_pod_init_container_resource_limits{resource=\"memory\"} and on (namespace, pod, container) kube_pod_init_container_status_running == 1)) * on (namespace, pod) group_left () (kube_pod_status_phase{phase=~\"Running|Pending\"} == 1)) / sum(kube_node_status_allocatable{resource=\"memory\"}) * 100",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -353,7 +353,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\"} * on (namespace, pod) group_left () (kube_pod_status_phase{phase=~\"Running|Pending\"} == 1)) / sum(kube_node_status_allocatable{resource=\"memory\"}) * 100",
+              "expr": "sum((kube_pod_container_resource_requests{resource=\"memory\"} or (kube_pod_init_container_resource_requests{resource=\"memory\"} and on (namespace, pod, container) kube_pod_init_container_status_running == 1)) * on (namespace, pod) group_left () (kube_pod_status_phase{phase=~\"Running|Pending\"} == 1)) / sum(kube_node_status_allocatable{resource=\"memory\"}) * 100",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -416,7 +416,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "topk(15, (max by (namespace, pod, container) (container_memory_working_set_bytes{namespace=~\"$namespace\",container!=\"\",container!=\"POD\"})) / on (namespace, pod, container) (max by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\",namespace=~\"$namespace\"})) * 100)",
+              "expr": "topk(15, (max by (namespace, pod, container) (container_memory_working_set_bytes{namespace=~\"$namespace\",container!=\"\",container!=\"POD\"})) / on (namespace, pod, container) (max by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\",namespace=~\"$namespace\"} or kube_pod_init_container_resource_limits{resource=\"memory\",namespace=~\"$namespace\"})) * 100)",
               "legendFormat": "{{namespace}}/{{pod}}/{{container}}",
               "instant": true,
               "range": false,
@@ -626,7 +626,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (namespace) (kube_pod_container_resource_requests{resource=\"memory\",namespace=~\"$namespace\"}) > 0",
+              "expr": "sum by (namespace) (kube_pod_container_resource_requests{resource=\"memory\",namespace=~\"$namespace\"} or kube_pod_init_container_resource_requests{resource=\"memory\",namespace=~\"$namespace\"}) > 0",
               "legendFormat": "requests {{namespace}}",
               "instant": false,
               "range": true,
@@ -726,7 +726,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"memory\",namespace=~\"$namespace\"})",
+              "expr": "max by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"memory\",namespace=~\"$namespace\"} or kube_pod_init_container_resource_requests{resource=\"memory\",namespace=~\"$namespace\"})",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -738,7 +738,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\",namespace=~\"$namespace\"})",
+              "expr": "max by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\",namespace=~\"$namespace\"} or kube_pod_init_container_resource_limits{resource=\"memory\",namespace=~\"$namespace\"})",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -750,7 +750,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "(max by (namespace, pod, container) (container_memory_working_set_bytes{namespace=~\"$namespace\",container!=\"\",container!=\"POD\"})) / on (namespace, pod, container) (max by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\",namespace=~\"$namespace\"})) * 100",
+              "expr": "(max by (namespace, pod, container) (container_memory_working_set_bytes{namespace=~\"$namespace\",container!=\"\",container!=\"POD\"})) / on (namespace, pod, container) (max by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"memory\",namespace=~\"$namespace\"} or kube_pod_init_container_resource_limits{resource=\"memory\",namespace=~\"$namespace\"})) * 100",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -933,7 +933,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"cpu\",namespace=~\"$namespace\"})",
+              "expr": "max by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"cpu\",namespace=~\"$namespace\"} or kube_pod_init_container_resource_requests{resource=\"cpu\",namespace=~\"$namespace\"})",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -945,7 +945,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"cpu\",namespace=~\"$namespace\"})",
+              "expr": "max by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"cpu\",namespace=~\"$namespace\"} or kube_pod_init_container_resource_limits{resource=\"cpu\",namespace=~\"$namespace\"})",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -957,7 +957,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "(sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",container!=\"\",container!=\"POD\"}[5m]))) / on (namespace, pod, container) (max by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"cpu\",namespace=~\"$namespace\"})) * 100",
+              "expr": "(sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",container!=\"\",container!=\"POD\"}[5m]))) / on (namespace, pod, container) (max by (namespace, pod, container) (kube_pod_container_resource_limits{resource=\"cpu\",namespace=~\"$namespace\"} or kube_pod_init_container_resource_limits{resource=\"cpu\",namespace=~\"$namespace\"})) * 100",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -1128,7 +1128,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "(max by (namespace, pod, container) (container_memory_working_set_bytes{namespace=~\"$namespace\",container!=\"\",container!=\"POD\"})) / on (namespace, pod, container) (max by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"memory\",namespace=~\"$namespace\"}) > 0) * 100",
+              "expr": "(max by (namespace, pod, container) (container_memory_working_set_bytes{namespace=~\"$namespace\",container!=\"\",container!=\"POD\"})) / on (namespace, pod, container) (max by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"memory\",namespace=~\"$namespace\"} or kube_pod_init_container_resource_requests{resource=\"memory\",namespace=~\"$namespace\"}) > 0) * 100",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -1140,7 +1140,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "(sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",container!=\"\",container!=\"POD\"}[5m]))) / on (namespace, pod, container) (max by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"cpu\",namespace=~\"$namespace\"}) > 0) * 100",
+              "expr": "(sum by (namespace, pod, container) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",container!=\"\",container!=\"POD\"}[5m]))) / on (namespace, pod, container) (max by (namespace, pod, container) (kube_pod_container_resource_requests{resource=\"cpu\",namespace=~\"$namespace\"} or kube_pod_init_container_resource_requests{resource=\"cpu\",namespace=~\"$namespace\"}) > 0) * 100",
               "legendFormat": "",
               "instant": true,
               "range": false,
