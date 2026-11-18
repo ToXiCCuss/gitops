@@ -59,6 +59,14 @@ spec:
             grafana:
               enabled: true
               fullnameOverride: grafana
+              # 7 days at most 757 MiB and 0.11 cores
+              resources:
+                requests:
+                  cpu: 0
+                  memory: 0
+                limits:
+                  cpu: 500m
+                  memory: 1536Mi
               defaultDashboardsEnabled: false
               defaultDashboardsTimezone: Europe/Berlin
               serviceMonitor:

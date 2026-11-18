@@ -18,6 +18,14 @@ spec:
           value: |
             skipVaultPlugin: true
             injector:
+              # 7 days at most 64 MiB and 0.007 cores
+              resources:
+                requests:
+                  cpu: 0
+                  memory: 0
+                limits:
+                  cpu: 250m
+                  memory: 256Mi
               agentDefaults:
                 cpuLimit: "250m"
                 cpuRequest: "0"
@@ -28,6 +36,14 @@ spec:
               ui:
                 enabled: true
             server:
+              # 7 days at most 287 MiB and 0.05 cores. Generous: an OOM kill seals the node until the unsealer reacts.
+              resources:
+                requests:
+                  cpu: 0
+                  memory: 0
+                limits:
+                  cpu: 500m
+                  memory: 1Gi
               ha:
                 enabled: true
                 replicas: 1
