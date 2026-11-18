@@ -273,7 +273,7 @@ data:
         {
           "id": 5,
           "type": "stat",
-          "title": "Memory limits / node memory",
+          "title": "Memory limits / node memory (running pods)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -290,7 +290,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum(kube_pod_container_resource_limits{resource=\"memory\"}) / sum(kube_node_status_allocatable{resource=\"memory\"}) * 100",
+              "expr": "sum(kube_pod_container_resource_limits{resource=\"memory\"} * on (namespace, pod) group_left () (kube_pod_status_phase{phase=~\"Running|Pending\"} == 1)) / sum(kube_node_status_allocatable{resource=\"memory\"}) * 100",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -336,7 +336,7 @@ data:
         {
           "id": 6,
           "type": "stat",
-          "title": "Memory requests / node memory",
+          "title": "Memory requests / node memory (running pods)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -353,7 +353,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\"}) / sum(kube_node_status_allocatable{resource=\"memory\"}) * 100",
+              "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\"} * on (namespace, pod) group_left () (kube_pod_status_phase{phase=~\"Running|Pending\"} == 1)) / sum(kube_node_status_allocatable{resource=\"memory\"}) * 100",
               "legendFormat": "",
               "instant": true,
               "range": false,
