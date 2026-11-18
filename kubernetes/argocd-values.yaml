@@ -132,6 +132,14 @@ repoServer:
   initContainers:
     - name: download-tools
       image: registry.access.redhat.com/ubi8@sha256:d0cf91347dafeb7ef38ab463890ce2fccb1d57dd5cd1570c3d6e155ace8b2ffc
+      # Only downloads the AVP binary at the start of the pod: a short run, not measured
+      resources:
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 0
+          memory: 0
       env:
         - name: AVP_VERSION
           value: 1.16.1
