@@ -25,6 +25,15 @@ spec:
             controller:
               type: deployment
               replicas: 1
+            # The config-reloader sidecar: 7 days at most 46 MiB and no measurable CPU
+            configReloader:
+              resources:
+                requests:
+                  cpu: 0
+                  memory: 0
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
             alloy:
               enableReporting: false
               resources:

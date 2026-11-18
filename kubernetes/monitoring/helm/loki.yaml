@@ -45,6 +45,15 @@ spec:
               compactor:
                 retention_enabled: true
                 delete_request_store: filesystem
+            # The rules sidecar loki-sc-rules: 7 days at most 86 MiB and 0.001 cores
+            sidecar:
+              resources:
+                requests:
+                  cpu: 0
+                  memory: 0
+                limits:
+                  cpu: 250m
+                  memory: 256Mi
             singleBinary:
               replicas: 1
               resources:
