@@ -17,6 +17,17 @@ spec:
           service: tempo.tempo.svc.cluster.local
           port: 4317
   components:
+    pilot:
+      k8s:
+        # istiod: 7 days at most 274 MiB and 0.035 cores. The profile requests 500m and 2048Mi, which is more than
+        # the limit here, so the requests are set to 0 like for the other platform apps.
+        resources:
+          requests:
+            cpu: 0
+            memory: 0
+          limits:
+            cpu: 1000m
+            memory: 1Gi
     ingressGateways:
       - name: istio-ingressgateway
         enabled: true
