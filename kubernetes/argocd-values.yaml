@@ -114,6 +114,15 @@ notifications:
 
 
 repoServer:
+  # Limits about three times the maximum of 7 days (repo-server 310 MiB, avp 113 MiB, avp-helm 167 MiB): a sync renders
+  # every manifest, a broken chart must not take the whole node with it. Requests stay 0 like the other components.
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 0
+      memory: 0
   volumes:
     - configMap:
         name: cmp-plugin
@@ -139,6 +148,13 @@ repoServer:
     - name: avp
       command: [/var/run/argocd/argocd-cmp-server]
       image: registry.access.redhat.com/ubi8@sha256:d0cf91347dafeb7ef38ab463890ce2fccb1d57dd5cd1570c3d6e155ace8b2ffc
+      resources:
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 0
+          memory: 0
       env:
         - name: ARGOCD_ENV_VAULT_ADDR
           value: "http://vault.vault:8200"
@@ -167,6 +183,13 @@ repoServer:
     - name: avp-helm
       command: [/var/run/argocd/argocd-cmp-server]
       image: quay.io/argoproj/argocd:v3.5.3@sha256:dd3f47d5a5e4da563a7a398506e892481b358a7cec50abdf320c71aa55904bfa
+      resources:
+        limits:
+          cpu: 1000m
+          memory: 512Mi
+        requests:
+          cpu: 0
+          memory: 0
       env:
         - name: ARGOCD_ENV_VAULT_ADDR
           value: "http://vault.vault:8200"
