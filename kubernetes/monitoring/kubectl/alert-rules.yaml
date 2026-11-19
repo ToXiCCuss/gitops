@@ -156,7 +156,7 @@ spec:
         # A failed job stays in the history, so only jobs of the last day count.
         - alert: CronJobBackupFailed
           expr: |
-            kube_job_status_failed{job_name=~"forgejo-backup-.*"} > 0
+            kube_job_status_failed{job_name=~"(forgejo|vault)-backup-.*"} > 0
               and on (namespace, job_name) time() - kube_job_created < 24 * 3600
           for: 5m
           labels:

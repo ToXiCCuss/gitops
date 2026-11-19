@@ -147,6 +147,17 @@ Daily 02:30 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`): fetches the Raft snapshot (`sy
 - `docker compose up -d` in the vault-backup folder (or `deploy.sh vault-backup`)
 - Restore: `scripts/vault/vault_restore.sh` ([backups.md](backups.md#vault))
 
+### Cutover to the CronJob (prepared, not done yet)
+
+`kubernetes/infra/kubectl/kube-vault-backup.yaml` is the CronJob `vault-backup` in namespace `vault`, **suspended** (same repository `vault/raft`, same retention, same time 02:30 UTC). It replaces the container, because that container needs the host network only for NetBird DNS (`restart-host-network.sh`). The S3 stays on `docker01`, so the backup still lands outside the cluster. Order:
+
+1. Vault `argocd/data/vault-backup`: `token` (the periodic token of the container, `vault kv get -field=VAULT_TOKEN docker/vault-backup`), `restic_password` (the same `RESTIC_PASSWORD`), `s3_access_key`, `s3_secret_key` (`docker/s3/vault`). Hard Refresh of the Application `secrets` ([vault.md](vault.md#secrets))
+2. `sudo scripts/docker/undeploy.sh vault-backup` on `docker01`, then set `suspend: false` in the CronJob and merge
+3. Test: `kubectl -n vault create job vault-backup-test --from=cronjob/vault-backup`, then `restic snapshots` on `vault/raft`
+4. Then remove `docker/vault-backup`, its entries in `deploy.sh`, `backup-now.sh`, the `vault-backup` metrics rules (`BackupNeverReported`) and add `vault-backup` to `CronJobBackupTooOld` and `CronJobBackupNeverReported`
+
+The alert `CronJobBackupFailed` already covers the CronJob. Restore is unchanged.
+
 ## NetBird backup
 
 The NetBird server (`docker01`, `/root/netbird`, `NETBIRD_DIR` in `/etc/netbird-backup.cred`) is backed up by the scripts in `scripts/netbird/`:
