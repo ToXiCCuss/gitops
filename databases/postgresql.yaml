@@ -27,7 +27,3 @@ databases:
   fw_chaos_dev: {}
   harbor: {}
   keycloak: {}
-
-# Metabase and the Edgerunner balance simulations were dismantled: their databases go with all roles and logins.
-removed:
-  databases: [metabase, edgerunner_balance]

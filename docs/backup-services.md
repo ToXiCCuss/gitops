@@ -28,15 +28,6 @@ One container with one shell script (`docker/restic-backup/backup.sh`, no UI). O
 - Run now: `docker exec restic-backup sh /backup.sh now` (log must end with `Run finished`). Everything incl. offsite sync: `sudo scripts/docker/backup-now.sh` (`--background` survives a dropped SSH session, follow with `tail -f`); NetBird server separately via `netbird_backup.sh`
 - Failed steps are posted to Discord (optional) and the run exits with an error
 
-### Move from Backrest (once)
-
-1. `sudo scripts/docker/undeploy.sh --yes backrest` (data stays in `/root/docker/backrest`)
-2. `git pull`, `sudo scripts/docker/setup-backup-host.sh` (creates `/root/docker/restic-backup`; S3 keys from Vault `docker/s3/restic-backup`)
-3. `vault kv put docker/restic-backup ...` with the **same** `docker` password Backrest had
-4. `sudo scripts/docker/deploy.sh restic-backup`, `docker exec restic-backup sh /backup.sh now`; check `Run finished` and `backup_last_success_timestamp_seconds{backup="restic-backup"}` in Prometheus
-5. Dry run of forget on old snapshots: `docker exec restic-backup sh -c '. /common.sh && select_repository docker s3 && restic forget --dry-run --group-by "" --keep-daily 7 --keep-weekly 4 --keep-monthly 6'`
-6. Once trusted: `rm -r /root/docker/backrest`; remove the reverse proxy service `backrest.proxy.rjst.de` in the NetBird dashboard
-
 ## Database dumps
 
 `restic-backup` dumps the databases itself: it asks the server which exist, so a new database is in the next run. PostgreSQL 18 and MariaDB run on the host, the container reaches them as `host.docker.internal`.

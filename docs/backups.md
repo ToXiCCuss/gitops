@@ -80,7 +80,6 @@ docker exec offsite-sync sh -c 'wget -q -O /dev/null --header "Content-Type: app
 ```
 
 - An old `PUSH_URL` in a Vault secret or `/etc/netbird-backup.cred` is ignored: delete the line
-- Uptime Kuma is gone: `sudo scripts/docker/undeploy.sh uptimeKuma` (else `docker rm -f uptime-kuma`); data stays in `/root/docker/uptime-kuma` until deleted
 
 ## Backup age alerts
 
