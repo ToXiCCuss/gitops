@@ -1,0 +1,124 @@
+# Nightly Raft snapshot of Vault into the restic repository vault/raft on the RustFS S3 of docker01 (same repository,
+# retention and S3 identity as the container docker/vault-backup, which this CronJob replaces).
+# SUSPENDED until the cutover: Vault `argocd/data/vault-backup` must be filled first (kubernetes/secrets/vault-backup.yaml),
+# then the container vault-backup on docker01 is stopped and `suspend` is set to false, see docs/backup-services.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-backup
+  namespace: vault
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+data:
+  backup.sh: |
+    #!/bin/sh
+    # Logs in with the periodic token of the policy vault_snapshot (only allowed to read the snapshot),
+    # renews it on every run so it never expires, and stores the snapshot in restic.
+    set -eu
+
+    readonly VAULT_URL=http://vault.vault:8200
+    readonly SNAPSHOT_FILE=/dump/vault.snap
+    readonly REQUEST_TIMEOUT_SECONDS=30
+    readonly SNAPSHOT_TIMEOUT_SECONDS=300
+    readonly KEEP_DAILY=14
+    readonly KEEP_WEEKLY=8
+    readonly KEEP_MONTHLY=12
+    # The nightly restic check of restic-backup on docker01 may hold the lock for a while
+    readonly RETRY_LOCK=30m
+
+    log() { echo "$*" >&2; }
+
+    renewToken() {
+        curl -fsS -m "$REQUEST_TIMEOUT_SECONDS" -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
+            "$VAULT_URL/v1/auth/token/renew-self" >/dev/null
+    }
+
+    downloadSnapshot() {
+        curl -fsS -m "$SNAPSHOT_TIMEOUT_SECONDS" -H "X-Vault-Token: $VAULT_TOKEN" \
+            "$VAULT_URL/v1/sys/storage/raft/snapshot" -o "$SNAPSHOT_FILE"
+        if [ ! -s "$SNAPSHOT_FILE" ]; then
+            log "snapshot is empty"
+            exit 1
+        fi
+    }
+
+    main() {
+        apk add --no-cache curl restic >/dev/null
+        log "== renew the token and download the snapshot"
+        renewToken
+        downloadSnapshot
+        restic cat config >/dev/null 2>&1 || restic init
+        log "== back up the snapshot"
+        restic backup --tag vault --retry-lock "$RETRY_LOCK" "$SNAPSHOT_FILE"
+        rm -f "$SNAPSHOT_FILE"
+        log "== thin out and prune"
+        restic forget --tag vault --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" \
+            --keep-monthly "$KEEP_MONTHLY" --prune --retry-lock "$RETRY_LOCK"
+        log "Backup finished"
+    }
+
+    main "$@"
+
+---
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vault-backup
+  namespace: vault
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  suspend: true
+  # Before restic-backup on docker01 (03:00 UTC, checks this repository) and the offsite sync (05:00 UTC)
+  schedule: "30 2 * * *"
+  timeZone: Etc/UTC
+  # A run missed by more than this is dropped: the next night takes a new snapshot anyway
+  startingDeadlineSeconds: 600
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # No second try in a loop: the alert CronJobBackupFailed reports a failed night
+      backoffLimit: 0
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: backup
+              # The same image as restic-backup on docker01
+              image: alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+              command: ["/bin/sh", "/scripts/backup.sh"]
+              env:
+                - name: RESTIC_REPOSITORY
+                  value: s3:http://docker01.server.lan:9000/vault/raft
+                - name: RESTIC_CACHE_DIR
+                  value: /cache
+              # VAULT_TOKEN, RESTIC_PASSWORD and the S3 keys of the identity vault (kubernetes/secrets/vault-backup.yaml)
+              envFrom:
+                - secretRef:
+                    name: vault-backup
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: "1", memory: 512Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                # The snapshot lives only as long as the pod
+                - name: dump
+                  mountPath: /dump
+                - name: cache
+                  mountPath: /cache
+          volumes:
+            - name: scripts
+              configMap:
+                name: vault-backup
+            - name: dump
+              emptyDir: {}
+            - name: cache
+              emptyDir: {}
