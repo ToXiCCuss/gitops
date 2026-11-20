@@ -30,12 +30,10 @@ sudo scripts/docker/deploy.sh --list
 | `deploy.sh` | deploy; never removes anything |
 | `undeploy.sh <project>...` | remove containers and networks (data and volumes stay); asks first, `--yes` skips |
 | `cleanup.sh [--apply]` | dry run lists unused Docker resources; `--apply` removes only untagged unused images and build cache |
-| `restart-host-network.sh` | restart host-network containers after `apt upgrade` or a NetBird DNS change |
 | `backup-now.sh [--background]` | all backups + offsite sync now (log: `/var/log/backup-now.log`) |
 | `setup-backup-host.sh`, `setup-rustfs.sh`, `restore.sh` | see [backups.md](backups.md) |
 
 - `cleanup.sh` only lists: tagged images without container, volumes (data), stopped containers, networks, `netbird-rollback/*`, Pelican's own networks
-- `restart-host-network.sh`: host-network containers keep the `resolv.conf` copied at start, so they lose NetBird names (seen with the former `vault-backup` container: "Could not resolve host")
 - Containers mounting `/var/run/docker.sock` (`pelican_wings`): Docker runs with `live-restore`, so a `dockerd` restart leaves them on the old socket. Role `docker` adds a drop-in `docker.service.d/restart-socket-containers.conf` that restarts `docker_socket_containers` after each start
 - Move from the old management UI (once): `git pull`, `setup-backup-host.sh`, secrets into Vault, then deploy project by project with `--adopt` (removes the same-named container of another Compose project; short interruption, data stays), finally remove the old UI container
 
