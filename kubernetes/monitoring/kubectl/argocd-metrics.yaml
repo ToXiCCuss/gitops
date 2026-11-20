@@ -1,0 +1,28 @@
+# Metrics of Argo CD (application controller, repo-server, server, ApplicationSet controller) for the dashboard in
+# dashboard-argocd.yaml. A PodMonitor instead of the ServiceMonitors of the chart: Argo CD itself is installed by hand
+# (kubernetes/argocd-values.yaml, helm upgrade), this way the scrape config stays in Git and needs no upgrade.
+# Every component already exposes its metrics on a container port named metrics, and the network policies of the
+# chart allow that port from all namespaces.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: argocd
+  namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  namespaceSelector:
+    matchNames:
+      - argocd
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - argocd-application-controller
+          - argocd-repo-server
+          - argocd-server
+          - argocd-applicationset-controller
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s

@@ -1,0 +1,776 @@
+# Grafana picks this up through the dashboard sidecar (label grafana_dashboard, all namespaces).
+# Argo CD: state of every Application (sync and health), sync results, reconciliation and the repo-server.
+# The metrics come from the PodMonitor in argocd-metrics.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-argocd
+  namespace: prometheus
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+    grafana_folder: "Infrastructure"
+data:
+  argocd.json: |
+    {
+      "uid": "argocd",
+      "title": "Argo CD",
+      "tags": [
+        "argocd",
+        "gitops"
+      ],
+      "timezone": "Europe/Berlin",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": {
+        "from": "now-24h",
+        "to": "now"
+      },
+      "editable": true,
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Applications",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(argocd_app_info)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "description": "All Applications known to the controller",
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "0",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Out of sync",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(argocd_app_info{sync_status!=\"Synced\"}) or vector(0)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "description": "Applications whose live state differs from Git",
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "0",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Not healthy",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "count(argocd_app_info{health_status!=\"Healthy\"}) or vector(0)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "description": "Applications that are Degraded, Progressing, Missing, Suspended or Unknown",
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "0",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Failed syncs (24h)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(increase(argocd_app_sync_total{phase=~\"Error|Failed\"}[24h])) or vector(0)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "description": "Sync operations that ended in Error or Failed; the counter starts again when the controller restarts",
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "0",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          }
+        },
+        {
+          "id": 5,
+          "type": "table",
+          "title": "Applications",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 24,
+            "h": 11
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "argocd_app_info",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "No data"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Sync"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "Synced": {
+                            "color": "green",
+                            "index": 0
+                          },
+                          "OutOfSync": {
+                            "color": "orange",
+                            "index": 1
+                          },
+                          "Unknown": {
+                            "color": "red",
+                            "index": 2
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Health"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "Healthy": {
+                            "color": "green",
+                            "index": 0
+                          },
+                          "Progressing": {
+                            "color": "blue",
+                            "index": 1
+                          },
+                          "Suspended": {
+                            "color": "purple",
+                            "index": 2
+                          },
+                          "Degraded": {
+                            "color": "red",
+                            "index": 3
+                          },
+                          "Missing": {
+                            "color": "red",
+                            "index": 4
+                          },
+                          "Unknown": {
+                            "color": "red",
+                            "index": 5
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "sortBy": [
+              {
+                "displayName": "Application",
+                "desc": false
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "includeByName": {
+                  "name": true,
+                  "project": true,
+                  "dest_namespace": true,
+                  "sync_status": true,
+                  "health_status": true,
+                  "autosync_enabled": true,
+                  "repo": true
+                },
+                "indexByName": {
+                  "name": 0,
+                  "project": 1,
+                  "dest_namespace": 2,
+                  "sync_status": 3,
+                  "health_status": 4,
+                  "autosync_enabled": 5,
+                  "repo": 6
+                },
+                "renameByName": {
+                  "name": "Application",
+                  "project": "Project",
+                  "dest_namespace": "Namespace",
+                  "sync_status": "Sync",
+                  "health_status": "Health",
+                  "autosync_enabled": "Auto sync",
+                  "repo": "Repository"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Syncs by result",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 15,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (phase) (increase(argocd_app_sync_total[1h]))",
+              "legendFormat": "{{phase}}",
+              "refId": "A"
+            }
+          ],
+          "description": "Sync operations per hour",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Failed syncs by application",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 15,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (name) (increase(argocd_app_sync_total{phase=~\"Error|Failed\"}[1h])) > 0",
+              "legendFormat": "{{name}}",
+              "refId": "A"
+            }
+          ],
+          "description": "Sync operations per hour that ended in Error or Failed",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Reconciliation time (p95)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 23,
+            "w": 8,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(argocd_app_reconcile_bucket[5m])))",
+              "legendFormat": "p95",
+              "refId": "A"
+            }
+          ],
+          "description": "How long the controller needs to compare an Application with the cluster",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Git requests",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 23,
+            "w": 8,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (request_type) (rate(argocd_git_request_total[5m]))",
+              "legendFormat": "{{request_type}}",
+              "refId": "A"
+            }
+          ],
+          "description": "ls-remote and fetch of the repo-server",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "Git request time (p95)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 23,
+            "w": 8,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le, request_type) (rate(argocd_git_request_duration_seconds_bucket[5m])))",
+              "legendFormat": "{{request_type}}",
+              "refId": "A"
+            }
+          ],
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "Pending manifest requests",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 31,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum(argocd_repo_pending_request_total)",
+              "legendFormat": "pending",
+              "refId": "A"
+            }
+          ],
+          "description": "Requests waiting for the repo lock of the repo-server; a value that stays above 0 means rendering is stuck",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "Kubernetes API requests",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 31,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (verb) (rate(argocd_app_k8s_request_total[5m]))",
+              "legendFormat": "{{verb}}",
+              "refId": "A"
+            }
+          ],
+          "description": "Requests of the controller to the Kubernetes API",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        }
+      ]
+    }

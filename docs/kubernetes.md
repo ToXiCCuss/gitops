@@ -115,6 +115,8 @@ helm upgrade argocd argo/argo-cd -n argocd --values argocd-values.yaml
 
 Argo CD is not part of GitOps: a change of `argocd-values.yaml` only takes effect with `helm upgrade` (controller restarts briefly, Applications keep running).
 
+Its metrics are scraped by the PodMonitor `monitoring/kubectl/argocd-metrics.yaml` (port `metrics` of every component, so the chart's ServiceMonitors stay off); dashboard **Argo CD** in folder Infrastructure (`dashboard-argocd.yaml`).
+
 ### 2. Deploy Vault standalone
 
 ```bash
