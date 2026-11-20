@@ -348,7 +348,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "1 - sum(increase(mysql_global_status_innodb_buffer_pool_reads{instance=\"$instance\"}[$__range])) / sum(increase(mysql_global_status_innodb_buffer_pool_read_requests{instance=\"$instance\"}[$__range]))",
+              "expr": "1 - clamp_max(sum(increase(mysql_global_status_innodb_buffer_pool_reads{instance=\"$instance\"}[$__range])) / (sum(increase(mysql_global_status_innodb_buffer_pool_read_requests{instance=\"$instance\"}[$__range])) > 0), 1)",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -359,7 +359,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "percentunit",
-              "noValue": "No data",
+              "noValue": "No reads",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -391,7 +391,7 @@ data:
               ]
             }
           },
-          "description": "Share of InnoDB page reads served from the buffer pool over the selected time range."
+          "description": "Share of InnoDB page reads served from the buffer pool over the selected time range. Shows No reads when InnoDB read nothing in that range."
         },
         {
           "id": 7,
@@ -1168,7 +1168,7 @@ data:
         {
           "id": 18,
           "type": "timeseries",
-          "title": "InnoDB rows per second",
+          "title": "Row accesses per second",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1185,8 +1185,8 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (operation) (rate(mysql_global_status_innodb_row_ops_total{instance=\"$instance\"}[$__rate_interval]))",
-              "legendFormat": "{{operation}}",
+              "expr": "sum by (handler) (rate(mysql_global_status_handlers_total{instance=\"$instance\", handler=~\"read_key|read_next|read_rnd|read_rnd_next|write|update|delete\"}[$__rate_interval]))",
+              "legendFormat": "{{handler}}",
               "instant": false,
               "range": true,
               "format": "time_series",
@@ -1233,7 +1233,8 @@ data:
               "mode": "multi",
               "sort": "desc"
             }
-          }
+          },
+          "description": "Storage engine handler calls. read_rnd_next is a full table scan, read_key an index lookup."
         },
         {
           "id": 19,
@@ -1544,7 +1545,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "1 - rate(mysql_global_status_innodb_buffer_pool_reads{instance=\"$instance\"}[$__rate_interval]) / rate(mysql_global_status_innodb_buffer_pool_read_requests{instance=\"$instance\"}[$__rate_interval])",
+              "expr": "1 - clamp_max(rate(mysql_global_status_innodb_buffer_pool_reads{instance=\"$instance\"}[$__rate_interval]) / (rate(mysql_global_status_innodb_buffer_pool_read_requests{instance=\"$instance\"}[$__rate_interval]) > 0), 1)",
               "legendFormat": "Hit ratio",
               "instant": false,
               "range": true,
