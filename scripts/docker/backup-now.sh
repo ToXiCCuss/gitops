@@ -2,8 +2,8 @@
 # =============================================================================
 # backup-now.sh
 # Runs the backups of the Docker host once, right now, and then the offsite sync to pCloud:
-# vault-backup, restic-backup, offsite-sync (in this order, the sync last so that it copies the
-# fresh data). Each step is "docker exec <container> sh <script> now", the same as the nightly run.
+# restic-backup, offsite-sync (in this order, the sync last so that it copies the fresh data).
+# Each step is "docker exec <container> sh <script> now", the same as the nightly run.
 #
 #   sudo scripts/docker/backup-now.sh [--background]
 #
@@ -12,8 +12,9 @@
 #
 # Everything is also written to /var/log/backup-now.log (appended), so a run can be read afterwards.
 # A failed step does not stop the others, the script exits with 1 and names the failed steps.
-# Not covered: the NetBird server (sudo netbird_backup.sh on that host). Run it before this script
-# if it should be in the sync.
+# Not covered: the NetBird server (sudo netbird_backup.sh on that host) and the Vault backup, a CronJob
+# in the cluster (kubectl -n vault create job vault-backup-now --from=cronjob/vault-backup). Run them
+# before this script if they should be in the sync.
 # =============================================================================
 
 set -euo pipefail
@@ -27,7 +28,7 @@ error()   { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 step()    { echo -e "\n${BOLD}${CYAN}▶ $*${RESET}"; }
 
 # container:script, in the order they run
-STEPS=("vault-backup:/backup.sh" "restic-backup:/backup.sh" "offsite-sync:/sync.sh")
+STEPS=("restic-backup:/backup.sh" "offsite-sync:/sync.sh")
 LOG_FILE="/var/log/backup-now.log"
 FAILED=()
 

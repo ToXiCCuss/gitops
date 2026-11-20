@@ -8,7 +8,7 @@
 #
 # Why: a container copies the resolv.conf of the host when it starts. If NetBird changes the resolver
 # of the host afterwards, a container in the host network keeps the old copy and cannot resolve the
-# NetBird names any more (vault-backup: "Could not resolve host: vault.k8sdev.rjst.de") while the host
+# NetBird names any more (seen with the former vault-backup container: "Could not resolve host") while the host
 # still can. A restart copies the file again. The other containers have their own network and DNS and
 # are not affected, so they are left alone.
 # =============================================================================

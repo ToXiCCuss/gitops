@@ -137,12 +137,12 @@ spec:
           annotations:
             summary: "Backup {{ $labels.backup }} has no successful run for more than 26 hours"
         - alert: BackupNeverReported
-          expr: absent(backup_last_success_timestamp_seconds{backup="offsite-sync"}) or absent(backup_last_success_timestamp_seconds{backup="vault-backup"}) or absent(backup_last_success_timestamp_seconds{backup="restic-backup"})
+          expr: absent(backup_last_success_timestamp_seconds{backup="offsite-sync"}) or absent(backup_last_success_timestamp_seconds{backup="restic-backup"})
           for: 26h
           labels:
             severity: critical
           annotations:
-            summary: "offsite-sync, vault-backup or restic-backup never reported a successful run"
+            summary: "offsite-sync or restic-backup never reported a successful run"
         # restic-backup runs backup, forget, prune and check in one run and writes the result of every step
         # (restic_step_success), so a failed step shows up here the same night, not only after 26 hours
         - alert: ResticStepFailed
@@ -152,7 +152,8 @@ spec:
             severity: critical
           annotations:
             summary: "Step {{ $labels.step }} of the restic repository {{ $labels.repository }} failed"
-        # Forgejo backup is a CronJob in the cluster (forgejo-backup.yaml); its result comes from kube-state-metrics.
+        # The Forgejo and Vault backups are CronJobs in the cluster (forgejo-backup.yaml, kube-vault-backup.yaml);
+        # their result comes from kube-state-metrics.
         # A failed job stays in the history, so only jobs of the last day count.
         - alert: CronJobBackupFailed
           expr: |
@@ -164,19 +165,19 @@ spec:
           annotations:
             summary: "The backup job {{ $labels.job_name }} failed (kubectl -n {{ $labels.namespace }} logs job/{{ $labels.job_name }})"
         - alert: CronJobBackupTooOld
-          expr: time() - kube_cronjob_status_last_successful_time{cronjob="forgejo-backup"} > 26 * 3600
+          expr: time() - kube_cronjob_status_last_successful_time{cronjob=~"forgejo-backup|vault-backup"} > 26 * 3600
           for: 15m
           labels:
             severity: critical
           annotations:
             summary: "The backup {{ $labels.cronjob }} has no successful run for more than 26 hours"
         - alert: CronJobBackupNeverReported
-          expr: absent(kube_cronjob_status_last_successful_time{cronjob="forgejo-backup"})
+          expr: absent(kube_cronjob_status_last_successful_time{cronjob="forgejo-backup"}) or absent(kube_cronjob_status_last_successful_time{cronjob="vault-backup"})
           for: 26h
           labels:
             severity: critical
           annotations:
-            summary: "forgejo-backup never had a successful run"
+            summary: "forgejo-backup or vault-backup never had a successful run"
 
 ---
 

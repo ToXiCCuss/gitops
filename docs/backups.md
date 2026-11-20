@@ -48,7 +48,7 @@ flowchart LR
 |---|---|
 | Repository + data sample | `restic-backup` nightly on `docker`, `databases`, `vault`, `netbird` and `forgejo`: `restic check` with 10% read-data subset (`CHECK_READ_DATA_SUBSET`), whole repo read after ~10 nights |
 | Offsite copy | `rclone check --one-way --size-only` S3 -> pCloud after each sync (no common hash); mismatch fails the sync |
-| Failed jobs | Discord for offsite sync, `vault-backup`, `netbird_backup.sh`, optional `restic-backup` |
+| Failed jobs | Discord for offsite sync, `netbird_backup.sh`, optional `restic-backup`; Alertmanager -> Discord for the CronJobs `vault-backup` and `forgejo-backup` |
 | Missing runs | Prometheus age alerts ([below](#backup-age-alerts)) |
 | Restorable | by hand once per quarter, from **pCloud** |
 
@@ -69,7 +69,7 @@ Only failures are posted. A job that does not run at all sends nothing: look at 
 
 | Job | Where |
 |---|---|
-| `offsite-sync`, `vault-backup`, `restic-backup` | `DISCORD_WEBHOOK_URL` in Vault `docker/<project>` (`vault kv patch`), then `sudo scripts/docker/deploy.sh <project>` |
+| `offsite-sync`, `restic-backup` | `DISCORD_WEBHOOK_URL` in Vault `docker/<project>` (`vault kv patch`), then `sudo scripts/docker/deploy.sh <project>` |
 | `netbird_backup.sh` | `sudo ./netbird_backup_setup.sh --discord-webhook <url>` (writes `/etc/netbird-backup.cred`) |
 
 4. Test, a message must appear:
@@ -84,7 +84,7 @@ docker exec offsite-sync sh -c 'wget -q -O /dev/null --header "Content-Type: app
 
 ## Backup age alerts
 
-`offsite-sync`, `vault-backup`, `restic-backup` write `backup_last_success_timestamp_seconds{backup="<job>"}` to `/var/lib/prometheus/node-exporter/<job>.prom` after each success (`restic-backup`: only when every step worked). Rules in `kubernetes/monitoring/kubectl/alert-rules.yaml` fire when the last success is older than 26 h or a job never reported.
+`offsite-sync`, `restic-backup` write `backup_last_success_timestamp_seconds{backup="<job>"}` to `/var/lib/prometheus/node-exporter/<job>.prom` after each success (`restic-backup`: only when every step worked). Rules in `kubernetes/monitoring/kubectl/alert-rules.yaml` fire when the last success is older than 26 h or a job never reported.
 
 | Metric | Written by | Alert |
 |---|---|---|
@@ -109,18 +109,19 @@ docker exec offsite-sync sh -c 'wget -q -O /dev/null --header "Content-Type: app
 |---|---|
 | `docker/restic-backup` | `RESTIC_PASSWORD_DOCKER`, `RESTIC_PASSWORD_DATABASES` (new: `openssl rand -base64 24`, also into the password manager), `POSTGRES_PASSWORD`, optional `MARIADB_PASSWORD` ([dumps](backup-services.md#database-dumps)), `RESTIC_PASSWORD_VAULT`, `RESTIC_PASSWORD_NETBIRD` (= `RESTIC_PASSWORD` of `docker/vault-backup` = first line of `/root/restic`), optional `DISCORD_WEBHOOK_URL` |
 | `docker/offsite-sync` | `DISCORD_WEBHOOK_URL` |
-| `docker/vault-backup` | `VAULT_TOKEN`, `RESTIC_PASSWORD` (Vault repository), optional `DISCORD_WEBHOOK_URL` |
+| `docker/vault-backup` | `VAULT_TOKEN`, `RESTIC_PASSWORD` (Vault repository); kept as the source of `argocd/vault-backup` (CronJob, [backup-services.md](backup-services.md#vault-backup)) and of `RESTIC_PASSWORD_VAULT` |
 
 `VAULT_TOKEN` is a periodic token that may only read the Raft snapshot (policy `vault_snapshot`, `infra/kubectl/kube-vault-config.yaml`). Create it once with an admin token (shown once):
 
 ```bash
 vault token create -policy=vault_snapshot -period=768h -orphan -field=token
 vault kv patch docker/vault-backup VAULT_TOKEN=<token>
+vault kv patch argocd/vault-backup token=<token>
 ```
 
 - `docker01` must reach `https://vault.k8sdev.rjst.de`: it is a NetBird peer in group `k8s-users` (policy `k8s-users` -> `kubernetes-services`, see [netbird.md](netbird.md#configuration-for-kubernetes))
 
-6. Deploy: `sudo scripts/docker/deploy.sh restic-backup vault-backup offsite-sync`
+6. Deploy: `sudo scripts/docker/deploy.sh restic-backup offsite-sync`; the Vault backup is the CronJob `vault-backup` ([backup-services.md](backup-services.md#vault-backup))
 7. Database backup logins ([dumps](backup-services.md#database-dumps)), test: `docker exec restic-backup sh /backup.sh now`
 8. Restic passwords and `rclone.conf` into the password manager (without them pCloud backups are unreadable)
 
@@ -135,7 +136,7 @@ A backup never restored is not a backup. After the first nightly sync, then quar
 
 **Keep in the password manager** (not on the servers, nothing is readable without them):
 
-- restic passwords of `docker`, `databases` (project `restic-backup`), `vault` (project `vault-backup`), `netbird` (`/root/restic`)
+- restic passwords of `docker`, `databases` (project `restic-backup`), `vault` (CronJob `vault-backup`), `netbird` (`/root/restic`)
 - the pCloud `rclone.conf` (token)
 - Vault unseal keys and root token (printed once by `vault operator init`)
 

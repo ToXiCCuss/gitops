@@ -7,7 +7,7 @@ node_exporter_package_name: prometheus-node-exporter
 node_exporter_service_name: prometheus-node-exporter
 
 # Directory of the textfile collector. The backup jobs write their *.prom files there
-# (docker/offsite-sync, docker/vault-backup, docker/restic-backup, scripts/netbird/netbird_backup.sh).
+# (docker/offsite-sync, docker/restic-backup, scripts/netbird/netbird_backup.sh).
 node_exporter_textfile_dir: /var/lib/prometheus/node-exporter
 
 # Mounts that the filesystem collector leaves out (regular expression). The default of the exporter plus the

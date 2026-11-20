@@ -1,7 +1,6 @@
-# Nightly Raft snapshot of Vault into the restic repository vault/raft on the RustFS S3 of docker01 (same repository,
-# retention and S3 identity as the container docker/vault-backup, which this CronJob replaces).
-# SUSPENDED until the cutover: Vault `argocd/data/vault-backup` must be filled first (kubernetes/secrets/vault-backup.yaml),
-# then the container vault-backup on docker01 is stopped and `suspend` is set to false, see docs/backup-services.md.
+# Nightly Raft snapshot of Vault into the restic repository vault/raft on the RustFS S3 of docker01, so the backup
+# still lands outside the cluster. Replaced the container docker/vault-backup on 2026-11-20 (same repository and
+# S3 identity vault). Environment: kubernetes/secrets/vault-backup.yaml (Vault argocd/data/vault-backup).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -25,6 +24,10 @@ data:
     readonly KEEP_MONTHLY=12
     # The nightly restic check of restic-backup on docker01 may hold the lock for a while
     readonly RETRY_LOCK=30m
+    # A fixed host name instead of the pod name, and forget groups by tag: restic groups by host and path by
+    # default, which made every snapshot its own group (pod names and the dated file names of the old
+    # container), so the retention never removed anything
+    readonly SNAPSHOT_HOST=vault-backup
 
     log() { echo "$*" >&2; }
 
@@ -49,10 +52,10 @@ data:
         downloadSnapshot
         restic cat config >/dev/null 2>&1 || restic init
         log "== back up the snapshot"
-        restic backup --tag vault --retry-lock "$RETRY_LOCK" "$SNAPSHOT_FILE"
+        restic backup --host "$SNAPSHOT_HOST" --tag vault --retry-lock "$RETRY_LOCK" "$SNAPSHOT_FILE"
         rm -f "$SNAPSHOT_FILE"
         log "== thin out and prune"
-        restic forget --tag vault --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" \
+        restic forget --tag vault --group-by tags --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" \
             --keep-monthly "$KEEP_MONTHLY" --prune --retry-lock "$RETRY_LOCK"
         log "Backup finished"
     }
@@ -69,7 +72,6 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "4"
 spec:
-  suspend: true
   # Before restic-backup on docker01 (03:00 UTC, checks this repository) and the offsite sync (05:00 UTC)
   schedule: "30 2 * * *"
   timeZone: Etc/UTC

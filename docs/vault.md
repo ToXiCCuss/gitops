@@ -236,4 +236,4 @@ done
 
 ## Backups
 
-Vault is backed up from the Docker host, not Kubernetes: periodic token with policy `vault_snapshot`, independent of the cluster. See [backup-services.md](backup-services.md#vault-backup) and [backups.md](backups.md#vault).
+Vault is backed up by the CronJob `vault-backup` in namespace `vault`: periodic token with policy `vault_snapshot`, the restic repository lives on the RustFS of `docker01`, outside the cluster. See [backup-services.md](backup-services.md#vault-backup) and [backups.md](backups.md#vault).

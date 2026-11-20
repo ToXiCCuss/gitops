@@ -48,11 +48,11 @@ DOCKER_DIR="$REPO_DIR/docker"
 
 # Order: the S3 first, the services that write to it afterwards. netbird is left out on purpose, so the timer never
 # touches it: deploy it by name (docker/netbird/docker-compose.yml says why)
-ALL_PROJECTS=(rustfs restic-backup keycloak keycloak-config offsite-sync vault-backup pelicanPanel pelicanWings cadvisor)
+ALL_PROJECTS=(rustfs restic-backup keycloak keycloak-config offsite-sync pelicanPanel pelicanWings cadvisor)
 
 # Projects that need the keys of an S3 identity (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), as project:identity.
 # The keys are docker/s3/<identity> in Vault (docs/vault.md: Secrets)
-S3_IDENTITIES=(restic-backup:restic-backup offsite-sync:offsite-sync vault-backup:vault)
+S3_IDENTITIES=(restic-backup:restic-backup offsite-sync:offsite-sync)
 VAULT_ADDR="${VAULT_ADDR:-https://vault.k8sdev.rjst.de}"
 VAULT_KV_MOUNT="docker"
 VAULT_ROLE_ID_FILE="/etc/gitops/role_id"

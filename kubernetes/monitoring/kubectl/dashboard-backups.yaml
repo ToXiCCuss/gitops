@@ -1,5 +1,5 @@
 # Grafana picks this up through the dashboard sidecar (label grafana_dashboard, all namespaces).
-# Backup view: host jobs (offsite-sync, vault-backup, restic-backup via node_exporter textfile), the restic steps and
+# Backup view: host jobs (offsite-sync, restic-backup via node_exporter textfile), the restic steps and
 # repositories, and the backup CronJobs of the cluster (kube-state-metrics). Alert rules: alert-rules.yaml, group backups.
 apiVersion: v1
 kind: ConfigMap

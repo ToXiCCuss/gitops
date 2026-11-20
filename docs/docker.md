@@ -4,7 +4,7 @@ Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker
 
 | Project | Purpose |
 |---|---|
-| `restic-backup`, `vault-backup`, `offsite-sync`, `rustfs` | backups, see [backups.md](backups.md) |
+| `restic-backup`, `offsite-sync`, `rustfs` | backups, see [backups.md](backups.md) |
 | `netbird` | self-hosted NetBird server, see [netbird.md](netbird.md) |
 | `keycloak`, `keycloak-config` | login, see [keycloak.md](keycloak.md) |
 | `pelicanPanel`, `pelicanWings` | game servers |
@@ -12,7 +12,7 @@ Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker
 
 - Images pinned by digest, updated by Renovate ([updates.md](updates.md))
 - Per project: `default.env` (all variables, empty secrets), `vault.env.example` (keys from Vault; `NAME=` required, `#NAME=` optional)
-- Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `vault-backup`, `keycloak`, `keycloak-config`, `netbird`
+- Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `keycloak`, `keycloak-config`, `netbird`
 
 ## Deploy
 
@@ -20,7 +20,7 @@ Idempotent: a project is only recreated when its compose file, image or environm
 
 ```bash
 sudo scripts/docker/deploy.sh                            # all projects, fixed order
-sudo scripts/docker/deploy.sh restic-backup vault-backup # only these
+sudo scripts/docker/deploy.sh restic-backup offsite-sync # only these
 sudo scripts/docker/deploy.sh --pull rustfs              # git pull --ff-only first
 sudo scripts/docker/deploy.sh --list
 ```
@@ -35,7 +35,7 @@ sudo scripts/docker/deploy.sh --list
 | `setup-backup-host.sh`, `setup-rustfs.sh`, `restore.sh` | see [backups.md](backups.md) |
 
 - `cleanup.sh` only lists: tagged images without container, volumes (data), stopped containers, networks, `netbird-rollback/*`, Pelican's own networks
-- `restart-host-network.sh`: host-network containers keep the `resolv.conf` copied at start, so they lose NetBird names (`vault-backup`: "Could not resolve host: vault.k8sdev.rjst.de")
+- `restart-host-network.sh`: host-network containers keep the `resolv.conf` copied at start, so they lose NetBird names (seen with the former `vault-backup` container: "Could not resolve host")
 - Containers mounting `/var/run/docker.sock` (`pelican_wings`): Docker runs with `live-restore`, so a `dockerd` restart leaves them on the old socket. Role `docker` adds a drop-in `docker.service.d/restart-socket-containers.conf` that restarts `docker_socket_containers` after each start
 - Move from the old management UI (once): `git pull`, `setup-backup-host.sh`, secrets into Vault, then deploy project by project with `--adopt` (removes the same-named container of another Compose project; short interruption, data stays), finally remove the old UI container
 
@@ -87,7 +87,7 @@ sequenceDiagram
 | Setup | KV engine `docker` and the files: [vault.md](vault.md#approle-logins-of-the-hosts) |
 | **No CIDR binding** | Vault sees a pod address (`10.42.x.x`), else "source address unauthorized by CIDR restrictions" |
 | Compose | reads `default.env` and `vault.env` (later wins; `vault.env` optional only so `docker compose logs` works) |
-| S3 keys | `restic-backup`, `offsite-sync`, `vault-backup` get theirs from `docker/s3/<identity>` (added by `deploy.sh`; `vault-backup` uses identity `vault`) |
+| S3 keys | `restic-backup`, `offsite-sync` get theirs from `docker/s3/<identity>` (added by `deploy.sh`) |
 | Needs | `curl`, `jq` on the host |
 | Values | no single quote or control character (line break); `deploy.sh` refuses them |
 | Vault down / secret missing | project not deployed, running containers untouched, no fallback |

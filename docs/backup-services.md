@@ -140,23 +140,13 @@ docker run --rm --network pelicanpanel_default alpine nc -zv -w 5 100.67.0.1 900
 
 ## Vault backup
 
-Daily 02:30 UTC (`BACKUP_HOUR`, `BACKUP_MINUTE`): fetches the Raft snapshot (`sys/storage/raft/snapshot`), writes it with restic to `vault/raft`, applies retention (`KEEP_*`, default 14d/8w/12m), reports failures to Discord. Runs in the host network (NetBird DNS to reach Vault, S3 on `127.0.0.1`).
+CronJob `vault-backup` in namespace `vault` (`kubernetes/infra/kubectl/kube-vault-backup.yaml`), daily 02:30 UTC: fetches the Raft snapshot (`sys/storage/raft/snapshot`) from `http://vault.vault:8200`, writes it with restic to `vault/raft` on the RustFS of `docker01` (`docker01.server.lan:9000`, so the backup still lands outside the cluster) and applies the retention 14d/8w/12m. Snapshots carry the host `vault-backup` and `forget` groups by tag, so older snapshots of the former container (host `docker01`) fall under the same retention. Replaced the Docker container `docker/vault-backup` on 2026-11-20.
 
 - Token: periodic, renewed by every run, valid as long as the backup runs at least once per period (32 days); create as in [backups.md](backups.md#setup-order)
-- Vault secret `docker/vault-backup`: `VAULT_TOKEN`, `RESTIC_PASSWORD`, optional `DISCORD_WEBHOOK_URL`; S3 keys of identity `vault` added from `docker/s3/vault`
-- `docker compose up -d` in the vault-backup folder (or `deploy.sh vault-backup`)
+- Vault secret `argocd/vault-backup`: `token`, `restic_password`, `s3_access_key`, `s3_secret_key` (keys of identity `vault`), rendered by AVP into the Secret `vault/vault-backup` (`kubernetes/secrets/vault-backup.yaml`); after a change a Hard Refresh of the Application `secrets`
+- Failures: alerts `CronJobBackupFailed`, `CronJobBackupTooOld`, `CronJobBackupNeverReported` (Alertmanager -> Discord)
+- Run now: `kubectl -n vault create job vault-backup-now --from=cronjob/vault-backup`
 - Restore: `scripts/vault/vault_restore.sh` ([backups.md](backups.md#vault))
-
-### Cutover to the CronJob (prepared, not done yet)
-
-`kubernetes/infra/kubectl/kube-vault-backup.yaml` is the CronJob `vault-backup` in namespace `vault`, **suspended** (same repository `vault/raft`, same retention, same time 02:30 UTC). It replaces the container, because that container needs the host network only for NetBird DNS (`restart-host-network.sh`). The S3 stays on `docker01`, so the backup still lands outside the cluster. Order:
-
-1. Vault `argocd/data/vault-backup`: `token` (the periodic token of the container, `vault kv get -field=VAULT_TOKEN docker/vault-backup`), `restic_password` (the same `RESTIC_PASSWORD`), `s3_access_key`, `s3_secret_key` (`docker/s3/vault`). Hard Refresh of the Application `secrets` ([vault.md](vault.md#secrets))
-2. `sudo scripts/docker/undeploy.sh vault-backup` on `docker01`, then set `suspend: false` in the CronJob and merge
-3. Test: `kubectl -n vault create job vault-backup-test --from=cronjob/vault-backup`, then `restic snapshots` on `vault/raft`
-4. Then remove `docker/vault-backup`, its entries in `deploy.sh`, `backup-now.sh`, the `vault-backup` metrics rules (`BackupNeverReported`) and add `vault-backup` to `CronJobBackupTooOld` and `CronJobBackupNeverReported`
-
-The alert `CronJobBackupFailed` already covers the CronJob. Restore is unchanged.
 
 ## NetBird backup
 
