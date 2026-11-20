@@ -199,7 +199,7 @@ mariadb <database> < <folder>/dump/mariadb/<database>.sql
 sudo RESTIC_PASSWORD_FILE=/root/restic-vault scripts/vault/vault_restore.sh
 ```
 
-- A snapshot replaces all Vault data; after restoring a snapshot of another cluster the unseal keys of the backed-up cluster apply and the restore may need `-force`
+- A snapshot replaces all Vault data. Into a Vault with other unseal keys (freshly initialised after a total loss) add `--force` (Vault skips its hash check); afterwards that Vault opens only with the unseal keys and root token of the backed-up Vault. Rolling back the same Vault needs no `--force`
 - Snapshots from before the move: `rclone:pCloud:/Backups/vault_pb` (set `RESTIC_REPOSITORY`)
 
 ### NetBird

@@ -2,6 +2,12 @@
 # =============================================================================
 # vault_restore.sh
 # Restores a Vault Raft snapshot from the restic repository.
+#
+#   sudo scripts/vault/vault_restore.sh [--force]
+#
+#   --force   restore into a Vault with other unseal keys (a freshly initialised Vault after a total
+#             loss). Vault then skips its check of the snapshot's hash file, and afterwards it is sealed
+#             with the unseal keys of the backed-up Vault. Not needed to roll back the same Vault
 # =============================================================================
 
 set -euo pipefail
@@ -59,6 +65,23 @@ check_dependencies() {
     fi
 }
 
+usage() {
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' >&2
+}
+
+# Extra arguments of "vault operator raft snapshot restore", set by --force
+RESTORE_FLAGS=()
+
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force)   RESTORE_FLAGS=(-force); shift ;;
+            -h|--help) usage; exit 0 ;;
+            *)         error "Unknown argument: $1"; usage; exit 2 ;;
+        esac
+    done
+}
+
 # ── 2. List Snapshots ─────────────────────────────────────────────────────────
 list_snapshots() {
     step "Available snapshots in remote repository"
@@ -67,6 +90,7 @@ list_snapshots() {
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 main() {
+    parse_arguments "$@"
     check_root
     check_dependencies
 
@@ -104,6 +128,9 @@ main() {
     # Confirm before proceeding
     warn "CRITICAL: Restoring a snapshot will OVERWRITE all current Vault data."
     warn "Vault must be unsealed to perform this operation."
+    if [[ ${#RESTORE_FLAGS[@]} -gt 0 ]]; then
+        warn "--force: the hash check is skipped; afterwards Vault opens only with the unseal keys of the backed-up Vault."
+    fi
     read -rp "Are you sure you want to proceed? [y/N]: " CONFIRM
     if [[ ! "$CONFIRM" =~ ^[yY]$ ]]; then
         info "Restore cancelled."
@@ -111,11 +138,11 @@ main() {
     fi
 
     step "Performing Vault Raft restore..."
-    if vault operator raft snapshot restore "$SNAP_FILE"; then
+    if vault operator raft snapshot restore "${RESTORE_FLAGS[@]}" "$SNAP_FILE"; then
         success "Vault restore completed successfully."
         info "Note: You might need to check Vault's status and unseal it if necessary."
     else
-        error "Vault restore failed."
+        error "Vault restore failed. A snapshot of a Vault with other unseal keys needs --force."
         exit 1
     fi
 }
