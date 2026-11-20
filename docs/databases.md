@@ -119,7 +119,7 @@ Role sets `bind-address` and `event_scheduler = ON` (`/etc/mysql/mariadb.conf.d/
 - Costs one extra INSERT (all columns as JSON) per audited write: enable only where history is needed
 - Partition `p_future` catches rows without a monthly partition; a stopped event scheduler only leaves partitions unmaintained
 - **Monitoring:** role `mariadb_exporter` (`prometheus-mysqld-exporter`, port 9104, job `mysqld-exporter`, alert `MariaDBDown` on `mysql_up`). Login: user `prometheus@localhost` via socket (`unix_socket`, no password, `MAX_USER_CONNECTIONS 3`) with `PROCESS`, `BINLOG MONITOR`, `REPLICA MONITOR`, `SELECT` on `performance_schema.*`. Role creates the user. Collector `info_schema.processlist` enabled
-- **Dashboard:** patched copy of 14057 in `kubernetes/monitoring/kubectl/dashboard-mariadb.yaml` (original filters on an undefined variable and reads a metric the exporter no longer has)
+- **Dashboard:** own build in `kubernetes/monitoring/kubectl/dashboard-mariadb.yaml` (folder Databases, uid `mariadb`): sessions, throughput, InnoDB, tables and threads, exporter health. Replaces the import 14057; the session panel needs the `info_schema.processlist` collector
 - **Backups:** `restic-backup` dumps with `mariadb-dump` once `MARIADB_PASSWORD` is in `docker/restic-backup`, see [backup-services.md](backup-services.md#database-dumps). `mariabackup` (physical) is for later
 
 ## PostgreSQL
@@ -140,4 +140,4 @@ Audit log as for MariaDB. Role `postgresql` preloads `pg_cron` (`shared_preload_
 - After the Ansible run check `SHOW shared_preload_libraries;`
 - PostgreSQL accepts connections from every address (`pg_hba.conf` `0.0.0.0/0`, `listen_addresses = '*'`): the firewall allows only the Docker network for 5432
 - **Monitoring:** role `postgres_exporter` (port 9187, peer login as DB role `prometheus` with `pg_monitor`, extension `pg_stat_statements`, extra collectors in `postgres_exporter_collectors`), `pg_up` for alerts
-- **Dashboards:** `PostgreSQL` is an own build in `kubernetes/monitoring/kubectl/dashboard-postgresql-own.yaml` (folder Databases, uid `postgresql`): sessions and locks, throughput, storage and transaction ID age, checkpoints, `pg_stat_statements` top 10, exporter health. It sits next to `PostgreSQL Database`, the patched import 9628 (`dashboard-postgresql.yaml`). The SQL text of a statement is not exported (only the Query ID), look it up in `pg_stat_statements`
+- **Dashboard:** own build in `kubernetes/monitoring/kubectl/dashboard-postgresql.yaml` (folder Databases, uid `postgresql`): sessions and locks, throughput, storage and transaction ID age, checkpoints, `pg_stat_statements` top 10, exporter health. Replaces the import 9628. The SQL text of a statement is not exported (only the Query ID), look it up in `pg_stat_statements`
