@@ -115,7 +115,7 @@ helm upgrade argocd argo/argo-cd -n argocd --values argocd-values.yaml
 
 Argo CD is not part of GitOps: a change of `argocd-values.yaml` only takes effect with `helm upgrade` (controller restarts briefly, Applications keep running).
 
-Its metrics are scraped by the PodMonitor `monitoring/kubectl/argocd-metrics.yaml` (port `metrics` of every component, so the chart's ServiceMonitors stay off); dashboard **Argo CD** in folder Infrastructure (`dashboard-argocd.yaml`).
+Its metrics are scraped by the PodMonitor `monitoring/kubectl/argocd-metrics.yaml` (port `metrics` of every component, so the chart's ServiceMonitors stay off); dashboard **Argo CD** in folder Infrastructure (`dashboard-argocd.yaml`). Alerts to Discord (`alert-rules.yaml`, group `argocd`): `ArgoAppOutOfSync` (30 min), `ArgoAppUnhealthy` (Degraded, Missing or Unknown for 15 min), `ArgoAppProgressingTooLong` (1 h). A Secret that AVP drops for a missing Vault key leaves the Application `Synced` and raises none of them.
 
 ### 2. Deploy Vault standalone
 

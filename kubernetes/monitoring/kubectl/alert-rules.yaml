@@ -263,3 +263,44 @@ spec:
             severity: warning
           annotations:
             summary: "The postgresql-apply timer on docker01 never reported a successful run"
+---
+# State of the Argo CD Applications (metrics from the PodMonitor in argocd-metrics.yaml, dashboard "Argo CD").
+# Every Application syncs automatically with selfHeal, so one that stays out of sync means its sync fails or it
+# cannot be rendered, and the cluster differs from Git. argocd_app_info has one series per Application, value 1.
+# A controller that is not scraped any more is TargetDown. Not covered: a Secret that AVP drops because a Vault key
+# is missing, the Application then stays Synced.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: argocd
+  namespace: prometheus
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  groups:
+    - name: argocd
+      rules:
+        # for: 30m leaves room for a large sync and for the retries of a sync that fails once
+        - alert: ArgoAppOutOfSync
+          expr: argocd_app_info{sync_status!="Synced"}
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Argo CD Application {{ $labels.name }} is {{ $labels.sync_status }} for 30 minutes (health {{ $labels.health_status }})"
+        # Suspended is left out on purpose (e.g. a suspended CronJob), Progressing has its own rule below
+        - alert: ArgoAppUnhealthy
+          expr: argocd_app_info{health_status=~"Degraded|Missing|Unknown"}
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Argo CD Application {{ $labels.name }} is {{ $labels.health_status }} (namespace {{ $labels.dest_namespace }})"
+        # a rollout that never finishes, e.g. a pod that does not get ready
+        - alert: ArgoAppProgressingTooLong
+          expr: argocd_app_info{health_status="Progressing"}
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Argo CD Application {{ $labels.name }} is Progressing for an hour (namespace {{ $labels.dest_namespace }})"
