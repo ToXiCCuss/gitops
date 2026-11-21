@@ -28,7 +28,7 @@ flowchart TD
 | Domain | Content |
 |---|---|
 | (top level) | `kube-vault.yaml` (Vault), `kube-app-secrets.yaml` (every raw Secret that AVP fills from Vault), `argocd-values.yaml` (Argo CD itself, helm by hand) |
-| `infra` | cert-manager, ClusterIssuer, Hetzner webhook, Istio internal gateway + security policies + telemetry, NetBird operator/router/access/API proxy, CoreDNS custom, Vault Config Operator, vault-unsealer |
+| `infra` | cert-manager, ClusterIssuer, Hetzner webhook, Istio internal gateway + security policies + telemetry, NetBird operator/router/access/API proxy, CoreDNS custom, Vault Config Operator, vault-unsealer, Valkey (Redis-compatible cache) |
 | `monitoring` | Prometheus/Grafana, Alloy, Loki, Tempo, alert rules, dashboards |
 | `cicd` | Harbor, Jenkins, Forgejo (+ backup), `helm-deployer` role |
 | `management` | frame of the Developer Portal |

@@ -1,0 +1,50 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: valkey
+  namespace: argocd
+spec:
+  destination:
+    namespace: valkey
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    # Official chart of the Valkey project. OCI chart: a repoURL without a scheme is pulled as OCI.
+    repoURL: ghcr.io/valkey-io/valkey-helm
+    chart: valkey
+    targetRevision: 1.0.0
+    plugin:
+      env:
+        - name: HELM_VALUES
+          value: |
+            # One pod without replicas and without a volume: the data is a cache and is gone after a restart.
+            # For queues or sessions set persistence.enabled and persistence.size.
+            auth:
+              enabled: true
+              # Secret valkey-users (kubernetes/secrets/valkey.yaml), the password is the key named after the user
+              usersExistingSecret: valkey-users
+              aclUsers:
+                default:
+                  permissions: "~* &* +@all"
+            # Below the memory limit, so a full cache refuses writes (noeviction) instead of being killed
+            extraConfig: |
+              maxmemory 192mb
+            # Starting values without measurements: check the real use in the Kubernetes dashboards after the sync.
+            resources:
+              requests: {cpu: 20m, memory: 64Mi}
+              limits: {cpu: 500m, memory: 256Mi}
+            # redis_exporter sidecar, scraped by the Prometheus of the monitoring domain (it selects ServiceMonitors in all namespaces)
+            metrics:
+              enabled: true
+              exporter:
+                resources:
+                  requests: {cpu: 10m, memory: 32Mi}
+                  limits: {cpu: 200m, memory: 64Mi}
+              serviceMonitor:
+                enabled: true
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

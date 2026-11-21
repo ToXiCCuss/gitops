@@ -154,6 +154,7 @@ kv_set -mount=argocd harbor database.username=<owner> "database.password=$(vault
 | `argocd/data/vault` | `oidc.client_secret` (client `vault`) |
 | `argocd/data/forgejo` | `admin.password`, `oidc.client_secret`, `security.secret_key`, `security.internal_token`, `database.*`, `backup.*` |
 | `argocd/data/developer-portal` | `oidc.client_secret`, `backend.secret`, `database.*` |
+| `argocd/data/valkey` | `password` (user `default` of Valkey, the apps get the same value) |
 
 ## Vault Config Operator
 

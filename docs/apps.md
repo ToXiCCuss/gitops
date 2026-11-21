@@ -76,6 +76,17 @@ kubectl -n forgejo create job forgejo-restore-$(date +%s) --from=cronjob/forgejo
    Older snapshot: `kubectl -n forgejo create job forgejo-restore-1 --from=cronjob/forgejo-restore --dry-run=client -o yaml | kubectl set env --local -f - SNAPSHOT=<id> -o yaml | kubectl apply -f -`
 3. `kubectl -n forgejo logs -f job/<name>`, log in, check a package. If the search index looks wrong run the cron jobs under **Site administration > Monitoring > Cron**
 
+## Valkey
+
+`infra/helm/valkey.yaml`: Valkey (Redis-compatible, BSD) from the official chart of the Valkey project (OCI, pinned `1.0.0`, Valkey 9.1.3). Chosen over Redis 8 (RSALv2/SSPL/AGPLv3 licence), over the Bitnami chart (images only in the unmaintained `bitnamilegacy`) and over the Docker Hardened Images chart (needs a Docker login for the chart and the images).
+
+- **Mode:** one pod (`Deployment`, strategy `Recreate`), no replicas, **no volume**: the data is a cache and is gone after a restart. For queues or sessions set `persistence.enabled` and `persistence.size` in the values (a PVC then needs a backup). `maxmemory 192mb` stays below the memory limit of 256Mi; with the default policy `noeviction` a full cache refuses writes
+- **Address:** `valkey.valkey.svc.cluster.local:6379`, user `default`, password from Vault `argocd/data/valkey#password` (Secret `valkey-users` in `secrets/valkey.yaml`). Apps take the same Vault value into their own Secret
+- **Metrics:** `redis_exporter` sidecar (port 9121) with a ServiceMonitor in the namespace `valkey`; the Prometheus of the monitoring domain selects ServiceMonitors of all namespaces. Metrics are `redis_*`
+- **Before the merge:** `Generate-Secrets.ps1 -Mount argocd` creates `argocd/data/valkey` ([vault.md](vault.md#secrets)). Without the key the Secret cannot render and the `secrets` app fails
+- **Not set yet:** no NetworkPolicy (`networkPolicy.enabled` with `allowExternal: false` and `ingressNSMatchLabels` of the consuming namespace follows with the first consumer; it would also have to let Prometheus reach port 9121), no TLS
+- **Check after the sync:** pod `valkey` with two containers ready, the new ServiceMonitor target `up` in the Status dashboard (Targets), `kubectl -n valkey exec deploy/valkey -c valkey -- sh -c 'valkey-cli -a "$VALKEY_PROBE_PASSWORD" ping'` answers `PONG`
+
 ## Developer Portal
 
 Backstage as our own build (repository `developer-portal` in RJST-DEVELOP), deployed by Jenkins like the Spring apps: build image, push to Harbor, `helm upgrade --install developer-portal` of chart `ghcr.io/backstage/charts/backstage` into namespace `developer-portal`. Replaces the Portal step by step (both run side by side). This repo holds only the frame:
