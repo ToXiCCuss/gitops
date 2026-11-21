@@ -211,7 +211,7 @@ spec:
                 # Tempo writes the RED metrics and the service graph of the traces here (kubernetes/monitoring/helm/tempo.yaml).
                 enableRemoteWriteReceiver: true
                 walCompression: true
-                scrapeInterval: 30s
+                scrapeInterval: 60s
                 evaluationInterval: 30s
                 resources:
                   limits:
