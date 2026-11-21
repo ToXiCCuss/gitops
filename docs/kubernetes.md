@@ -104,6 +104,16 @@ Sidecars and gateways send spans as OTLP/gRPC to Tempo (`monitoring/helm/tempo.y
 | Datasources | `Loki` and `Tempo` from ConfigMap `monitoring/kubectl/loki.yaml`; trace id in a log line opens the trace (expects `[app,traceId,spanId]` or ECS `trace.id`) and back |
 | Not collected | logs of `docker01` |
 
+#### Public traffic (where requests come from)
+
+Dashboard `Public traffic` (folder Observability, `monitoring/kubectl/dashboard-traffic.yaml`): requests of the public Istio gateway by country, provider (ASN), client IP, user agent, host, path and status.
+
+- Source is a JSON access log of the public `istio-ingressgateway` only (provider `access-json` in `istio/istio-operator.yaml`, switched on by `Telemetry` `gateway-access-log` in `infra/kubectl/kube-istio-telemetry.yaml`). Same order as for tracing: run `istioctl install` **before** the `Telemetry` resource syncs, else istiod rejects the unknown provider. The query string is not logged
+- Alloy adds the label `geoip_country_code` and the structured metadata `geoip_autonomous_system_organization` to those lines. The client IP stays in the line (`| json`), never a label
+- The GeoIP databases are the free "lite" country and ASN files of [DB-IP](https://db-ip.com) (CC BY 4.0, attribution required, no account). An init container of the Alloy pod downloads them at pod start (current month, else one of the two before). They are at most one month old; a pod restart fetches the new month. The pod does not start while no download works
+- IP addresses are personal data: they stay in Loki for the 7 days of the retention, do not extend it for this log
+- The map needs the country code only as a label of the query result; if it stays empty after a sync, check the transformations of the panel `Requests by country`
+
 ### 1. Bootstrap Argo CD
 
 ```bash
