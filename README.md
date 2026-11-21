@@ -126,7 +126,7 @@ Overview, retention, restore and per-service setup: [backups.md](docs/backups.md
 | Topic | Tool | Docs |
 |---|---|---|
 | Metrics, dashboards | Prometheus, Grafana (Keycloak login), node/postgres/mysqld exporters | [ansible.md](docs/ansible.md#node-exporter-and-update-monitoring) |
-| Alerts | Alertmanager to Discord (deploy, backup age, OS updates, DB, probes) | [backups.md](docs/backups.md#backup-age-alerts) |
+| Alerts | Alertmanager to Discord (deploy, backup age, OS updates, DB) | [backups.md](docs/backups.md#backup-age-alerts) |
 | Logs / traces | Loki + Alloy, Tempo | [kubernetes.md](docs/kubernetes.md#logs-loki-alloy) |
 | VPN, proxy, DNS | NetBird (config by hand in the dashboard) | [netbird.md](docs/netbird.md) |
 | Login | Keycloak, realm `rjst` as code | [keycloak.md](docs/keycloak.md) |

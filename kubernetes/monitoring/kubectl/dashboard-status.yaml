@@ -1,5 +1,5 @@
 # Grafana picks this up through the dashboard sidecar (label grafana_dashboard, all namespaces).
-# Overview of the targets, PostgreSQL, MariaDB, the web UI probes, the firing alerts, the backups, the disk usage, the Docker deploy,
+# Overview of the targets, PostgreSQL, MariaDB, the firing alerts, the backups, the disk usage, the Docker deploy,
 # the apply of the declared databases, and the OS updates of the hosts, see alert-rules*.yaml.
 apiVersion: v1
 kind: ConfigMap
@@ -371,7 +371,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "min by (job, instance) (up{job!~\"probe/.*\"})",
+              "expr": "min by (job, instance) (up)",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -511,106 +511,6 @@ data:
                   "alertstate": true,
                   "prometheus": true,
                   "replica": true
-                }
-              }
-            }
-          ]
-        },
-        {
-          "id": 7,
-          "type": "table",
-          "title": "Web UIs (probe)",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "gridPos": {
-            "x": 0,
-            "y": 16,
-            "w": 24,
-            "h": 9
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
-              "expr": "probe_success",
-              "legendFormat": "",
-              "instant": true,
-              "range": false,
-              "format": "table",
-              "refId": "A"
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "cellOptions": {
-                  "type": "auto"
-                }
-              }
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Value"
-                },
-                "properties": [
-                  {
-                    "id": "mappings",
-                    "value": [
-                      {
-                        "type": "value",
-                        "options": {
-                          "0": {
-                            "text": "DOWN",
-                            "color": "red"
-                          },
-                          "1": {
-                            "text": "UP",
-                            "color": "green"
-                          }
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "id": "custom.cellOptions",
-                    "value": {
-                      "type": "color-background"
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          "options": {
-            "showHeader": true,
-            "sortBy": [
-              {
-                "displayName": "Value",
-                "desc": false
-              }
-            ]
-          },
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Time": true,
-                  "__name__": true,
-                  "endpoint": true,
-                  "namespace": true,
-                  "pod": true,
-                  "service": true,
-                  "container": true,
-                  "prometheus": true,
-                  "replica": true,
-                  "job": true
                 }
               }
             }

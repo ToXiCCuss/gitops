@@ -98,7 +98,7 @@ spec:
             test:
               enabled: false
   # The nightly backup (kubernetes/cicd/kubectl/forgejo-backup.yaml) scales Forgejo to 0 for a few minutes: selfHeal and a
-  # sync in that time must not start it again. If it stays at 0, the probe of https://forgejo.k8sdev.rjst.de fires.
+  # sync in that time must not start it again. If it stays at 0, nothing alerts: scale it back up by hand.
   ignoreDifferences:
     - group: apps
       kind: Deployment
