@@ -89,7 +89,7 @@ docker exec offsite-sync sh -c 'wget -q -O /dev/null --header "Content-Type: app
 |---|---|---|
 | `backup_last_success_timestamp_seconds{backup}` | the three jobs | older than 26 h / never reported |
 | `restic_step_success{repository,step}`, `restic_step_last_success_timestamp_seconds`, `restic_step_duration_seconds` | `restic-backup`, per step (`backup`, `forget`, `prune`, `check` of `docker`; `backup-postgresql`, `backup-mariadb`, `forget`, `prune`, `check` of `databases`; `check` of `vault`, `netbird`) in `restic-backup-<repository>-<step>.prom` | `ResticStepFailed` |
-| `restic_repository_size_bytes`, `restic_repository_snapshots`, `restic_repository_newest_snapshot_timestamp_seconds` (UTC) | last step `stats`, `restic-backup-<repository>-repository.prom` | none; Status dashboard tables/graph |
+| `restic_repository_size_bytes`, `restic_repository_snapshots`, `restic_repository_newest_snapshot_timestamp_seconds` (UTC) | last step `stats`, `restic-backup-<repository>-repository.prom` | none; Backups dashboard tables/graph |
 
 - Alerts go through Alertmanager to Discord (webhook in Vault `argocd/data/prometheus#discord_webhook_url`)
 - `netbird_backup.sh` writes no metric (only its own Discord message; NetBird is backed up by hand with each update)

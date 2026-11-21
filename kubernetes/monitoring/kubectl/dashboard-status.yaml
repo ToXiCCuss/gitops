@@ -1,5 +1,5 @@
 # Grafana picks this up through the dashboard sidecar (label grafana_dashboard, all namespaces).
-# Overview of the targets, PostgreSQL, MariaDB, the firing alerts, the backups, the disk usage, the Docker deploy,
+# Overview of the targets, PostgreSQL, MariaDB, the firing alerts, the backup age (details: dashboard Backups), the disk usage, the Docker deploy,
 # the apply of the declared databases, and the OS updates of the hosts, see alert-rules*.yaml.
 apiVersion: v1
 kind: ConfigMap
@@ -17,8 +17,7 @@ data:
       "uid": "status",
       "title": "Status",
       "tags": [
-        "status",
-        "backups"
+        "status"
       ],
       "timezone": "Europe/Berlin",
       "schemaVersion": 39,
@@ -465,7 +464,7 @@ data:
             "x": 12,
             "y": 4,
             "w": 12,
-            "h": 6
+            "h": 12
           },
           "targets": [
             {
@@ -517,338 +516,6 @@ data:
           ]
         },
         {
-          "id": 6,
-          "type": "timeseries",
-          "title": "Backup duration",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "gridPos": {
-            "x": 12,
-            "y": 10,
-            "w": 12,
-            "h": 6
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
-              "expr": "backup_last_duration_seconds",
-              "legendFormat": "{{backup}}",
-              "instant": false,
-              "range": true,
-              "format": "time_series",
-              "refId": "A"
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {
-              "unit": "s"
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom"
-            }
-          }
-        },
-        {
-          "id": 9,
-          "type": "table",
-          "title": "Restic steps (last run)",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "gridPos": {
-            "x": 0,
-            "y": 25,
-            "w": 24,
-            "h": 7
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
-              "expr": "restic_step_success",
-              "legendFormat": "",
-              "instant": true,
-              "range": false,
-              "format": "table",
-              "refId": "A"
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "cellOptions": {
-                  "type": "auto"
-                }
-              },
-              "noValue": "Keine Daten"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Value"
-                },
-                "properties": [
-                  {
-                    "id": "mappings",
-                    "value": [
-                      {
-                        "type": "value",
-                        "options": {
-                          "0": {
-                            "text": "FAILED",
-                            "color": "red"
-                          },
-                          "1": {
-                            "text": "OK",
-                            "color": "green"
-                          }
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "id": "custom.cellOptions",
-                    "value": {
-                      "type": "color-background"
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          "options": {
-            "showHeader": true,
-            "sortBy": [
-              {
-                "displayName": "Value",
-                "desc": false
-              }
-            ]
-          },
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Time": true,
-                  "__name__": true,
-                  "endpoint": true,
-                  "namespace": true,
-                  "pod": true,
-                  "service": true,
-                  "container": true,
-                  "prometheus": true,
-                  "replica": true,
-                  "job": true,
-                  "instance": true
-                }
-              }
-            }
-          ]
-        },
-        {
-          "id": 17,
-          "type": "table",
-          "title": "Restic repositories",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "gridPos": {
-            "x": 0,
-            "y": 32,
-            "w": 12,
-            "h": 8
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
-              "expr": "max by (repository) (restic_repository_size_bytes)",
-              "legendFormat": "",
-              "instant": true,
-              "range": false,
-              "format": "table",
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
-              "expr": "max by (repository) (restic_repository_snapshots)",
-              "legendFormat": "",
-              "instant": true,
-              "range": false,
-              "format": "table",
-              "refId": "B"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
-              "expr": "time() - max by (repository) (restic_repository_newest_snapshot_timestamp_seconds)",
-              "legendFormat": "",
-              "instant": true,
-              "range": false,
-              "format": "table",
-              "refId": "C"
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "cellOptions": {
-                  "type": "auto"
-                }
-              },
-              "noValue": "Keine Daten"
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Size"
-                },
-                "properties": [
-                  {
-                    "id": "unit",
-                    "value": "bytes"
-                  },
-                  {
-                    "id": "decimals",
-                    "value": 1
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Snapshots"
-                },
-                "properties": [
-                  {
-                    "id": "unit",
-                    "value": "none"
-                  },
-                  {
-                    "id": "decimals",
-                    "value": 0
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Newest snapshot (ago)"
-                },
-                "properties": [
-                  {
-                    "id": "unit",
-                    "value": "s"
-                  },
-                  {
-                    "id": "decimals",
-                    "value": 1
-                  }
-                ]
-              }
-            ]
-          },
-          "options": {
-            "showHeader": true,
-            "sortBy": [
-              {
-                "displayName": "Repository",
-                "desc": false
-              }
-            ]
-          },
-          "transformations": [
-            {
-              "id": "merge",
-              "options": {}
-            },
-            {
-              "id": "organize",
-              "options": {
-                "excludeByName": {
-                  "Time": true
-                },
-                "indexByName": {
-                  "repository": 0,
-                  "Value #A": 1,
-                  "Value #B": 2,
-                  "Value #C": 3
-                },
-                "renameByName": {
-                  "repository": "Repository",
-                  "Value #A": "Size",
-                  "Value #B": "Snapshots",
-                  "Value #C": "Newest snapshot (ago)"
-                }
-              }
-            }
-          ]
-        },
-        {
-          "id": 18,
-          "type": "timeseries",
-          "title": "Restic repository size",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "gridPos": {
-            "x": 12,
-            "y": 32,
-            "w": 12,
-            "h": 8
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
-              "expr": "max by (repository) (restic_repository_size_bytes)",
-              "legendFormat": "{{repository}}",
-              "instant": false,
-              "range": true,
-              "format": "time_series",
-              "refId": "A"
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {
-              "unit": "bytes"
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom"
-            }
-          }
-        },
-        {
           "id": 10,
           "type": "bargauge",
           "title": "Disk usage (alert above 90 %)",
@@ -858,7 +525,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 40,
+            "y": 16,
             "w": 24,
             "h": 8
           },
@@ -921,7 +588,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 48,
+            "y": 24,
             "w": 12,
             "h": 4
           },
@@ -984,7 +651,7 @@ data:
           },
           "gridPos": {
             "x": 12,
-            "y": 48,
+            "y": 24,
             "w": 12,
             "h": 4
           },
@@ -1040,7 +707,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 52,
+            "y": 28,
             "w": 12,
             "h": 4
           },
@@ -1103,7 +770,7 @@ data:
           },
           "gridPos": {
             "x": 12,
-            "y": 52,
+            "y": 28,
             "w": 12,
             "h": 4
           },
@@ -1159,7 +826,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 56,
+            "y": 32,
             "w": 24,
             "h": 5
           },
