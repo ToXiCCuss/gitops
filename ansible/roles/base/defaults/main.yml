@@ -6,6 +6,11 @@ server_timezone: "Europe/Berlin"
 inotify_max_user_instances: 1024
 inotify_max_user_watches: 524288
 
+# systemd journal: without a limit it may take 10 % of the disk (at most 4 GiB).
+# Whichever of the two limits is reached first removes the oldest entries.
+journald_max_use: 500M
+journald_max_retention: 14day
+
 # Automatic security updates
 unattended_upgrades_enabled: true
 unattended_upgrades_reboot: false

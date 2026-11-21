@@ -22,7 +22,7 @@ Host lists are in `group_vars/all/main.yml`; per-host settings under `host_confi
 
 | Role | Hosts | Purpose |
 |---|---|---|
-| `base` | all | timezone, inotify limits, unattended-upgrades (no auto reboot), SSH key-only for root |
+| `base` | all | timezone, inotify limits, journal limit (500M, 14 days), unattended-upgrades (no auto reboot), SSH key-only for root |
 | `netbird` | `docker01`, `k8sdev01` | install client; join is manual |
 | `firewall` | `docker01`, `k8sdev01` | UFW from `host_config.<host>.firewall_rules` |
 | `node_exporter` | `docker01`, `k8sdev01` | exporter + textfile collector + update status |
