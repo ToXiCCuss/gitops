@@ -313,6 +313,18 @@ data:
               "range": false,
               "format": "time_series",
               "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "time() - kube_cronjob_status_last_successful_time{cronjob=~\".*backup.*\"}",
+              "legendFormat": "{{cronjob}}",
+              "instant": true,
+              "range": false,
+              "format": "time_series",
+              "refId": "B"
             }
           ],
           "fieldConfig": {
