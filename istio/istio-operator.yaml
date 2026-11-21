@@ -32,7 +32,26 @@ spec:
       - name: istio-ingressgateway
         enabled: true
         k8s:
+          # The pod binds 80/443 on the node itself (hostPort) instead of going through k3s ServiceLB.
+          # ServiceLB's svclb pod rewrites the source address to its own pod IP, because traffic reaches
+          # the public IP of the node and not the LB address (the node-ip), so externalTrafficPolicy: Local
+          # never applies. The CNI portmap only does DNAT and keeps the client's address.
           service:
-            # Keeps the client's source address. A plain `istioctl install` sets the
-            # Service back to Cluster, which hides the real client IP from the apps.
-            externalTrafficPolicy: Local
+            type: ClusterIP
+          # A hostPort can only be bound once per node: replace the pod instead of surging (a few
+          # seconds without the public gateway on every rollout) and never scale beyond one pod.
+          strategy:
+            rollingUpdate:
+              maxSurge: 0
+              maxUnavailable: 1
+          hpaSpec:
+            minReplicas: 1
+            maxReplicas: 1
+          overlays:
+            - kind: Deployment
+              name: istio-ingressgateway
+              patches:
+                - path: spec.template.spec.containers.[name:istio-proxy].ports.[containerPort:8080].hostPort
+                  value: 80
+                - path: spec.template.spec.containers.[name:istio-proxy].ports.[containerPort:8443].hostPort
+                  value: 443

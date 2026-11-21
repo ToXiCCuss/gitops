@@ -50,7 +50,7 @@ The public `istio-ingressgateway` (installed by hand, see [Istio installation](#
 - **Public apps** set `istio.public: true` in their values (`kubernetes-values`, chart `spring-boot`) and are served at `<name>-<stage>.cloud.rjst.de` (stage = namespace, e.g. `shop-prod.cloud.rjst.de`; a public host in `urls` replaces this automatic host, it must be one of the hosts of the Gateway below). The chart creates only a VirtualService bound to `istio-system/public`; the Gateway `public` and its certificate (`rjst.de`, `www.rjst.de`, `*.cloud.rjst.de`, secret `public-tls`) live in `infra/kubectl/kube-istio-public.yaml`. A new public app needs no change in this repository, no DNS record and no `internalPort`. A wildcard covers one label: `shop-prod.cloud.rjst.de`, not `shop.prod.cloud.rjst.de`
 - `AuthorizationPolicy` `ingress-policy-public` (`infra/kubectl/kube-istio-security.yaml`) allows only `rjst.de`, `www.rjst.de` and `*.cloud.rjst.de` and denies every other host: a public host outside these needs an entry there (and, without `istio.public`, its own Gateway and Certificate from the chart, the previous behavior)
 - **`rjst.de` and `www.rjst.de`** are in the shared Gateway for the move of the app `rjst-frontend`. As long as its release has its own Gateway and Certificate (values without `istio.public`), these two hosts are defined twice: move the app in the same step (set `istio.public: true` in `prod/rjst-frontend.yaml`, deploy prod), then check `istioctl analyze` and `curl -I https://rjst.de`. When no app uses its own Certificate any more, drop the Role for `certificates` in `istio-system` from `cicd/kubectl/helm-deployer.yaml`
-- Ports 80/443 are open on `k8sdev01` (`host_config.k8sdev01.firewall_rules`). Whether UFW passes ServiceLB ports depends on the FORWARD chain: check from outside with `curl -I https://<host>`
+- Ports 80/443 are open on `k8sdev01` (`host_config.k8sdev01.firewall_rules`). The gateway's `hostPort` is a DNAT by the CNI portmap, so whether UFW passes it depends on the FORWARD chain: check from outside with `curl -I https://<host>`
 - DNS records are set by hand at Hetzner (A, public IP of `k8sdev01`): once the wildcard `*.cloud.rjst.de`, plus `rjst.de` and `www.rjst.de`. After an IP change update them, see [ansible.md](ansible.md#change-the-public-ip)
 
 ## Deployment guide
@@ -71,7 +71,7 @@ flowchart LR
 
 ### Istio installation
 
-By hand from `istio/istio-operator.yaml` (profile `default`: istiod + public `istio-ingressgateway`). The file keeps what a plain install would reset: `externalTrafficPolicy: Local` on the gateway Service (apps see the real client address). Use an `istioctl` matching the wanted version (file does not pin it; `istioctl version`).
+By hand from `istio/istio-operator.yaml` (profile `default`: istiod + public `istio-ingressgateway`). The file keeps what a plain install would reset: the public gateway binds 80/443 on the node by `hostPort` and its Service is `ClusterIP`, so it bypasses k3s ServiceLB and sees the real client address (the svclb pod would replace it with its own pod IP, `externalTrafficPolicy: Local` does not help because traffic reaches the public IP and not the LB address `node-ip`). Use an `istioctl` matching the wanted version (file does not pin it; `istioctl version`).
 
 ```bash
 istioctl x precheck
@@ -80,7 +80,8 @@ istioctl verify-install -f istio/istio-operator.yaml
 ```
 
 - Upgrade: new `istioctl`, same commands, then restart workloads in namespaces labelled `istio-injection: enabled`
-- Check: `kubectl -n istio-system get svc istio-ingressgateway -o jsonpath='{.spec.externalTrafficPolicy}'` must print `Local`
+- Check: `kubectl -n kube-system get pods | grep svclb-istio` prints nothing, and a request from outside shows the client's public address in the gateway log (`kubectl -n istio-system logs deploy/istio-ingressgateway`)
+- One gateway pod at most (`hpaSpec` max 1) and rollouts replace the pod instead of surging (`maxSurge: 0`): every gateway restart or upgrade means a few seconds without the public apps
 - The internal gateway (`istio-internal-gateway`) is an Argo CD Application in `kubernetes/infra/helm`, not part of this file
 - Not tracked by Renovate (version is passed to the scripts)
 
