@@ -122,12 +122,12 @@ data:
                   "type": "value",
                   "options": {
                     "0": {
-                      "text": "Down",
+                      "text": "DOWN",
                       "color": "red",
                       "index": 1
                     },
                     "1": {
-                      "text": "Up",
+                      "text": "UP",
                       "color": "green",
                       "index": 0
                     }
