@@ -21,59 +21,10 @@ spec:
             fullnameOverride: alloy
             # Reads the logs of all pods through the Kubernetes API (loki.source.kubernetes), so one pod is enough
             # and it needs no host path. The logs of docker01 are not collected.
-            # A dollar sign is written twice in this file: ArgoCD turns a double one into a single one and replaces a single
-            # one followed by a name with an empty string.
+            # No dollar sign in this file: ArgoCD replaces $NAME in the plugin env values.
             controller:
               type: deployment
               replicas: 1
-              # The GeoIP databases of DB-IP (free "lite" country and ASN, CC BY 4.0, https://db-ip.com) for the access log
-              # of the public gateway. They are downloaded when the pod starts and stay in an emptyDir, they are one month
-              # old at worst and a pod restart fetches the new month. The pod does not start without them: the init
-              # container retries until the download works (the file of a past month is taken if the new one is not out yet).
-              initContainers:
-                - name: geoip-download
-                  image: alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
-                  command:
-                    - /bin/sh
-                    - -c
-                    - |
-                      set -eu
-                      now=$$(date +%s)
-                      for database in country asn; do
-                        for age_in_days in 0 31 62; do
-                          if [ ! -s "/geoip/$$database.mmdb" ]; then
-                            stamp=$$(date -u -d "@$$((now - age_in_days * 86400))" +%Y-%m)
-                            url="https://download.db-ip.com/free/dbip-$$database-lite-$$stamp.mmdb.gz"
-                            echo "Trying $$url"
-                            wget -q -T 60 -O "/geoip/$$database.mmdb.gz" "$$url" \
-                              && gunzip -c "/geoip/$$database.mmdb.gz" > "/geoip/$$database.mmdb.part" \
-                              && mv "/geoip/$$database.mmdb.part" "/geoip/$$database.mmdb" || true
-                          fi
-                        done
-                        test -s "/geoip/$$database.mmdb"
-                      done
-                  securityContext:
-                    runAsNonRoot: true
-                    runAsUser: 65534
-                    allowPrivilegeEscalation: false
-                    readOnlyRootFilesystem: true
-                    capabilities:
-                      drop:
-                        - ALL
-                  resources:
-                    requests:
-                      cpu: 0
-                      memory: 0
-                    limits:
-                      cpu: 100m
-                      memory: 128Mi
-                  volumeMounts:
-                    - name: geoip
-                      mountPath: /geoip
-              volumes:
-                extra:
-                  - name: geoip
-                    emptyDir: {}
             # The config-reloader sidecar: 7 days at most 46 MiB and no measurable CPU
             configReloader:
               resources:
@@ -92,11 +43,6 @@ spec:
                 limits:
                   memory: 768Mi
                   cpu: 500m
-              mounts:
-                extra:
-                  - name: geoip
-                    mountPath: /etc/geoip
-                    readOnly: true
               configMap:
                 content: |
                   discovery.kubernetes "pods" {
@@ -133,42 +79,7 @@ spec:
 
                   loki.source.kubernetes "pods" {
                     targets    = discovery.relabel.pods.output
-                    forward_to = [loki.process.geoip.receiver]
-                  }
-
-                  // The access log of the public gateway (JSON, istio/istio-operator.yaml) gets the country as a label and the
-                  // provider as structured metadata. The client address stays in the line, as a label it would be far too
-                  // high-cardinality. Everything else passes unchanged.
-                  loki.process "geoip" {
                     forward_to = [loki.write.default.receiver]
-
-                    stage.match {
-                      selector = "{namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\""
-
-                      stage.json {
-                        expressions = {client_ip = "client_ip"}
-                      }
-
-                      stage.geoip {
-                        source  = "client_ip"
-                        db      = "/etc/geoip/country.mmdb"
-                        db_type = "country"
-                      }
-
-                      stage.geoip {
-                        source  = "client_ip"
-                        db      = "/etc/geoip/asn.mmdb"
-                        db_type = "asn"
-                      }
-
-                      stage.labels {
-                        values = {geoip_country_code = ""}
-                      }
-
-                      stage.structured_metadata {
-                        values = {geoip_autonomous_system_organization = ""}
-                      }
-                    }
                   }
 
                   loki.write "default" {

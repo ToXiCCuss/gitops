@@ -16,24 +16,6 @@ spec:
         opentelemetry:
           service: tempo.tempo.svc.cluster.local
           port: 4317
-      # One JSON line per request on stdout, Alloy reads it from the pod log (kubernetes/monitoring/helm/alloy.yaml) and the
-      # dashboard "Public traffic" evaluates it. The Telemetry resource kube-istio-telemetry.yaml switches it on for the
-      # public gateway only. The query string is left out of the path, it can carry tokens.
-      - name: access-json
-        envoyFileAccessLog:
-          path: /dev/stdout
-          logFormat:
-            labels:
-              client_ip: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
-              host: "%REQ(:AUTHORITY)%"
-              method: "%REQ(:METHOD)%"
-              path: "%REQ_WITHOUT_QUERY(X-ENVOY-ORIGINAL-PATH?:PATH)%"
-              status: "%RESPONSE_CODE%"
-              response_flags: "%RESPONSE_FLAGS%"
-              bytes_received: "%BYTES_RECEIVED%"
-              bytes_sent: "%BYTES_SENT%"
-              duration_ms: "%DURATION%"
-              user_agent: "%REQ(USER-AGENT)%"
   components:
     pilot:
       k8s:
