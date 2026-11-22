@@ -448,7 +448,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(kube_hpa_labels{namespace=~\"$namespace\", cluster=\"$cluster\"})",
+              "expr": "sum(kube_horizontalpodautoscaler_info{namespace=~\"$namespace\", cluster=\"$cluster\"})",
               "interval": "",
               "legendFormat": "Horizontal Pod Autoscalers",
               "refId": "H"

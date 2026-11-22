@@ -536,7 +536,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(kube_endpoint_info{cluster=\"$cluster\"})",
+              "expr": "sum(kube_endpointslice_info{cluster=\"$cluster\"})",
               "interval": "",
               "legendFormat": "Endpoints",
               "refId": "D"
@@ -596,7 +596,7 @@ data:
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(kube_hpa_labels{cluster=\"$cluster\"})",
+              "expr": "sum(kube_horizontalpodautoscaler_info{cluster=\"$cluster\"})",
               "interval": "",
               "legendFormat": "Horizontal Pod Autoscalers",
               "refId": "J"

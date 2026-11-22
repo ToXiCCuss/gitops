@@ -158,6 +158,14 @@ spec:
                 limits:
                   memory: 256Mi
                   cpu: 250m
+              # Since v2.0 the kube_*_labels metrics only exist for the resources listed here; the dashboards
+              # "Kubernetes / Views / Global" and "Namespaces" count them.
+              metricLabelsAllowlist:
+                - deployments=[*]
+                - statefulsets=[*]
+                - daemonsets=[*]
+                - namespaces=[*]
+                - networkpolicies=[*]
               prometheus:
                 monitor:
                   enabled: true
