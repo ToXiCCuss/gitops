@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Write the disk usage of the local-path volumes regularly
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec={{ node_exporter_pvc_usage_interval }}
+RandomizedDelaySec=1min
+
+[Install]
+WantedBy=timers.target

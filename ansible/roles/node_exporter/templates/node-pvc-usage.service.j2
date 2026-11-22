@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Write the disk usage of the local-path volumes for the node_exporter
+
+[Service]
+Type=oneshot
+# du walks every file of the volumes (Prometheus, Loki): stay out of the way of the workloads
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/local/bin/node-pvc-usage.sh {{ node_exporter_textfile_dir }}/node-pvc-usage.prom {{ node_exporter_pvc_storage_dir }}

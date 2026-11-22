@@ -18,3 +18,8 @@ node_exporter_mount_points_exclude: '^/(dev|proc|run/credentials/.+|sys|var/lib/
 # The update state of the host (reboot needed, pending packages, last run of unattended-upgrades) goes into the
 # textfile collector once an hour, see files/node-update-status.sh
 node_exporter_update_status_interval: 1h
+
+# Disk usage per local-path volume of k3s (hosts: node_exporter_pvc_usage_hosts), see files/node-pvc-usage.sh.
+# The directories of the volumes are in the storage directory of the k3s data directory.
+node_exporter_pvc_storage_dir: /var/lib/rancher/k3s/storage
+node_exporter_pvc_usage_interval: 15min

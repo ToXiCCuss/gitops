@@ -27,6 +27,10 @@ node_exporter_hosts:
    - docker01
    - k8sdev01
 
+# The k3s node: the kubelet cannot report the usage of local-path volumes, the exporter writes it from the directories
+node_exporter_pvc_usage_hosts:
+   - k8sdev01
+
 # Runs deploy.sh regularly (systemd timer). Needs the Docker projects and Vault, so only Docker hosts
 gitops_deploy_hosts:
    - docker01

@@ -126,6 +126,18 @@ Nothing to do for k3s, Prometheus, Ansible or Argo CD.
 - Reboot `k8sdev01` yourself in a quiet moment (`sudo reboot`)
 - Check: `systemctl status prometheus-node-exporter node-update-status.timer`, `curl -s localhost:9100/metrics | grep -E "node_pending_updates|node_reboot"`
 
+### Volume usage (k8sdev01)
+
+The kubelet reports the usage of the whole disk for every `local-path` volume (the volumes are plain directories), so `kubelet_volume_stats_*` is useless here. `node-pvc-usage.timer` (every 15 minutes, only the hosts of `node_exporter_pvc_usage_hosts`) writes `node-pvc-usage.prom` from the directories `/var/lib/rancher/k3s/storage/pvc-<uid>_<namespace>_<name>`:
+
+| Metric | Meaning |
+|---|---|
+| `node_pvc_used_bytes{namespace,persistentvolumeclaim}` | bytes the volume takes on the disk (`du`) |
+
+- Dashboard "Volumes" (`kubernetes/monitoring/kubectl/dashboard-volumes.yaml`), no alert
+- A volume whose PVC was deleted but whose directory is still there stays listed until the directory is gone
+- Check: `systemctl status node-pvc-usage.timer`, `curl -s localhost:9100/metrics | grep node_pvc_used_bytes`
+
 ## Scheduled jobs
 
 All systemd timers set up by Ansible (no cron):
@@ -135,6 +147,7 @@ All systemd timers set up by Ansible (no cron):
 | `gitops-deploy.timer` | `docker01` | every 3 hours 08:00-20:00 (`gitops_deploy_calendar`) | `deploy.sh --pull --metrics-file ...`, see [docker.md](docker.md#automatic-deploy) |
 | `postgresql-apply.timer` | `docker01` | every 3 hours 08:30-20:30 (`postgresql_apply_calendar`) | `apply_declared.sh --pull --metrics-file ...`, see [databases.md](databases.md#automatic-apply) |
 | `node-update-status.timer` | `docker01`, `k8sdev01` | 2 min after boot, then hourly | update metrics (above) |
+| `node-pvc-usage.timer` | `k8sdev01` | 3 min after boot, then every 15 minutes | volume usage metrics (above) |
 | unattended-upgrades | all | apt default | security updates, no reboot |
 
 Backups, offsite sync and Vault backup run as containers/CronJobs, see [backups.md](backups.md).
