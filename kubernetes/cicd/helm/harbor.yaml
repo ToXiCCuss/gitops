@@ -66,10 +66,9 @@ spec:
                 resources:
                   requests: {cpu: 20m, memory: 32Mi}
                   limits: {cpu: 500m, memory: 128Mi}
+            # No image scanning is used, so the scanner (about 140 MiB) stays off.
             trivy:
-              resources:
-                requests: {cpu: 100m, memory: 256Mi}
-                limits: {cpu: "1", memory: 1Gi}
+              enabled: false
             nginx:
               resources:
                 requests: {cpu: 20m, memory: 32Mi}
