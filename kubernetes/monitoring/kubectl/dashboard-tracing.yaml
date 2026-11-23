@@ -249,7 +249,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (client, server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"tempo[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range]))",
+              "expr": "sum by (client, server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range]))",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -293,7 +293,7 @@ data:
               },
               "queryType": "serviceMap",
               "serviceMapQuery": [
-                "{client=~\".+[.]($stage)\", server!~\"tempo[.].*\"}",
+                "{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}",
                 "{server=~\".+[.]($stage)\"}"
               ],
               "refId": "A"
