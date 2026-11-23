@@ -88,7 +88,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "sum(count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" [$__range]))",
+              "expr": "sum(count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} [$__range]))",
               "legendFormat": "",
               "refId": "A",
               "instant": true,
@@ -99,7 +99,7 @@ data:
             "defaults": {
               "unit": "short",
               "noValue": "0",
-              "decimals": 2,
+              "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -149,7 +149,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "count(sum by (client_ip) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" | json [$__range])))",
+              "expr": "count(sum by (client_ip) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | json [$__range])))",
               "legendFormat": "",
               "refId": "A",
               "instant": true,
@@ -160,7 +160,7 @@ data:
             "defaults": {
               "unit": "short",
               "noValue": "0",
-              "decimals": 2,
+              "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -210,7 +210,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "count(sum by (geoip_country_code) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" [$__range])))",
+              "expr": "count(sum by (geoip_country_code) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | geoip_country_code != \"\" [$__range])))",
               "legendFormat": "",
               "refId": "A",
               "instant": true,
@@ -221,7 +221,7 @@ data:
             "defaults": {
               "unit": "short",
               "noValue": "0",
-              "decimals": 2,
+              "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -271,7 +271,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "sum(count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" | json | status >= 500 [$__range]))",
+              "expr": "sum(count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | json | status >= 500 [$__range]))",
               "legendFormat": "",
               "refId": "A",
               "instant": true,
@@ -282,7 +282,7 @@ data:
             "defaults": {
               "unit": "short",
               "noValue": "0",
-              "decimals": 2,
+              "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -336,7 +336,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "sum(count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" | json | status >= 400 | status < 500 [$__range]))",
+              "expr": "sum(count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | json | status >= 400 | status < 500 [$__range]))",
               "legendFormat": "",
               "refId": "A",
               "instant": true,
@@ -347,7 +347,7 @@ data:
             "defaults": {
               "unit": "short",
               "noValue": "0",
-              "decimals": 2,
+              "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -401,7 +401,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "sum(sum_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" | json | unwrap bytes_sent [$__range]))",
+              "expr": "sum(sum_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | json | unwrap bytes_sent [$__range]))",
               "legendFormat": "",
               "refId": "A",
               "instant": true,
@@ -475,7 +475,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "sum by (geoip_country_code) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" [$__range]))",
+              "expr": "sum by (geoip_country_code) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | geoip_country_code != \"\" [$__range]))",
               "legendFormat": "",
               "refId": "A",
               "instant": true,
@@ -583,7 +583,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "topk(15, sum by (geoip_country_code) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" [$__range])))",
+              "expr": "topk(15, sum by (geoip_country_code) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | geoip_country_code != \"\" [$__range])))",
               "legendFormat": "{{geoip_country_code}}",
               "refId": "A",
               "instant": true,
@@ -634,7 +634,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "sum by (geoip_country_code) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" [$__auto]))",
+              "expr": "sum by (geoip_country_code) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | geoip_country_code != \"\" [$__auto]))",
               "legendFormat": "{{geoip_country_code}}",
               "refId": "A"
             }
@@ -696,7 +696,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "topk(10, sum by (geoip_autonomous_system_organization) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" [$__range])))",
+              "expr": "topk(10, sum by (geoip_autonomous_system_organization) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} [$__range])))",
               "legendFormat": "{{geoip_autonomous_system_organization}}",
               "refId": "A",
               "instant": true,
@@ -760,7 +760,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "topk(15, sum by (client_ip, geoip_country_code) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" | json [$__range])))",
+              "expr": "topk(15, sum by (client_ip, geoip_country_code) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | json [$__range])))",
               "legendFormat": "{{client_ip}} ({{geoip_country_code}})",
               "refId": "A",
               "instant": true,
@@ -811,7 +811,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "topk(10, sum by (user_agent) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" | json [$__range])))",
+              "expr": "topk(10, sum by (user_agent) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | json [$__range])))",
               "legendFormat": "{{user_agent}}",
               "refId": "A",
               "instant": true,
@@ -875,7 +875,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "topk(10, sum by (host) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" | json [$__range])))",
+              "expr": "topk(10, sum by (host) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | json [$__range])))",
               "legendFormat": "{{host}}",
               "refId": "A",
               "instant": true,
@@ -926,7 +926,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "topk(10, sum by (host, path) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" | json [$__range])))",
+              "expr": "topk(10, sum by (host, path) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | json [$__range])))",
               "legendFormat": "{{host}}{{path}}",
               "refId": "A",
               "instant": true,
@@ -977,7 +977,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "sum by (status) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" | json [$__auto]))",
+              "expr": "sum by (status) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | json [$__auto]))",
               "legendFormat": "{{status}}",
               "refId": "A"
             }
@@ -1052,7 +1052,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "{namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= \"$search\" | json",
+              "expr": "{namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= ${search:json} | json",
               "queryType": "range",
               "maxLines": 1000,
               "refId": "A"
