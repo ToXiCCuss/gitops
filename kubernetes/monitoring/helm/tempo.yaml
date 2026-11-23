@@ -40,11 +40,12 @@ spec:
                 remoteWriteUrl: http://prometheus-prometheus.prometheus:9090/api/v1/write
                 processor:
                   service_graphs:
-                    # Only peer.service names a node without its own spans (external hosts, set by the Istio Telemetry
-                    # from the :authority header). db.* stays out: database_name_attributes already draws the database
-                    # edge, a second virtual node per database would double it.
+                    # Only peer.service names a node without its own spans: external hosts (set by the Istio Telemetry
+                    # from the :authority header) and databases (the JDBC spans of the apps carry peer.service = database).
+                    # Without the database edges from db.* every query would be counted twice, once per edge type.
                     peer_attributes:
                       - peer.service
+                    database_name_attributes: []
                   span_metrics: {}
                 storage:
                   path: /var/tempo/generator/wal

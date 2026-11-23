@@ -9,11 +9,19 @@ metadata:
     argocd.argoproj.io/sync-wave: "1"
 spec:
   tracing:
-    - providers:
+    - match:
+        mode: SERVER
+      providers:
         - name: tempo
       randomSamplingPercentage: 100
-      # Names the target of outgoing calls that have no sidecar span of their own (Vault, external APIs), so the
-      # Tempo service graph draws them as a node (peer_attributes in kubernetes/monitoring/helm/tempo.yaml).
+    # Names the target of outgoing calls that have no sidecar span of their own (Vault, external APIs), so the
+    # Tempo service graph draws them as a node (peer_attributes in kubernetes/monitoring/helm/tempo.yaml).
+    # Client side only: on inbound spans Tempo would name the unknown caller after it (pod IPs of the probes).
+    - match:
+        mode: CLIENT
+      providers:
+        - name: tempo
+      randomSamplingPercentage: 100
       customTags:
         peer.service:
           header:
