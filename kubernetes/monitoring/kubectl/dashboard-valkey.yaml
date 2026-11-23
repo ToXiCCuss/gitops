@@ -1724,6 +1724,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "ops",
+              "noValue": "No errors",
               "custom": {
                 "drawStyle": "line",
                 "lineWidth": 1,

@@ -251,37 +251,6 @@ data:
           }
         },
         {
-          "id": 5,
-          "type": "traces",
-          "title": "Trace by id",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
-          "gridPos": {
-            "x": 0,
-            "y": 26,
-            "w": 24,
-            "h": 14
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "tempo",
-                "uid": "tempo"
-              },
-              "queryType": "traceql",
-              "query": "$traceId",
-              "refId": "A"
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {},
-            "overrides": []
-          },
-          "options": {}
-        },
-        {
           "id": 6,
           "type": "timeseries",
           "title": "Tempo: spans received per second",
@@ -291,7 +260,7 @@ data:
           },
           "gridPos": {
             "x": 0,
-            "y": 40,
+            "y": 26,
             "w": 12,
             "h": 7
           },
@@ -332,7 +301,7 @@ data:
           },
           "gridPos": {
             "x": 12,
-            "y": 40,
+            "y": 26,
             "w": 12,
             "h": 7
           },
@@ -352,7 +321,8 @@ data:
           ],
           "fieldConfig": {
             "defaults": {
-              "unit": "ops"
+              "unit": "ops",
+              "noValue": "No discarded spans"
             },
             "overrides": []
           },
@@ -362,6 +332,51 @@ data:
               "placement": "bottom"
             }
           }
+        },
+        {
+          "id": 8,
+          "type": "row",
+          "title": "Trace by id (enter the id above, then open)",
+          "collapsed": true,
+          "gridPos": {
+            "x": 0,
+            "y": 33,
+            "w": 24,
+            "h": 1
+          },
+          "panels": [
+            {
+              "id": 5,
+              "type": "traces",
+              "title": "Trace by id",
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "gridPos": {
+                "x": 0,
+                "y": 34,
+                "w": 24,
+                "h": 14
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "tempo",
+                    "uid": "tempo"
+                  },
+                  "queryType": "traceql",
+                  "query": "$traceId",
+                  "refId": "A"
+                }
+              ],
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              },
+              "options": {}
+            }
+          ]
         }
       ]
     }

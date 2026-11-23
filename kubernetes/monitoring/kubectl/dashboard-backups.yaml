@@ -1000,7 +1000,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "kube_cronjob_status_last_successful_time{cronjob=~\".*backup.*\"}",
+              "expr": "max by (namespace, cronjob) (kube_cronjob_status_last_successful_time{cronjob=~\".*backup.*\"}) * 1000",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -1012,7 +1012,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "kube_cronjob_status_active{cronjob=~\".*backup.*\"}",
+              "expr": "max by (namespace, cronjob) (kube_cronjob_status_active{cronjob=~\".*backup.*\"})",
               "legendFormat": "",
               "instant": true,
               "range": false,

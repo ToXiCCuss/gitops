@@ -139,7 +139,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "sum(count_over_time({namespace=~\"$namespace\", container=~\"$container\"} |= \"$search\" [$__range]))",
+              "expr": "sum(count_over_time({namespace=~\"$namespace\", container=~\"$container\"} |= `$search` [$__range]))",
               "legendFormat": "",
               "refId": "A",
               "instant": true,
@@ -400,7 +400,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "sum by (container) (count_over_time({namespace=~\"$namespace\", container=~\"$container\"} |= \"$search\" [$__auto]))",
+              "expr": "sum by (container) (count_over_time({namespace=~\"$namespace\", container=~\"$container\"} |= `$search` [$__auto]))",
               "legendFormat": "{{container}}",
               "refId": "A"
             }
@@ -571,6 +571,19 @@ data:
               "queryType": "instant"
             }
           ],
+          "transformations": [
+            {
+              "id": "sortBy",
+              "options": {
+                "sort": [
+                  {
+                    "field": "Value #A",
+                    "desc": true
+                  }
+                ]
+              }
+            }
+          ],
           "fieldConfig": {
             "defaults": {
               "unit": "short",
@@ -590,7 +603,7 @@ data:
                 "lastNotNull"
               ],
               "fields": "",
-              "values": false
+              "values": true
             }
           }
         },
@@ -622,6 +635,19 @@ data:
               "queryType": "instant"
             }
           ],
+          "transformations": [
+            {
+              "id": "sortBy",
+              "options": {
+                "sort": [
+                  {
+                    "field": "Value #A",
+                    "desc": true
+                  }
+                ]
+              }
+            }
+          ],
           "fieldConfig": {
             "defaults": {
               "unit": "short",
@@ -641,7 +667,7 @@ data:
                 "lastNotNull"
               ],
               "fields": "",
-              "values": false
+              "values": true
             }
           }
         },
@@ -679,7 +705,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "{namespace=~\"$namespace\", container=~\"$container\"} |~ `\\b(WARN|ERROR|FATAL)\\b` |= \"$search\"",
+              "expr": "{namespace=~\"$namespace\", container=~\"$container\"} |~ `\\b(WARN|ERROR|FATAL)\\b` |= `$search`",
               "queryType": "range",
               "maxLines": 1000,
               "refId": "A"
@@ -716,7 +742,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "{namespace=~\"$namespace\", container=~\"$container\"} |= \"$search\"",
+              "expr": "{namespace=~\"$namespace\", container=~\"$container\"} |= `$search`",
               "queryType": "range",
               "maxLines": 1000,
               "refId": "A"

@@ -210,7 +210,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum(node_pvc_used_bytes) / node_filesystem_size_bytes{instance=~\"k8sdev01.*\",mountpoint=\"/\"} * 100",
+              "expr": "sum(node_pvc_used_bytes) / scalar(node_filesystem_size_bytes{instance=~\"k8sdev01.*\",mountpoint=\"/\"}) * 100",
               "legendFormat": "",
               "refId": "A",
               "format": "time_series",

@@ -934,6 +934,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
+              "noValue": "All targets up",
               "custom": {
                 "lineWidth": 1,
                 "fillOpacity": 10,

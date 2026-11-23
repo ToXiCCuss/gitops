@@ -1896,7 +1896,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "rate(mysql_global_status_table_open_cache_hits{instance=\"$instance\"}[$__rate_interval]) / (rate(mysql_global_status_table_open_cache_hits{instance=\"$instance\"}[$__rate_interval]) + rate(mysql_global_status_table_open_cache_misses{instance=\"$instance\"}[$__rate_interval]))",
+              "expr": "rate(mysql_global_status_table_open_cache_hits{instance=\"$instance\"}[$__rate_interval]) / ((rate(mysql_global_status_table_open_cache_hits{instance=\"$instance\"}[$__rate_interval]) + rate(mysql_global_status_table_open_cache_misses{instance=\"$instance\"}[$__rate_interval])) > 0)",
               "legendFormat": "Hit ratio",
               "instant": false,
               "range": true,

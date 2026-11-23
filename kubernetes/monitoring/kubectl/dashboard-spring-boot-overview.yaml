@@ -269,7 +269,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum(rate(http_server_requests_seconds_count{namespace=~\"$namespace\", application=~\"$application\", pod=~\"$pod\", uri!~\"/actuator.*\", outcome=\"SERVER_ERROR\"}[$__rate_interval])) / sum(rate(http_server_requests_seconds_count{namespace=~\"$namespace\", application=~\"$application\", pod=~\"$pod\", uri!~\"/actuator.*\"}[$__rate_interval]))",
+              "expr": "(sum(rate(http_server_requests_seconds_count{namespace=~\"$namespace\", application=~\"$application\", pod=~\"$pod\", uri!~\"/actuator.*\", outcome=\"SERVER_ERROR\"}[$__rate_interval])) or vector(0)) / (sum(rate(http_server_requests_seconds_count{namespace=~\"$namespace\", application=~\"$application\", pod=~\"$pod\", uri!~\"/actuator.*\"}[$__rate_interval])) > 0)",
               "legendFormat": "",
               "refId": "A"
             }
@@ -277,6 +277,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "percentunit",
+              "noValue": "No requests",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [

@@ -501,6 +501,7 @@ data:
           "fieldConfig": {
             "defaults": {
               "unit": "short",
+              "noValue": "No failed syncs",
               "custom": {
                 "fillOpacity": 10,
                 "showPoints": "never"
