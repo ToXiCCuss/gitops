@@ -12,6 +12,12 @@ spec:
     - providers:
         - name: tempo
       randomSamplingPercentage: 100
+      # Names the target of outgoing calls that have no sidecar span of their own (Vault, external APIs), so the
+      # Tempo service graph draws them as a node (peer_attributes in kubernetes/monitoring/helm/tempo.yaml).
+      customTags:
+        peer.service:
+          header:
+            name: ":authority"
 
 ---
 # Needs the extension provider "access-json" from istio/istio-operator.yaml (istioctl install), same order as for "tempo".

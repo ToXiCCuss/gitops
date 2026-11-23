@@ -39,7 +39,12 @@ spec:
                 enabled: true
                 remoteWriteUrl: http://prometheus-prometheus.prometheus:9090/api/v1/write
                 processor:
-                  service_graphs: {}
+                  service_graphs:
+                    # Only peer.service names a node without its own spans (external hosts, set by the Istio Telemetry
+                    # from the :authority header). db.* stays out: database_name_attributes already draws the database
+                    # edge, a second virtual node per database would double it.
+                    peer_attributes:
+                      - peer.service
                   span_metrics: {}
                 storage:
                   path: /var/tempo/generator/wal
