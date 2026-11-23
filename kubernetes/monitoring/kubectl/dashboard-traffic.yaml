@@ -850,7 +850,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "topk(10, sum by (user_agent) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= `$search` | json [$__range])))",
+              "expr": "topk(10, sum by (user_agent) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= `$search` | json | label_format user_agent=`{{ or .user_agent \"(none)\" }}` [$__range])))",
               "legendFormat": "{{user_agent}}",
               "refId": "A",
               "instant": true,
@@ -927,7 +927,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "topk(10, sum by (host) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= `$search` | json [$__range])))",
+              "expr": "topk(10, sum by (host) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= `$search` | json | label_format host=`{{ or .host \"(none)\" }}` [$__range])))",
               "legendFormat": "{{host}}",
               "refId": "A",
               "instant": true,
@@ -991,7 +991,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "expr": "topk(10, sum by (host, path) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= `$search` | json [$__range])))",
+              "expr": "topk(10, sum by (host, path) (count_over_time({namespace=\"istio-system\", container=\"istio-proxy\"} |= \"\\\"client_ip\\\"\" |= `$search` | json | label_format host=`{{ or .host \"(none)\" }}`, path=`{{ or .path \"(none)\" }}` [$__range])))",
               "legendFormat": "{{host}}{{path}}",
               "refId": "A",
               "instant": true,
