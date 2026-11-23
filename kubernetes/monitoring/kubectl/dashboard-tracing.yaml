@@ -30,7 +30,36 @@ data:
       },
       "editable": true,
       "templating": {
-        "list": []
+        "list": [
+          {
+            "type": "custom",
+            "name": "stage",
+            "label": "Stage",
+            "description": "Namespace of the Spring apps: their services are named <app>.<namespace> (Istio and spring-boot-chart).",
+            "query": "dev and prod : dev|prod, dev : dev, prod : prod",
+            "current": {
+              "text": "dev and prod",
+              "value": "dev|prod"
+            },
+            "options": [
+              {
+                "selected": true,
+                "text": "dev and prod",
+                "value": "dev|prod"
+              },
+              {
+                "selected": false,
+                "text": "dev",
+                "value": "dev"
+              },
+              {
+                "selected": false,
+                "text": "prod",
+                "value": "prod"
+              }
+            ]
+          }
+        ]
       },
       "panels": [
         {
@@ -53,7 +82,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (service) (increase(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\"}[$__range]))",
+              "expr": "sum by (service) (increase(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\", service=~\".+[.]($stage)\"}[$__range]))",
               "legendFormat": "{{service}}",
               "instant": true,
               "range": false,
@@ -97,7 +126,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\"}[$__rate_interval]))",
+              "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\", service=~\".+[.]($stage)\"}[$__rate_interval]))",
               "legendFormat": "{{service}}",
               "instant": false,
               "range": true,
@@ -138,7 +167,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\", status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval]))",
+              "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\", status_code=\"STATUS_CODE_ERROR\", service=~\".+[.]($stage)\"}[$__rate_interval]))",
               "legendFormat": "{{service}}",
               "instant": false,
               "range": true,
@@ -179,7 +208,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "histogram_quantile(0.95, sum by (le, service) (rate(traces_spanmetrics_latency_bucket{span_kind=\"SPAN_KIND_SERVER\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le, service) (rate(traces_spanmetrics_latency_bucket{span_kind=\"SPAN_KIND_SERVER\", service=~\".+[.]($stage)\"}[$__rate_interval])))",
               "legendFormat": "{{service}}",
               "instant": false,
               "range": true,
@@ -220,7 +249,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (client, server) (increase(traces_service_graph_request_total{}[$__range]))",
+              "expr": "sum by (client, server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"tempo[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range]))",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -263,7 +292,10 @@ data:
                 "uid": "tempo"
               },
               "queryType": "serviceMap",
-              "serviceMapQuery": "{}",
+              "serviceMapQuery": [
+                "{client=~\".+[.]($stage)\", server!~\"tempo[.].*\"}",
+                "{server=~\".+[.]($stage)\"}"
+              ],
               "refId": "A"
             }
           ],
