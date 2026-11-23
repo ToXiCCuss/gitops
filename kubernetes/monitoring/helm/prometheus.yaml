@@ -252,6 +252,13 @@ spec:
                         source_labels:
                           - __meta_kubernetes_service_name
                           - __meta_kubernetes_endpoint_port_name
+                      # The Istio control plane dashboard selects istiod by app="istiod" and groups by pod.
+                      - source_labels:
+                          - __meta_kubernetes_pod_label_app
+                        target_label: app
+                      - source_labels:
+                          - __meta_kubernetes_pod_name
+                        target_label: pod
                   - job_name: envoy-stats
                     scrape_interval: 30s
                     kubernetes_sd_configs:
