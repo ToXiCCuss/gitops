@@ -177,7 +177,8 @@ data:
           ],
           "fieldConfig": {
             "defaults": {
-              "unit": "reqps"
+              "unit": "reqps",
+              "noValue": "No errors"
             },
             "overrides": []
           },
@@ -249,12 +250,27 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (client, server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\", client!~\"user|[0-9.:]+\"}[$__range]))",
+              "expr": "round(sum by (client, server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\", client!~\"user|[0-9.:]+\"}[$__range])))",
               "legendFormat": "",
               "instant": true,
               "range": false,
               "format": "table",
               "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "renameByName": {
+                  "client": "Caller",
+                  "server": "Target",
+                  "Value": "Requests"
+                }
+              }
             }
           ],
           "fieldConfig": {
@@ -265,7 +281,7 @@ data:
             "showHeader": true,
             "sortBy": [
               {
-                "displayName": "Value",
+                "displayName": "Requests",
                 "desc": true
               }
             ]
