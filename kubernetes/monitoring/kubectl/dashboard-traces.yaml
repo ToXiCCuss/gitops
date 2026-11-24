@@ -131,7 +131,7 @@ data:
                 "uid": "tempo"
               },
               "queryType": "traceql",
-              "query": "{ resource.service.name =~ \"$stage\" }",
+              "query": "{ resource.service.name =~ \"$stage\" && trace:rootName !~ \"tempo[.].*\" }",
               "limit": 50,
               "tableType": "traces",
               "refId": "A"
@@ -166,7 +166,7 @@ data:
                 "uid": "tempo"
               },
               "queryType": "traceql",
-              "query": "{ resource.service.name =~ \"$stage\" && duration > $minDuration }",
+              "query": "{ resource.service.name =~ \"$stage\" && trace:rootName !~ \"tempo[.].*\" && duration > $minDuration }",
               "limit": 50,
               "tableType": "traces",
               "refId": "A"
@@ -201,7 +201,7 @@ data:
                 "uid": "tempo"
               },
               "queryType": "traceql",
-              "query": "{ resource.service.name =~ \"$stage\" } && { status = error }",
+              "query": "{ resource.service.name =~ \"$stage\" && trace:rootName !~ \"tempo[.].*\" } && { status = error }",
               "limit": 50,
               "tableType": "traces",
               "refId": "A"
