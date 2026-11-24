@@ -201,7 +201,7 @@ data:
                 "uid": "tempo"
               },
               "queryType": "traceql",
-              "query": "{ resource.service.name =~ \"$stage\" && status = error }",
+              "query": "{ resource.service.name =~ \"$stage\" } && { status = error }",
               "limit": 50,
               "tableType": "traces",
               "refId": "A"
