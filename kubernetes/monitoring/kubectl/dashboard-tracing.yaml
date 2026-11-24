@@ -309,7 +309,7 @@ data:
           "id": 7,
           "type": "nodeGraph",
           "title": "Service graph (icons)",
-          "description": "Same edges as the service graph, built from the Prometheus metrics of Tempo so every node gets a type icon: cube = Spring app, database = database, user = caller without a span, exchange-alt = gateway. Requests per second, the arc is the share of failed requests.",
+          "description": "Same edges as the service graph, built from the Prometheus metrics of Tempo so every node gets a type icon: cube = Spring app, database = database, user = caller without a span, exchange-alt = gateway. Numbers are requests in the selected range. Ring: green up to 1 % failed requests, orange up to 5 %, red above, gray without incoming requests.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -326,7 +326,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(sum by (id) (label_replace(sum by (server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])), \"id\", \"$1\", \"server\", \"(.*)\") or label_replace(sum by (client) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])), \"id\", \"$1\", \"client\", \"(.*)\") * 0) / $__range_s, \"icon\", \"database\", \"id\", \"[^.]+\"), \"icon\", \"user\", \"id\", \"user\"), \"icon\", \"cube\", \"id\", \".+[.](dev|prod)\"), \"icon\", \"exchange-alt\", \"id\", \"(internal-gateway|istio-ingressgateway)[.].*\"), \"title\", \"$1\", \"id\", \"(.*)\")",
+              "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(sum by (id) (label_replace(sum by (server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])), \"id\", \"$1\", \"server\", \"(.*)\") or label_replace(sum by (client) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])), \"id\", \"$1\", \"client\", \"(.*)\") * 0), \"icon\", \"database\", \"id\", \"[^.]+\"), \"icon\", \"user\", \"id\", \"user\"), \"icon\", \"cube\", \"id\", \".+[.](dev|prod)\"), \"icon\", \"exchange-alt\", \"id\", \"(internal-gateway|istio-ingressgateway)[.].*\"), \"title\", \"$1\", \"id\", \"(.*)\")",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -338,7 +338,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (id) (label_replace(sum by (server) ((increase(traces_service_graph_request_failed_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_failed_total{server=~\".+[.]($stage)\"}[$__range])) or (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])) * 0), \"id\", \"$1\", \"server\", \"(.*)\")) / sum by (id) (label_replace(sum by (server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])), \"id\", \"$1\", \"server\", \"(.*)\"))",
+              "expr": "label_replace((sum by (id) (label_replace(sum by (server) ((increase(traces_service_graph_request_failed_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_failed_total{server=~\".+[.]($stage)\"}[$__range])) or (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])) * 0), \"id\", \"$1\", \"server\", \"(.*)\")) / sum by (id) (label_replace(sum by (server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])), \"id\", \"$1\", \"server\", \"(.*)\"))) <= 0.01, \"color\", \"#73BF69\", \"id\", \".*\") or label_replace((sum by (id) (label_replace(sum by (server) ((increase(traces_service_graph_request_failed_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_failed_total{server=~\".+[.]($stage)\"}[$__range])) or (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])) * 0), \"id\", \"$1\", \"server\", \"(.*)\")) / sum by (id) (label_replace(sum by (server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])), \"id\", \"$1\", \"server\", \"(.*)\"))) > 0.01 <= 0.05, \"color\", \"#FF9830\", \"id\", \".*\") or label_replace((sum by (id) (label_replace(sum by (server) ((increase(traces_service_graph_request_failed_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_failed_total{server=~\".+[.]($stage)\"}[$__range])) or (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])) * 0), \"id\", \"$1\", \"server\", \"(.*)\")) / sum by (id) (label_replace(sum by (server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])), \"id\", \"$1\", \"server\", \"(.*)\"))) > 0.05, \"color\", \"#F2495C\", \"id\", \".*\")",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -350,19 +350,7 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "1 - (sum by (id) (label_replace(sum by (server) ((increase(traces_service_graph_request_failed_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_failed_total{server=~\".+[.]($stage)\"}[$__range])) or (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])) * 0), \"id\", \"$1\", \"server\", \"(.*)\")) / sum by (id) (label_replace(sum by (server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])), \"id\", \"$1\", \"server\", \"(.*)\")))",
-              "legendFormat": "",
-              "instant": true,
-              "range": false,
-              "format": "table",
-              "refId": "C"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
-              "expr": "label_replace(label_replace(label_join(sum by (client, server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])) / $__range_s, \"id\", \" -> \", \"client\", \"server\"), \"source\", \"$1\", \"client\", \"(.*)\"), \"target\", \"$1\", \"server\", \"(.*)\")",
+              "expr": "label_replace(label_replace(label_join(sum by (client, server) (increase(traces_service_graph_request_total{client=~\".+[.]($stage)\", server!~\"(tempo|vault)[.].*\"}[$__range]) or increase(traces_service_graph_request_total{server=~\".+[.]($stage)\"}[$__range])), \"id\", \" -> \", \"client\", \"server\"), \"source\", \"$1\", \"client\", \"(.*)\"), \"target\", \"$1\", \"server\", \"(.*)\")",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -375,7 +363,7 @@ data:
               "id": "joinByField",
               "filter": {
                 "id": "byRefId",
-                "options": "/^[ABC]$/"
+                "options": "/^[AB]$/"
               },
               "options": {
                 "byField": "id",
@@ -389,14 +377,12 @@ data:
                   "Time": true,
                   "Time 1": true,
                   "Time 2": true,
-                  "Time 3": true,
                   "client": true,
                   "server": true
                 },
                 "renameByName": {
                   "Value #A": "mainstat",
-                  "Value #B": "arc__failed",
-                  "Value #C": "arc__success",
+                  "Value #B": "detail__Failed share",
                   "Value #D": "mainstat"
                 }
               }
@@ -406,24 +392,7 @@ data:
             "defaults": {},
             "overrides": []
           },
-          "options": {
-            "nodes": {
-              "mainStatUnit": "reqps",
-              "arcs": [
-                {
-                  "field": "arc__success",
-                  "color": "green"
-                },
-                {
-                  "field": "arc__failed",
-                  "color": "red"
-                }
-              ]
-            },
-            "edges": {
-              "mainStatUnit": "reqps"
-            }
-          }
+          "options": {}
         }
       ]
     }
