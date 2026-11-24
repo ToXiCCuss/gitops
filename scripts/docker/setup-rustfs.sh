@@ -12,6 +12,8 @@
 # Buckets listed under "removedBuckets" are deleted with all their objects (irreversible; a bucket that is gone
 # already is skipped, one that is also listed under "buckets" is refused). --dry-run only reports which buckets
 # it would delete and changes nothing else.
+# Identities listed under "removedIdentities" (names) lose their user and their policy in RustFS (one that is gone already
+# is skipped, one that is also listed under "identities" is refused). Their keys in Vault (docker/s3/<name>) stay.
 #
 # Buckets are created with rclone, users and policies through the admin API of RustFS (/rustfs/admin/v3,
 # signed with the root key, curl needs --aws-sigv4: 7.75 or newer). The policy of an identity is built from its entry:
@@ -64,7 +66,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --endpoint) S3_ENDPOINT="${2:?--endpoint needs an address}"; shift 2 ;;
         --dry-run)  IS_DRY_RUN=true; shift ;;
-        -h|--help)  sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)  sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) error "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -209,6 +211,17 @@ rustfs_admin() {
     [[ "$code" =~ ^2[0-9][0-9]$ ]] || { error "RustFS answered HTTP $code to $method $target: ${response%$'\n'*}"; return 1; }
 }
 
+# rustfs_admin_remove <path and query>: a DELETE request to the admin API as root. A 404 counts as success (already gone)
+rustfs_admin_remove() {
+    local target="$1" response code
+    response=$(printf 'user = %s\n' "$(jq -rn --arg value "$ROOT_ACCESS_KEY:$ROOT_SECRET_KEY" '$value | @json')" \
+        | curl -sS -m "$ADMIN_TIMEOUT_SECONDS" -K - -w '\n%{http_code}' --aws-sigv4 "$SIGNING_SCOPE" -X DELETE "$S3_ENDPOINT/$ADMIN_API_PATH/$target") \
+        || return 1
+    code="${response##*$'\n'}"
+    [[ "$code" =~ ^2[0-9][0-9]$ || "$code" == "$HTTP_NOT_FOUND" ]] \
+        || { error "RustFS answered HTTP $code to DELETE $target: ${response%$'\n'*}"; return 1; }
+}
+
 # run_rclone_as <access key> <secret key> <rclone arguments>: rclone against RustFS, the keys are passed on by name
 run_rclone_as() {
     local access="$1" secret="$2"
@@ -268,6 +281,43 @@ remove_buckets() {
             has_failed=true
         fi
     done < <(jq -r '.removedBuckets // [] | .[]' "$IDENTITIES_FILE")
+    [[ "$has_failed" == false ]]
+}
+
+# is_identity_declared <name>: true if the identity is listed under "identities" in identities.json
+is_identity_declared() {
+    jq -e --arg name "$1" '.identities | map(.name) | index($name) != null' "$IDENTITIES_FILE" >/dev/null
+}
+
+# remove_identity <name>: deletes the user (its access key is read from Vault, if the keys are still there) and the policy
+remove_identity() {
+    local name="$1" keys user=""
+    if is_identity_declared "$name"; then
+        error "Identity '$name' is listed under both identities and removedIdentities"
+        return 1
+    fi
+    if [[ "$IS_DRY_RUN" == true ]]; then
+        warn "Would delete the user and the policy of '$name' (dry run)"
+        return 0
+    fi
+    if keys=$(identity_keys "$name" 2>/dev/null); then
+        user="${keys%% *}"
+    else
+        warn "No keys of '$name' in $VAULT_KV_MOUNT/s3/$name: only the policy is deleted, a user may be left"
+    fi
+    if [[ -n "$user" ]]; then
+        rustfs_admin_remove "remove-user?accessKey=$user" || return 1
+    fi
+    rustfs_admin_remove "remove-canned-policy?name=$name" || return 1
+    success "User and policy of '$name' deleted (or gone already)"
+}
+
+# remove_identities: deletes users and policies of the identities under "removedIdentities"
+remove_identities() {
+    local name has_failed=false
+    while IFS= read -r name; do
+        remove_identity "$name" || has_failed=true
+    done < <(jq -r '.removedIdentities // [] | .[]' "$IDENTITIES_FILE")
     [[ "$has_failed" == false ]]
 }
 
@@ -390,6 +440,8 @@ step "RustFS"
 wait_for_s3
 step "Removed buckets"
 remove_buckets
+step "Removed identities"
+remove_identities
 if [[ "$IS_DRY_RUN" == true ]]; then
     info "Dry run: nothing else was changed"
     exit 0
