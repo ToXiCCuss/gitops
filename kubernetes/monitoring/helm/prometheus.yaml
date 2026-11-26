@@ -206,7 +206,7 @@ spec:
                 ruleSelectorNilUsesHelmValues: false
                 serviceMonitorSelectorNilUsesHelmValues: false
                 podMonitorSelectorNilUsesHelmValues: false
-                retention: 30d
+                retention: 7d
                 storageSpec:
                   volumeClaimTemplate:
                     spec:
@@ -214,7 +214,7 @@ spec:
                       resources:
                         requests:
                           storage: 100Gi
-                retentionSize: "50GB"
+                retentionSize: "20GB"
                 enableAdminAPI: false
                 # Tempo writes the RED metrics and the service graph of the traces here (kubernetes/monitoring/helm/tempo.yaml).
                 enableRemoteWriteReceiver: true
