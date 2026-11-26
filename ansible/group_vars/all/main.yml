@@ -64,7 +64,7 @@ host_config:
     firewall_rules:
       - { port: 80,    proto: tcp, comment: "NetBird server (HTTP)" }
       - { port: 443,   proto: tcp, comment: "NetBird server (HTTPS)" }
-      - { port: 3478,  proto: udp, comment: "NetBird server (STUN/TURN)" }
+      - { port: 3478,  proto: udp, comment: "NetBird relay (STUN)" }
       - { port: 51820, proto: udp, comment: "WireGuard" }
       - { port: 2456,  proto: udp, comment: "Game server (Pelican)" }
       - { port: 2457,  proto: udp, comment: "Game server (Pelican)" }

@@ -25,6 +25,27 @@ NetBird is the VPN and reverse proxy: every internal app and both hosts are reac
 - After `netbird_rollback.sh` the host runs the old version while Git holds the new one: `git revert` the version change on `master`
 - Images stay on plain tags without digest (`netbird_rollback.sh` needs that); server, proxy, dashboard come in one Renovate PR. Check validated Traefik/CrowdSec versions in the [upgrade docs](https://docs.netbird.io/selfhosted/maintenance/upgrade) before merging. The Traefik bouncer plugin version is not tracked by Renovate
 
+### Relay
+
+Relay and STUN run in their own project `docker/netbird-relay` (container `netbird-relay`, `relay.proxy.rjst.de`), so an upgrade or restart of `netbird-server` does not drop the relayed connections of the peers. Management only hands out the relay address (`relays` and `stuns` in `config.yaml`) and signs the credentials with a shared secret.
+
+- Not in `ALL_PROJECTS` either: deploy by name, `sudo scripts/docker/deploy.sh netbird-relay`. It joins the network `netbird_netbird` of the `netbird` project, so `netbird` runs first
+- TLS ends at the Traefik of `netbird` (certificate of `relay.proxy.rjst.de` by Let's Encrypt), so the relay serves WebSocket only, no QUIC. STUN (`3478/udp`) is published by the relay container itself
+- The secret is two Vault keys with **one value**: `NETBIRD_RELAY_SECRET` in `docker/netbird` and `NB_AUTH_SECRET` in `docker/netbird-relay`. A mismatch shows as `invalid signature` in `docker logs netbird-relay`, and peers fall back to no relay
+- Image version: same release as `netbird-server` (Renovate groups both compose files). An upgrade is `deploy.sh netbird-relay` after `netbird_upgrade.sh`; `netbird_upgrade.sh`, backup and rollback only know the project `netbird`
+- The relay keeps no data: a new host needs only the Vault key and the DNS record
+
+First setup (a cutover: the embedded relay stops, peers reconnect within seconds):
+
+1. Hetzner DNS: A record `relay.proxy.rjst.de` -> public IP of `docker01`
+2. Vault: `openssl rand -base64 32`, then the same value as `NETBIRD_RELAY_SECRET` in `docker/netbird` and as `NB_AUTH_SECRET` in the new secret `docker/netbird-relay`
+3. Merge, `git pull` in `/root/gitops`, then **in this order**: `sudo scripts/docker/deploy.sh netbird` (frees `3478/udp` and switches to the external relay), directly followed by `sudo scripts/docker/deploy.sh netbird-relay`
+4. Check: `docker logs netbird-relay` (WebSocket listener, STUN on 3478, `WARN ... Not starting QUIC listener` is expected), `docker logs netbird-relay | grep 'WS client connected from'`, `netbird status -d` on a peer (relays `Available`), `curl -I https://proxy.rjst.de/relay` answers 404
+5. Test with `netbird service reconfigure --service-env NB_FORCE_RELAY=true` on a peer, then restart `netbird-server` and check that the relayed connection stays up
+
+- Traefik does not set `X-Real-Port`, so the relay logs the address of Traefik for every peer. Only the log is affected, authentication does not depend on it
+- Rollback: `git revert` the change, `deploy.sh netbird` (embedded relay is back), `docker compose -p netbird-relay down` for the relay
+
 ### CrowdSec AppSec
 
 Dashboard and routes `/api`, `/oauth2` go through the Traefik bouncer plugin and the CrowdSec AppSec WAF ([guide](https://docs.netbird.io/selfhosted/maintenance/crowdsec-dashboard)).
