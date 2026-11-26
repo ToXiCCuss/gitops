@@ -85,6 +85,7 @@ copy_data() {
 }
 
 main() {
+  handle_help_request "$@"
   trap cleanup EXIT
   parse_arguments "$@"
   require_commands sudo mariadb mariadb-dump mktemp

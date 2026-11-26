@@ -127,6 +127,7 @@ SQL
 }
 
 main() {
+  handle_help_request "$@"
   parse_arguments "$@"
   require_commands sudo psql
   require_person_login_or_absent

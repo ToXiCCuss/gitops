@@ -82,6 +82,7 @@ SQL
 }
 
 main() {
+  handle_help_request "$@"
   parse_arguments "$@"
   require_commands sudo psql
   require_vault_access

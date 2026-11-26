@@ -58,6 +58,7 @@ ensure_login_absent() {
 }
 
 main() {
+  handle_help_request "$@"
   parse_arguments "$@"
   require_commands sudo mariadb
   require_vault_access

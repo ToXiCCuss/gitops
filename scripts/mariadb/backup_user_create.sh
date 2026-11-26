@@ -90,6 +90,7 @@ apply_backup_privileges() {
 }
 
 main() {
+  handle_help_request "$@"
   parse_arguments "$@"
   require_commands sudo mariadb openssl
   require_vault_access

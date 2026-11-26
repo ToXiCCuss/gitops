@@ -492,6 +492,7 @@ write_metrics() {
 }
 
 main() {
+  handle_help_request "$@"
   parse_arguments "$@"
   if [[ -n $METRICS_FILE && $DRY_RUN == false ]]; then
     trap write_metrics EXIT

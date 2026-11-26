@@ -16,6 +16,22 @@ die() {
   exit 1
 }
 
+# print_help: the comment at the top of the running script (without the shebang) as help text
+print_help() {
+  sed -n '2,/^[^#]/{/^#/s/^# \{0,1\}//p}' "${BASH_SOURCE[-1]}"
+}
+
+# handle_help_request "$@": -h or --help prints the help text and ends the script with 0, before anything is changed
+handle_help_request() {
+  local argument
+  for argument in "$@"; do
+    if [[ $argument == -h || $argument == --help ]]; then
+      print_help
+      exit 0
+    fi
+  done
+}
+
 # parse_options "$@": --dry-run sets DRY_RUN, any other option calls usage() of the script, the rest is POSITIONAL
 parse_options() {
   while (($# > 0)); do

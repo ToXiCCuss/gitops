@@ -53,6 +53,10 @@ write_metric() {
 }
 
 main() {
+  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    sed -n '2,/^[^#]/{/^#/s/^# \{0,1\}//p}' "$0"
+    exit 0
+  fi
   [[ $# -eq 2 ]] || usage
   local metrics_file="$1" storage_directory="$2" directory
   [[ -d "$storage_directory" ]] || {

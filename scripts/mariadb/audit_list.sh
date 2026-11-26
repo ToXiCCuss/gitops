@@ -60,6 +60,7 @@ SELECT PARTITION_NAME AS partition_name, TABLE_ROWS AS approx_rows
 }
 
 main() {
+  handle_help_request "$@"
   parse_arguments "$@"
   require_commands sudo mariadb
 

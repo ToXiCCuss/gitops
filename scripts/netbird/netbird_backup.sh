@@ -32,6 +32,11 @@
 #   EXTRA_TAG         additional restic tag for this snapshot (e.g. pre-upgrade)
 # =============================================================================
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    sed -n '2,/^[^#]/{/^#/s/^# \{0,1\}//p}' "$0"
+    exit 0
+fi
+
 CONFIG_FILE="/etc/netbird-backup.cred"
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"

@@ -79,6 +79,7 @@ SQL
 }
 
 main() {
+  handle_help_request "$@"
   (($# == 0)) || usage
   require_commands sudo psql
 

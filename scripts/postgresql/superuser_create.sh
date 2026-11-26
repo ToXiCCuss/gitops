@@ -92,6 +92,7 @@ is_password_needed() {
 }
 
 main() {
+  handle_help_request "$@"
   parse_arguments "$@"
   require_commands sudo psql
 

@@ -71,6 +71,7 @@ enable_table() {
 }
 
 main() {
+  handle_help_request "$@"
   local table failed_tables=()
   parse_arguments "$@"
   require_commands sudo mariadb

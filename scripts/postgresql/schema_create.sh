@@ -114,6 +114,7 @@ SQL
 }
 
 main() {
+  handle_help_request "$@"
   parse_arguments "$@"
   require_commands sudo psql
   require_database_and_owner_role
