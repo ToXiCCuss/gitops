@@ -38,3 +38,9 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+
+# The shared network of the single-container projects (created by scripts/docker/deploy.sh, docs/docker.md: Network)
+networks:
+  default:
+    name: shared
+    external: true
