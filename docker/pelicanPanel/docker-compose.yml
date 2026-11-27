@@ -1,7 +1,7 @@
 services:
   panel:
     container_name: pelican_panel
-    image: ghcr.io/pelican/panel:v1.0.0-rc.4
+    image: ghcr.io/pelican/panel:v1.0.0-rc.4@sha256:219045a24c160c711a18dfa964934b1c22aa3405d106826fdc0b3598863d45a8
     restart: always
     deploy:
       resources:
