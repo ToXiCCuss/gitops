@@ -36,6 +36,7 @@ Login for all apps. Runs on the **Docker host, not in the cluster**, on purpose:
 | Vault | `argocd/data/vault#oidc.client_secret` | `VAULT_CLIENT_SECRET` |
 | Forgejo | `argocd/data/forgejo#oidc.client_secret` | `FORGEJO_CLIENT_SECRET` |
 | Developer Portal | `argocd/data/developer-portal#oidc.client_secret` | `DEVELOPER_PORTAL_CLIENT_SECRET` |
+| Arcane | `docker/arcane#ARCANE_OIDC_CLIENT_SECRET` | `ARCANE_CLIENT_SECRET` |
 | RustFS | typed (`openssl rand -base64 32`) | `RUSTFS_CLIENT_SECRET` |
 
 New app: add a client block with roles and mapper to the file, secret in Vault and in `docker/keycloak-config` (new variable in `default.env` and `vault.env.example`), `sudo scripts/docker/deploy.sh keycloak-config`, check `docker logs keycloak-config`.

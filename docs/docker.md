@@ -1,6 +1,6 @@
 # Docker host
 
-Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker01`. No management UI.
+Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker01`.
 
 | Project | Purpose |
 |---|---|
@@ -8,12 +8,13 @@ Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker
 | `netbird` | self-hosted NetBird server, see [netbird.md](netbird.md) |
 | `keycloak`, `keycloak-config` | login, see [keycloak.md](keycloak.md) |
 | `pelicanPanel`, `pelicanWings` | game servers |
+| `arcane` | Docker web UI, see [Arcane](#arcane) |
 | `cadvisor` | container metrics |
 | `pokelit-bot` | game bot, see [Pokelit bot](#pokelit-bot) |
 
 - Images pinned by digest, updated by Renovate ([updates.md](updates.md))
 - Per project: `default.env` (all variables, empty secrets), `vault.env.example` (keys from Vault; `NAME=` required, `#NAME=` optional)
-- Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `keycloak`, `keycloak-config`, `netbird`
+- Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `keycloak`, `keycloak-config`, `arcane`, `netbird`
 
 ## Network
 
@@ -21,6 +22,16 @@ Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker
 - Their access to the host (PostgreSQL, MariaDB, S3, Keycloak) goes through `host.docker.internal`, not through the network. The UFW rules allow `172.16.0.0/12`: a network outside of it (Docker takes `192.168.x` when `172.16.0.0/12` is used up) would lose that access
 - `netbird` (fixed subnet `172.30.0.0/24`, Traefik `172.30.0.10`) and the networks of Pelican (`pelicanpanel_default`, `wings0`, `pelican_nw`) stay as they are
 - After the first deploy the old networks (`cadvisor_default`, `offsite-sync_default`, `restic-backup_default`, `rustfs_default`, `keycloak`) are empty: `scripts/docker/cleanup.sh` lists them, remove by hand with `docker network rm <name>`
+
+## Arcane
+
+Arcane can inspect running containers and work with named Docker volumes through the Docker socket. Its own database lives in the `arcane_arcane_data` volume. Docker deployments continue through `deploy.sh`. The Git checkout is outside the Arcane container.
+
+1. Before merging, run `scripts/vault/Generate-Secrets.ps1` ([vault.md](vault.md#secrets)): it creates `ARCANE_ENCRYPTION_KEY` and `ARCANE_OIDC_CLIENT_SECRET` in `docker/arcane` and `ARCANE_CLIENT_SECRET` (the same value as the OIDC client secret) in `docker/keycloak-config`.
+2. From `/root/gitops` on `docker01`, run `sudo scripts/docker/deploy.sh keycloak-config` and check `docker logs keycloak-config` for a successful import. Arcane is part of `ALL_PROJECTS`: the deploy timer starts it within 3 hours of the merge, or run `sudo scripts/docker/deploy.sh arcane` at once. Without the two Vault secrets the timer fails on `arcane` (see `DockerDeployNeverReported`).
+3. NetBird dashboard: reverse proxy service `arcane.proxy.rjst.de` to port `3552` of the Docker host, restricted to your peers, then open `https://arcane.proxy.rjst.de`. A container cannot reach `https://auth.proxy.rjst.de` (`403`), so Arcane calls Keycloak's token, userinfo and JWKS endpoints on `host.docker.internal:8180` (set in `default.env`, like RustFS in [backup-services.md](backup-services.md)); the browser uses the public authorization endpoint.
+4. Roles come from Keycloak, like for the other apps: give a user the client role `admin` of the client `arcane` (Users > Role mapping). `ARCANE_OIDC_ROLE_MAPPINGS` in `docker/arcane/default.env` turns it into the Arcane role `role_admin` on every startup; these mappings are read-only in the Arcane UI. Admin means control of the Docker socket, so grant it only to people who may be root on `docker01`. For scoped roles (a project or volume) map further claim values under **System → Groups** in Arcane.
+5. For the initial setup and recovery, sign in as `arcane` with the initial password from `/app/data/initial-admin-password` in the container and set a new password. Then test a Keycloak login with a user that has the role.
 
 ## Pokelit bot
 

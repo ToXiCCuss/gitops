@@ -22,3 +22,4 @@ docker_daemon_options:
 # ("connection refused"). Ein systemd-Drop-in startet sie nach jedem Start von dockerd neu.
 docker_socket_containers:
   - pelican_wings
+  - arcane

@@ -1,0 +1,34 @@
+services:
+  arcane:
+    image: ghcr.io/getarcaneapp/manager:v3.2.0@sha256:511a3f455fed51f601ff729931e12871ae1c8d098655686ec7ad6ee628897b1a
+    container_name: arcane
+    env_file:
+      - default.env
+      - path: /run/gitops/arcane/vault.env
+        required: false
+    # host.docker.internal points to the Docker host, where Keycloak listens on 8180
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      # The NetBird reverse proxy arcane.proxy.rjst.de points to it
+      - "3552:3552"
+    labels:
+      # Catalog link (portal.* labels)
+      portal.name: "Arcane"
+      portal.url: "https://arcane.proxy.rjst.de"
+      portal.group: "Management"
+      portal.description: "Docker web UI"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - arcane_data:/app/data
+    cgroup: host
+    healthcheck:
+      test: ["CMD", "./arcane", "health", "--timeout", "2s"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  arcane_data:

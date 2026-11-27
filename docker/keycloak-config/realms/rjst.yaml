@@ -68,6 +68,11 @@ roles:
         description: Developer Portal administrator
       - name: user
         description: Developer Portal user
+    # admin becomes role_admin in Arcane (ARCANE_OIDC_ROLE_MAPPINGS in docker/arcane/default.env). Arcane gives a user
+    # without a mapped role no permissions. Arcane controls the Docker socket: grant admin only to people who may be root on docker01.
+    arcane:
+      - name: admin
+        description: Arcane administrator
 
 clients:
   - clientId: grafana
@@ -301,6 +306,33 @@ clients:
         protocolMapper: oidc-usermodel-client-role-mapper
         config:
           usermodel.clientRoleMapping.clientId: developer-portal
+          claim.name: roles
+          jsonType.label: String
+          multivalued: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+
+  - clientId: arcane
+    name: Arcane
+    protocol: openid-connect
+    enabled: true
+    publicClient: false
+    secret: $(env:ARCANE_CLIENT_SECRET)
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    rootUrl: https://arcane.proxy.rjst.de
+    redirectUris:
+      - https://arcane.proxy.rjst.de/auth/oidc/callback
+    webOrigins:
+      - https://arcane.proxy.rjst.de
+    protocolMappers:
+      - name: arcane-roles
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-client-role-mapper
+        config:
+          usermodel.clientRoleMapping.clientId: arcane
           claim.name: roles
           jsonType.label: String
           multivalued: "true"
