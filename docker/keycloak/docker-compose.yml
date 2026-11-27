@@ -1,5 +1,6 @@
 services:
   keycloak:
+    # Raise docker/keycloak-config together with this image: its tag names the Keycloak version it is built for.
     image: quay.io/keycloak/keycloak:26.6.3@sha256:5fdbf2dbb5897cc34e82de49d13e23db011f9925089dbc555fc095f2c8bc1dac
     container_name: keycloak
     command: ["start"]

@@ -3,7 +3,10 @@ services:
   # deploy.sh starts it again on every run, the import is idempotent. Check the result with:
   #   docker logs keycloak-config
   keycloak-config:
-    image: adorsys/keycloak-config-cli:6.5.1-26.5.5@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274
+    # The tag is <tool version>-<Keycloak version it is built for>. Keep the second part at the Keycloak
+    # version of docker/keycloak/docker-compose.yml (or the closest tag that exists). Renovate only moves the
+    # tool version, the Keycloak part is raised by hand together with the Keycloak image.
+    image: adorsys/keycloak-config-cli:6.6.0-26.6.2@sha256:af329e508d4a28c4606350f408e213502752c1976d46ca883bf5e97c64dbd5ca
     container_name: keycloak-config
     # The secrets come from Vault (docker/keycloak-config), scripts/docker/deploy.sh writes them to vault.env before it starts the project.
     # The file is optional so that docker compose logs/ps work without it. Deploy only with deploy.sh
