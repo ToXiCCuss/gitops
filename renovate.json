@@ -44,6 +44,21 @@
       "minimumReleaseAge": null
     },
     {
+      "description": "Major updates carry breaking changes and are often followed by quick fixes: wait a week. Minor updates use the default of 3 days.",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Patch and digest updates are fixes or rebuilds: one day is enough to catch a withdrawn release.",
+      "matchUpdateTypes": [
+        "patch",
+        "digest"
+      ],
+      "minimumReleaseAge": "1 day"
+    },
+    {
       "description": "The CRD chart and kube-prometheus-stack must ship the same prometheus-operator version, so they are raised in one PR.",
       "matchFileNames": [
         "kubernetes/monitoring/helm/prometheus.yaml",
