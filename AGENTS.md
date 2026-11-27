@@ -25,7 +25,7 @@ Extends the global instructions (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`).
 - Pin chart versions exactly (`targetRevision: v1.2.3`), never `*`, `latest` or branches. Renovate raises versions (minimum age 3 days); do not guess or raise them by hand without a request.
 - New Applications: `project: default`, `CreateNamespace=true`, resource requests and limits like the existing charts, explicit namespace.
 - Deleting a file means deleting the resource (`prune`). For resources with data or dependencies (PVC, namespace, operators, CRDs, Vault) only after explicit confirmation.
-- Never read or edit huge upstream files (`monitoring/crds/prometheus-crds.yaml`) completely, only search them in a targeted way.
+- Never vendor huge upstream files (such as CRDs) into Git; take them from a pinned chart. Prometheus CRDs: `monitoring/helm/prometheus-operator-crds.yaml`, bumped together with `prometheus.yaml`.
 - Rights for the Jenkins deployer (`helm-deployer`) stay namespaced and without RBAC or cluster-wide permissions. If the chart needs a new resource type, extend the role identically in `dev` and `prod` (there is no `qa` yet).
 
 ## Secrets

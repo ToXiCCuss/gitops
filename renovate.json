@@ -36,6 +36,18 @@
   ],
   "packageRules": [
     {
+      "description": "The CRD chart and kube-prometheus-stack must ship the same prometheus-operator version, so they are raised in one PR.",
+      "matchFileNames": [
+        "kubernetes/monitoring/helm/prometheus.yaml",
+        "kubernetes/monitoring/helm/prometheus-operator-crds.yaml"
+      ],
+      "matchPackageNames": [
+        "kube-prometheus-stack",
+        "prometheus-operator-crds"
+      ],
+      "groupName": "prometheus-operator"
+    },
+    {
       "description": "NetBird stays on plain tags: netbird_rollback.sh cannot tag an old image back onto a digest reference.",
       "matchFileNames": [
         "docker/netbird/docker-compose.yml"
