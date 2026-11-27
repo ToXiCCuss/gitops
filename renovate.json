@@ -48,6 +48,18 @@
       "groupName": "prometheus-operator"
     },
     {
+      "description": "Keycloak and keycloak-config-cli are reviewed together: the config-cli tag carries the Keycloak version it is built for (<tool>-<keycloak>), Renovate does not move that part, so adjust it by hand in the same PR.",
+      "matchFileNames": [
+        "docker/keycloak/docker-compose.yml",
+        "docker/keycloak-config/docker-compose.yml"
+      ],
+      "matchPackageNames": [
+        "quay.io/keycloak/keycloak",
+        "adorsys/keycloak-config-cli"
+      ],
+      "groupName": "keycloak"
+    },
+    {
       "description": "NetBird stays on plain tags: netbird_rollback.sh cannot tag an old image back onto a digest reference.",
       "matchFileNames": [
         "docker/netbird/docker-compose.yml"
