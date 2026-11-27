@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-operator-crds
+  namespace: argocd
+  annotations:
+    # The CRDs must exist before the kube-prometheus-stack chart (wave 3) creates its custom resources.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  destination:
+    namespace: prometheus
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus-operator-crds
+    # Keep this in step with kube-prometheus-stack: both charts must ship the same prometheus-operator
+    # appVersion (Renovate raises them together, see renovate.json).
+    targetRevision: 33.0.2
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Several of these CRDs embed a schema large enough that client-side apply's
+      # kubectl.kubernetes.io/last-applied-configuration annotation exceeds Kubernetes' 262144-byte
+      # annotation limit. Server-side apply does not write that annotation.
+      - ServerSideApply=true
