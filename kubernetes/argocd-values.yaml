@@ -131,7 +131,7 @@ repoServer:
       emptyDir: {}
   initContainers:
     - name: download-tools
-      image: registry.access.redhat.com/ubi8@sha256:d0cf91347dafeb7ef38ab463890ce2fccb1d57dd5cd1570c3d6e155ace8b2ffc
+      image: registry.access.redhat.com/ubi8@sha256:432e88be04b5561187a01fe33429cd2ce7a8408a00f000d8136df368dcab306f
       # Only downloads the AVP binary at the start of the pod: a short run, not measured
       resources:
         limits:
@@ -155,7 +155,7 @@ repoServer:
   extraContainers:
     - name: avp
       command: [/var/run/argocd/argocd-cmp-server]
-      image: registry.access.redhat.com/ubi8@sha256:d0cf91347dafeb7ef38ab463890ce2fccb1d57dd5cd1570c3d6e155ace8b2ffc
+      image: registry.access.redhat.com/ubi8@sha256:432e88be04b5561187a01fe33429cd2ce7a8408a00f000d8136df368dcab306f
       resources:
         limits:
           cpu: 500m
