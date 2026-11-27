@@ -36,6 +36,14 @@
   ],
   "packageRules": [
     {
+      "description": "Pinning a tag to its digest does not change the image that runs, and many registries give no release date to measure the age against, so these PRs would stay pending forever.",
+      "matchUpdateTypes": [
+        "pin",
+        "pinDigest"
+      ],
+      "minimumReleaseAge": null
+    },
+    {
       "description": "The CRD chart and kube-prometheus-stack must ship the same prometheus-operator version, so they are raised in one PR.",
       "matchFileNames": [
         "kubernetes/monitoring/helm/prometheus.yaml",
