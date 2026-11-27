@@ -203,7 +203,7 @@ sudo RESTIC_PASSWORD_FILE=/root/restic-vault scripts/vault/vault_restore.sh
 
 ### NetBird
 
-`netbird_restore.sh` works on the original server and on a new one (Docker + Compose installed, same domain pointing to it, TCP 80/443 and UDP 3478 open). Needs `/etc/netbird-backup.cred` (S3 keys of identity `netbird`) and `/root/restic` (both written by `netbird_backup_setup.sh`).
+`netbird_restore.sh` works on the original server and on a new one (Docker + Compose installed, same domain pointing to it, TCP 80/443 and UDP 3478 open, plus the project `netbird-relay`: [netbird.md](netbird.md#relay)). Needs `/etc/netbird-backup.cred` (S3 keys of identity `netbird`) and `/root/restic` (both written by `netbird_backup_setup.sh`).
 
 ```bash
 sudo netbird_restore.sh

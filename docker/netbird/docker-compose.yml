@@ -90,14 +90,12 @@ services:
         max-size: "500m"
         max-file: "2"
 
-  # Combined server (Management + Signal + Relay + STUN)
+  # Combined server (Management + Signal). Relay and STUN run in docker/netbird-relay
   netbird-server:
     image: netbirdio/netbird-server:0.83.2
     container_name: netbird-server
     restart: unless-stopped
     networks: [netbird]
-    ports:
-      - '3478:3478/udp'
     volumes:
       - netbird_data:/var/lib/netbird
       - /root/netbird/config.yaml:/etc/netbird/config.yaml
@@ -111,8 +109,8 @@ services:
       - traefik.http.routers.netbird-grpc.tls.certresolver=letsencrypt
       - traefik.http.routers.netbird-grpc.service=netbird-server-h2c
       - traefik.http.routers.netbird-grpc.priority=100
-      # Backend router (relay, WebSocket, API, OAuth2)
-      - traefik.http.routers.netbird-backend.rule=Host(`proxy.rjst.de`) && (PathPrefix(`/relay`) || PathPrefix(`/ws-proxy/`) || PathPrefix(`/api`) || PathPrefix(`/oauth2`))
+      # Backend router (WebSocket, API, OAuth2)
+      - traefik.http.routers.netbird-backend.rule=Host(`proxy.rjst.de`) && (PathPrefix(`/ws-proxy/`) || PathPrefix(`/api`) || PathPrefix(`/oauth2`))
       - traefik.http.routers.netbird-backend.entrypoints=websecure
       - traefik.http.routers.netbird-backend.tls=true
       - traefik.http.routers.netbird-backend.tls.certresolver=letsencrypt

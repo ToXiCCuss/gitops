@@ -6,13 +6,14 @@ Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker
 |---|---|
 | `restic-backup`, `offsite-sync`, `rustfs` | backups, see [backups.md](backups.md) |
 | `netbird` | self-hosted NetBird server, see [netbird.md](netbird.md) |
+| `netbird-relay` | relay and STUN of NetBird, see [netbird.md](netbird.md#relay) |
 | `keycloak`, `keycloak-config` | login, see [keycloak.md](keycloak.md) |
 | `pelicanPanel`, `pelicanWings` | game servers |
 | `cadvisor` | container metrics |
 
 - Images pinned by digest, updated by Renovate ([updates.md](updates.md))
 - Per project: `default.env` (all variables, empty secrets), `vault.env.example` (keys from Vault; `NAME=` required, `#NAME=` optional)
-- Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `keycloak`, `keycloak-config`, `netbird`
+- Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `keycloak`, `keycloak-config`, `netbird`, `netbird-relay`
 
 ## Network
 

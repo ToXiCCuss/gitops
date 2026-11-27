@@ -4,14 +4,21 @@
 server:
   listenAddress: ":80"
   exposedAddress: "https://proxy.rjst.de:443"
-  stunPorts:
-    - 3478
   metricsPort: 9090
   healthcheckAddress: ":9000"
   logLevel: "info"
   logFile: "console"
 
   authSecret: "__VAULT_NETBIRD_AUTH_SECRET__"
+  # Relay and STUN run in docker/netbird-relay, so the embedded ones are off (a restart of this server keeps the relayed connections)
+  stuns:
+    - uri: "stun:relay.proxy.rjst.de:3478"
+      proto: "udp"
+  relays:
+    addresses:
+      - "rels://relay.proxy.rjst.de:443"
+    secret: "__VAULT_NETBIRD_RELAY_SECRET__"
+    credentialsTTL: "24h"
   dataDir: "/var/lib/netbird"
 
   auth:

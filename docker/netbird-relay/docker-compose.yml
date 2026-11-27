@@ -1,0 +1,43 @@
+# The relay and STUN server of NetBird, split from docker/netbird so that an upgrade or restart of netbird-server (management,
+# signal) does not drop the relayed connections of the peers. Not in ALL_PROJECTS of scripts/docker/deploy.sh, like netbird: the timer
+# never touches it, deploy it by name (docs/netbird.md: Relay).
+# The shared secret NB_AUTH_SECRET comes from Vault (docker/netbird-relay) and must be the same value as NETBIRD_RELAY_SECRET of
+# docker/netbird: management hands the peers relay credentials signed with it. The image version follows netbird (same release).
+# The relay sits behind the Traefik of docker/netbird (TLS ends there, so the relay serves WebSocket only, no QUIC) and joins its
+# network: start docker/netbird first. STUN (3478/udp) is published directly, it does not pass Traefik.
+services:
+  netbird-relay:
+    image: netbirdio/relay:0.83.2
+    container_name: netbird-relay
+    restart: unless-stopped
+    # The secret comes from Vault, scripts/docker/deploy.sh writes it to vault.env before it starts the project.
+    # The file is optional so that docker compose logs/ps work without it. Deploy only with deploy.sh
+    env_file:
+      - "default.env"
+      - path: "/run/gitops/netbird-relay/vault.env"
+        required: false
+    ports:
+      - '3478:3478/udp'
+    networks: [netbird]
+    labels:
+      - traefik.enable=true
+      # The whole host goes to the relay. No CrowdSec middleware: peers are not filtered (same as the relay path before)
+      - traefik.http.routers.netbird-relay.rule=Host(`relay.proxy.rjst.de`)
+      - traefik.http.routers.netbird-relay.entrypoints=websecure
+      - traefik.http.routers.netbird-relay.tls=true
+      - traefik.http.routers.netbird-relay.tls.certresolver=letsencrypt
+      - traefik.http.routers.netbird-relay.service=netbird-relay
+      - traefik.http.services.netbird-relay.loadbalancer.server.port=8080
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "2"
+
+networks:
+  # Created by docker/netbird (compose project netbird, network netbird), the one Traefik reads its labels from
+  netbird:
+    external: true
+    name: netbird_netbird
