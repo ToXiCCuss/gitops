@@ -1,0 +1,39 @@
+# The Pokelit bot (own app, Node.js with a headed Chromium). Its source is not in this repository: the image is built on this host
+# from /opt/pokelit-bot (copy of github.com/ToXiCCuss/pokelit-bot). Not in ALL_PROJECTS of scripts/docker/deploy.sh: deploy deploys it
+# by name and `up -d` never rebuilds, so the timer would neither update the code nor rebuild the 3.7 GB image. Update procedure: docs/docker.md.
+# The project name has to stay pokelit-bot (name of the folder): the login profile lives in the volume pokelit-bot_pokelit-profile.
+services:
+  pokelit-bot:
+    build:
+      context: /opt/pokelit-bot
+      # The VM's resolver (100.67.0.1) is not reachable from bridge containers, so apt would fail in a normal build.
+      network: host
+    container_name: pokelit-bot
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    restart: unless-stopped
+    # The bot leaves a running run via the pause menu on SIGTERM; this must stay above its 20 s leave timeout.
+    stop_grace_period: 40s
+    # Chromium needs more shared memory than Docker's 64 MB default.
+    shm_size: 1gb
+    # The login (BOT_LOGIN_NAME, BOT_LOGIN_PASSWORD) comes from Vault (docker/pokelit-bot), scripts/docker/deploy.sh writes it to
+    # vault.env before it starts the project. The file is optional so that docker compose logs/ps work without it. Deploy only with deploy.sh
+    env_file:
+      - "default.env"
+      - path: "/run/gitops/pokelit-bot/vault.env"
+        required: false
+    volumes:
+      - pokelit-profile:/app/profile
+      - /opt/pokelit-bot/logs:/app/logs
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  pokelit-profile:
+
+# The shared network of the single-container projects (created by scripts/docker/deploy.sh, docs/docker.md: Network)
+networks:
+  default:
+    name: shared
+    external: true
