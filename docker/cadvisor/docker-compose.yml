@@ -28,3 +28,9 @@ services:
       - '--whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service'
       # The Grafana dashboard 21361 only uses cpu, memory and network metrics
       - '--disable_metrics=disk,diskIO,percpu,process,sched,tcp,udp,advtcp,hugetlb,referenced_memory,cpu_topology,resctrl,memory_numa'
+
+# The shared network of the single-container projects (created by scripts/docker/deploy.sh, docs/docker.md: Network)
+networks:
+  default:
+    name: shared
+    external: true

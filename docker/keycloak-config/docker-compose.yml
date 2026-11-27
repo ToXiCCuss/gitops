@@ -22,5 +22,5 @@ services:
 # without a published port or a firewall rule.
 networks:
   default:
-    name: keycloak
+    name: shared
     external: true

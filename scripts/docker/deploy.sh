@@ -53,6 +53,8 @@ ALL_PROJECTS=(rustfs restic-backup keycloak keycloak-config offsite-sync pelican
 # Projects that need the keys of an S3 identity (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), as project:identity.
 # The keys are docker/s3/<identity> in Vault (docs/vault.md: Secrets)
 S3_IDENTITIES=(restic-backup:restic-backup offsite-sync:offsite-sync)
+SHARED_NETWORK="shared"
+SHARED_NETWORK_SUBNET="172.28.0.0/24"
 VAULT_ADDR="${VAULT_ADDR:-https://vault.k8sdev.rjst.de}"
 VAULT_KV_MOUNT="docker"
 VAULT_ROLE_ID_FILE="/etc/gitops/role_id"
@@ -93,6 +95,17 @@ fi
 command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 || { error "docker with the compose plugin is required"; exit 1; }
 
 [[ ${#PROJECTS[@]} -gt 0 ]] || PROJECTS=("${ALL_PROJECTS[@]}")
+
+# ensure_shared_network: the network "shared" of the single-container projects (external in their compose files). The subnet
+# lies inside 172.16.0.0/12, the range the firewall allows for PostgreSQL, MariaDB and the S3
+ensure_shared_network() {
+    if docker network inspect "$SHARED_NETWORK" >/dev/null 2>&1; then
+        info "Network $SHARED_NETWORK unchanged"
+    else
+        docker network create --subnet "$SHARED_NETWORK_SUBNET" "$SHARED_NETWORK" >/dev/null
+        success "Network $SHARED_NETWORK created ($SHARED_NETWORK_SUBNET)"
+    fi
+}
 
 PULL_OK=1
 FAILED=()
@@ -291,6 +304,8 @@ adopt() {
         fi
     done
 }
+
+ensure_shared_network
 
 for project in "${PROJECTS[@]}"; do
     step "$project"

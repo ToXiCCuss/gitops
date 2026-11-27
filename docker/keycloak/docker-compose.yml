@@ -28,7 +28,9 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
-# A fixed network name, so that the job of docker/keycloak-config reaches Keycloak as http://keycloak:8080
+# The shared network (created by scripts/docker/deploy.sh, docs/docker.md: Network): the job of docker/keycloak-config reaches
+# Keycloak by its container name, http://keycloak:8080
 networks:
   default:
-    name: keycloak
+    name: shared
+    external: true

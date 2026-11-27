@@ -14,6 +14,13 @@ Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker
 - Per project: `default.env` (all variables, empty secrets), `vault.env.example` (keys from Vault; `NAME=` required, `#NAME=` optional)
 - Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `keycloak`, `keycloak-config`, `netbird`
 
+## Network
+
+- Projects with one container (`cadvisor`, `offsite-sync`, `restic-backup`, `rustfs`, `keycloak`, `keycloak-config`) share the network `shared` (`172.28.0.0/24`). `deploy.sh` creates it when it is missing; the compose files declare it `external`. Containers reach each other by container name (`keycloak-config` reaches `http://keycloak:8080`)
+- Their access to the host (PostgreSQL, MariaDB, S3, Keycloak) goes through `host.docker.internal`, not through the network. The UFW rules allow `172.16.0.0/12`: a network outside of it (Docker takes `192.168.x` when `172.16.0.0/12` is used up) would lose that access
+- `netbird` (fixed subnet `172.30.0.0/24`, Traefik `172.30.0.10`) and the networks of Pelican (`pelicanpanel_default`, `wings0`, `pelican_nw`) stay as they are
+- After the first deploy the old networks (`cadvisor_default`, `offsite-sync_default`, `restic-backup_default`, `rustfs_default`, `keycloak`) are empty: `scripts/docker/cleanup.sh` lists them, remove by hand with `docker network rm <name>`
+
 ## Deploy
 
 Idempotent: a project is only recreated when its compose file, image or environment changed.
