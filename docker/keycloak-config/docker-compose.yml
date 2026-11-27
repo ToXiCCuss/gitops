@@ -3,7 +3,7 @@ services:
   # deploy.sh starts it again on every run, the import is idempotent. Check the result with:
   #   docker logs keycloak-config
   keycloak-config:
-    image: adorsys/keycloak-config-cli:6.5.1-26.5.5@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274
+    image: adorsys/keycloak-config-cli:6.6.0-26.5.5@sha256:23b78b4a441b08505b71c4c12f98a1f00bcd754448aa4dc68bd7e8acf8f653fd
     container_name: keycloak-config
     # The secrets come from Vault (docker/keycloak-config), scripts/docker/deploy.sh writes them to vault.env before it starts the project.
     # The file is optional so that docker compose logs/ps work without it. Deploy only with deploy.sh
