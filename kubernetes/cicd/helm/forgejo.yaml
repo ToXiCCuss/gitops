@@ -14,7 +14,7 @@ spec:
     # OCI chart: a repoURL without a scheme is pulled as OCI. Chart 17.x is Forgejo 15, the LTS line (supported until 2027-07)
     repoURL: code.forgejo.org/forgejo-helm
     chart: forgejo
-    targetRevision: 17.3.2
+    targetRevision: 17.3.3
     plugin:
       env:
         - name: HELM_VALUES
