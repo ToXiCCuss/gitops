@@ -9,6 +9,7 @@ Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker
 | `keycloak`, `keycloak-config` | login, see [keycloak.md](keycloak.md) |
 | `pelicanPanel`, `pelicanWings` | game servers |
 | `cadvisor` | container metrics |
+| `pokelit-bot` | game bot, see [Pokelit bot](#pokelit-bot) |
 
 - Images pinned by digest, updated by Renovate ([updates.md](updates.md))
 - Per project: `default.env` (all variables, empty secrets), `vault.env.example` (keys from Vault; `NAME=` required, `#NAME=` optional)
@@ -16,10 +17,19 @@ Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker
 
 ## Network
 
-- Projects with one container (`cadvisor`, `offsite-sync`, `restic-backup`, `rustfs`, `keycloak`, `keycloak-config`) share the network `shared` (`172.28.0.0/24`). `deploy.sh` creates it when it is missing; the compose files declare it `external`. Containers reach each other by container name (`keycloak-config` reaches `http://keycloak:8080`)
+- Projects with one container (`cadvisor`, `offsite-sync`, `restic-backup`, `rustfs`, `keycloak`, `keycloak-config`, `pokelit-bot`) share the network `shared` (`172.28.0.0/24`). `deploy.sh` creates it when it is missing; the compose files declare it `external`. Containers reach each other by container name (`keycloak-config` reaches `http://keycloak:8080`)
 - Their access to the host (PostgreSQL, MariaDB, S3, Keycloak) goes through `host.docker.internal`, not through the network. The UFW rules allow `172.16.0.0/12`: a network outside of it (Docker takes `192.168.x` when `172.16.0.0/12` is used up) would lose that access
 - `netbird` (fixed subnet `172.30.0.0/24`, Traefik `172.30.0.10`) and the networks of Pelican (`pelicanpanel_default`, `wings0`, `pelican_nw`) stay as they are
 - After the first deploy the old networks (`cadvisor_default`, `offsite-sync_default`, `restic-backup_default`, `rustfs_default`, `keycloak`) are empty: `scripts/docker/cleanup.sh` lists them, remove by hand with `docker network rm <name>`
+
+## Pokelit bot
+
+Own Node.js app with a headed Chromium (not a Spring app, so not built by Jenkins). The source is **not** in this repository: the image is built on `docker01` from `/opt/pokelit-bot` (copy of `github.com/ToXiCCuss/pokelit-bot`), the compose file here only runs it. Not in `ALL_PROJECTS`: `up -d` never rebuilds, so the timer could not update the code.
+
+- Login (`BOT_LOGIN_NAME`, `BOT_LOGIN_PASSWORD`) is in Vault `docker/pokelit-bot`; `BOT_REGION` is in `default.env`
+- The project name has to stay `pokelit-bot`: the login profile lives in the volume `pokelit-bot_pokelit-profile`, and the image `pokelit-bot-pokelit-bot` keeps its name
+- New code: copy the source to `/opt/pokelit-bot`, then `cd /root/gitops/docker/pokelit-bot && sudo docker compose -p pokelit-bot build`, then `sudo scripts/docker/deploy.sh pokelit-bot`. A change of the compose file or `default.env` needs only the deploy
+- Logs: `/opt/pokelit-bot/logs`
 
 ## Deploy
 
