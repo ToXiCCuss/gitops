@@ -113,6 +113,28 @@
     label: "{{ item.name }}"
   ignore_errors: "{{ ansible_check_mode }}"
 
+- name: Ensure the ACL tools are installed
+  ansible.builtin.package:
+    name: acl
+    state: present
+
+# The container creates its own folders with its umask (022), without write access for the group. An ACL ignores the umask:
+# the group gs-<server> may write in everything that exists (first run) and in everything created later (default entry).
+# The module only checks the top folder, so it changes the existing files once and not on every run
+- name: Ensure the group of every game server may write in its folder
+  ansible.posix.acl:
+    path: "{{ gameserver_access_root }}/{{ item.0.name }}"
+    entity: "gs-{{ item.0.name }}"
+    etype: group
+    permissions: rwX
+    default: "{{ item.1 }}"
+    recursive: true
+    state: present
+  loop: "{{ gameserver_access_servers | product([false, true]) | list }}"
+  loop_control:
+    label: "{{ item.0.name }} default={{ item.1 }}"
+  ignore_errors: "{{ ansible_check_mode }}"
+
 # -u 0002: uploaded files are writable for the group. The 60- prefix sorts after 00-hardening.conf of the base role
 - name: Restrict the SFTP users to the game server folders
   ansible.builtin.copy:
