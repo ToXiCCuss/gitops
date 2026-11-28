@@ -7,6 +7,34 @@
     name: "{{ gameserver_access_sftp_group }}"
     gid: "{{ gameserver_access_sftp_gid }}"
 
+# The list of users is the desired state: every member of the SFTP group that is not in it loses its account, its
+# primary group and its keys (its files stay). This runs before the users are created, so a UID of a removed user
+# can be used again in the same run
+- name: Read the members of the SFTP group
+  ansible.builtin.getent:
+    database: group
+    key: "{{ gameserver_access_sftp_group }}"
+    fail_key: false
+
+- name: Find the SFTP users that are not in the list any more
+  ansible.builtin.set_fact:
+    gameserver_access_stale_users: >-
+      {{ ((getent_group[gameserver_access_sftp_group] | default([None, None, ''], true))[2] | split(','))
+         | reject('equalto', '')
+         | difference(gameserver_access_users | map(attribute='name') | list) }}
+
+- name: Ensure the users that are not in the list any more are gone
+  ansible.builtin.user:
+    name: "{{ item }}"
+    state: absent
+  loop: "{{ gameserver_access_stale_users }}"
+
+- name: Ensure the keys of the users that are not in the list any more are gone
+  ansible.builtin.file:
+    path: "{{ gameserver_access_keys_dir }}/{{ item }}"
+    state: absent
+  loop: "{{ gameserver_access_stale_users }}"
+
 - name: Ensure one group per game server
   ansible.builtin.group:
     name: "gs-{{ item.name }}"
@@ -62,18 +90,6 @@
     label: "{{ item.name }}"
   when: item.ssh_keys | length > 0
   ignore_errors: "{{ ansible_check_mode }}"
-
-- name: Ensure the removed SFTP users are gone
-  ansible.builtin.user:
-    name: "{{ item }}"
-    state: absent
-  loop: "{{ gameserver_access_removed_users }}"
-
-- name: Ensure the keys of the removed SFTP users are gone
-  ansible.builtin.file:
-    path: "{{ gameserver_access_keys_dir }}/{{ item }}"
-    state: absent
-  loop: "{{ gameserver_access_removed_users }}"
 
 # The chroot: owned by root, not writable by anyone else
 - name: Ensure the folder of the game servers

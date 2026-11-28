@@ -22,5 +22,3 @@ gameserver_access_servers: []
 # Set in group_vars/all/main.yml
 gameserver_access_users: []
 
-# Users who lose their access: the account, its group and its keys are deleted. Their files stay
-gameserver_access_removed_users: []

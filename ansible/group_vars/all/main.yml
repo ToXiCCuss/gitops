@@ -45,16 +45,13 @@ gameserver_access_servers:
    - { name: vhserver, gid: 20000 }
 
 # One entry per person. UIDs from 2000 on, the GID of the primary group is the UID. servers: names from the list above.
-# ssh_keys: public keys (no secret). A key or a person removed here loses access on the next run:
-# add removed people to gameserver_access_removed_users so the account is deleted too.
+# ssh_keys: public keys (no secret). A key or a person removed here loses access on the next run (the account is deleted, its files stay).
 gameserver_access_users:
    - name: example-person
      uid: 2000
      servers:
         - vhserver
      ssh_keys: []
-
-gameserver_access_removed_users: []
 
 # Hosts with a UFW policy (default deny incoming, rules from host_config).
 # k8sdev01 only allows the k3s pod and service CIDRs: it is reached through NetBird, everything else is denied.
