@@ -3,6 +3,8 @@ services:
     # LinuxGSM Valheim server. The tag is vh (not vhserver), see https://linuxgsm.com/servers/vhserver/
     image: ghcr.io/gameservermanagers/gameserver:vh
     container_name: vhserver
+    labels:
+      gitops.type: "gameserver"
     env_file:
       - default.env
     ports:

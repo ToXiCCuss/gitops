@@ -22,6 +22,7 @@ services:
     ports:
       - "81:80"
     labels:
+      gitops.type: "gameserver"
       # Catalog link (portal.* labels)
       portal.name: "Pelican Panel"
       portal.url: "https://webinterface.proxy.rjst.de"

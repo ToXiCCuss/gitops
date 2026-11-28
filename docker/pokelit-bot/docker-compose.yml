@@ -9,6 +9,8 @@ services:
       # The VM's resolver (100.67.0.1) is not reachable from bridge containers, so apt would fail in a normal build.
       network: host
     container_name: pokelit-bot
+    labels:
+      gitops.type: "app"
     dns:
       - 1.1.1.1
       - 8.8.8.8

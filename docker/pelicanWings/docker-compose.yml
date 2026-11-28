@@ -1,6 +1,8 @@
 services:
   wings:
     container_name: pelican_wings
+    labels:
+      gitops.type: "gameserver"
     image: ghcr.io/pelican/wings:v1.0.0-rc.3@sha256:046c61f8df5c1363decc89f7777cb78f9b7b5230770b19d4588ab143a85589b4
     restart: always
     networks:

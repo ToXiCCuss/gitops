@@ -2,6 +2,8 @@ services:
   restic-backup:
     image: alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
     container_name: restic-backup
+    labels:
+      gitops.type: "backup"
     hostname: restic-backup-docker
     # The secrets come from Vault (docker/restic-backup), scripts/docker/deploy.sh writes them to vault.env before it starts the project.
     # The file is optional so that docker compose logs/ps work without it. Deploy only with deploy.sh

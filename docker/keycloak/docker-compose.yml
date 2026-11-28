@@ -16,6 +16,7 @@ services:
     ports:
       - "8180:8080"
     labels:
+      gitops.type: "infra"
       # Catalog link (portal.* labels)
       portal.name: "Keycloak"
       portal.url: "https://auth.proxy.rjst.de"

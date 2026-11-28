@@ -7,6 +7,8 @@ services:
   traefik:
     image: traefik:v3.8.0
     container_name: netbird-traefik
+    labels:
+      gitops.type: "infra"
     restart: unless-stopped
     networks:
       netbird:
@@ -68,6 +70,7 @@ services:
     env_file:
       - /root/netbird/dashboard.env
     labels:
+      - gitops.type=infra
       - traefik.enable=true
       - traefik.http.routers.netbird-dashboard.rule=Host(`proxy.rjst.de`)
       - traefik.http.routers.netbird-dashboard.entrypoints=websecure
@@ -103,6 +106,7 @@ services:
       - /root/netbird/config.yaml:/etc/netbird/config.yaml
     command: ["--config", "/etc/netbird/config.yaml"]
     labels:
+      - gitops.type=infra
       - traefik.enable=true
       # gRPC router (needs h2c backend for HTTP/2 cleartext)
       - traefik.http.routers.netbird-grpc.rule=Host(`proxy.rjst.de`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))
@@ -155,6 +159,7 @@ services:
     volumes:
       - netbird_proxy_certs:/certs
     labels:
+      - gitops.type=infra
       # TCP passthrough for any unmatched domain (proxy handles its own TLS)
       - traefik.enable=true
       - traefik.tcp.routers.proxy-passthrough.entrypoints=websecure
@@ -192,6 +197,7 @@ services:
       retries: 15
       start_period: 30s
     labels:
+      - gitops.type=infra
       - traefik.enable=false
     logging:
       driver: "json-file"

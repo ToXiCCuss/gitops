@@ -8,6 +8,8 @@ services:
     # tool version, the Keycloak part is raised by hand together with the Keycloak image.
     image: adorsys/keycloak-config-cli:6.6.0-26.6.2@sha256:af329e508d4a28c4606350f408e213502752c1976d46ca883bf5e97c64dbd5ca
     container_name: keycloak-config
+    labels:
+      gitops.type: "infra"
     # The secrets come from Vault (docker/keycloak-config), scripts/docker/deploy.sh writes them to vault.env before it starts the project.
     # The file is optional so that docker compose logs/ps work without it. Deploy only with deploy.sh
     env_file:

@@ -13,6 +13,7 @@ Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker
 | `cadvisor` | container metrics |
 | `pokelit-bot` | game bot, see [Pokelit bot](#pokelit-bot) |
 
+- Every service has the label `gitops.type`: `gameserver`, `backup`, `infra` or `app` (own application, `pokelit-bot`). A new service gets one too, on every service of a project with several (list style `- gitops.type=infra` where the labels are a list, as in `netbird`). The label sorts containers (`docker ps --filter label=gitops.type=backup`); nothing else reads it yet
 - Images pinned by digest, updated by Renovate ([updates.md](updates.md))
 - Per project: `default.env` (all variables, empty secrets), `vault.env.example` (keys from Vault; `NAME=` required, `#NAME=` optional)
 - Projects with secrets: `rustfs`, `restic-backup`, `offsite-sync`, `keycloak`, `keycloak-config`, `arcane`, `netbird`
