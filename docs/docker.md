@@ -8,6 +8,7 @@ Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker
 | `netbird` | self-hosted NetBird server, see [netbird.md](netbird.md) |
 | `keycloak`, `keycloak-config` | login, see [keycloak.md](keycloak.md) |
 | `pelicanPanel`, `pelicanWings` | game servers |
+| `vhserver` | Valheim server (LinuxGSM), files over SFTP, see [ansible.md](ansible.md#game-server-access) |
 | `arcane` | Docker web UI, see [Arcane](#arcane) |
 | `cadvisor` | container metrics |
 | `pokelit-bot` | game bot, see [Pokelit bot](#pokelit-bot) |

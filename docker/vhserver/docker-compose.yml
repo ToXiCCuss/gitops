@@ -1,0 +1,19 @@
+services:
+  vhserver:
+    # LinuxGSM Valheim server. The tag is vh (not vhserver), see https://linuxgsm.com/servers/vhserver/
+    image: ghcr.io/gameservermanagers/gameserver:vh
+    container_name: vhserver
+    env_file:
+      - default.env
+    ports:
+      # Game and query port (the query port is the game port + 1). Opened in UFW (ansible/group_vars/all/main.yml)
+      - "2456:2456/udp"
+      - "2457:2457/udp"
+    volumes:
+      # Server files, LinuxGSM config, logs and saves. The folder, its group gs-vhserver and the SFTP access
+      # are set up by the Ansible role gameserver_access (docs/ansible.md: Game server access)
+      - /srv/gameservers/vhserver:/data
+    # A process in the container cannot gain more privileges than it started with (setuid binaries, file capabilities)
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
