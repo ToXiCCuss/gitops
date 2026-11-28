@@ -6,9 +6,6 @@ services:
       - default.env
       - path: /run/gitops/arcane/vault.env
         required: false
-    # host.docker.internal points to the Docker host, where Keycloak listens on 8180
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       # The NetBird reverse proxy arcane.proxy.rjst.de points to it
       - "3552:3552"
@@ -32,3 +29,10 @@ services:
 
 volumes:
   arcane_data:
+
+# The shared network of the single-container projects (created by scripts/docker/deploy.sh, docs/docker.md: Network):
+# Arcane reaches Keycloak by its container name, http://keycloak:8080
+networks:
+  default:
+    name: shared
+    external: true

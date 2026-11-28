@@ -93,15 +93,14 @@ Buckets, users and policies come from `docker/rustfs/identities.json` (names and
 
 OIDC details:
 
-- A container cannot use `https://auth.proxy.rjst.de` (the NetBird proxy only serves peers, `403` for a container). RustFS therefore uses Keycloak's published port: `RUSTFS_IDENTITY_OPENID_CONFIG_URL=http://host.docker.internal:8180/realms/rjst`, issuer checked against the public URL (`RUSTFS_IDENTITY_OPENID_ISSUER`)
+- A container cannot use `https://auth.proxy.rjst.de` (the NetBird proxy only serves peers, `403` for a container). RustFS therefore reaches Keycloak by container name over the shared network: `RUSTFS_IDENTITY_OPENID_CONFIG_URL=http://keycloak:8080/realms/rjst`, issuer checked against the public URL (`RUSTFS_IDENTITY_OPENID_ISSUER`)
 - Needs `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` in `docker/keycloak/default.env`; deploy Keycloak first (`sudo scripts/docker/deploy.sh keycloak`, short restart)
-- Check before first login (token endpoint must be `http://host.docker.internal:8180/...`, issuer public):
+- Check before first login (token endpoint must be `http://keycloak:8080/...`, issuer public):
 
 ```bash
-docker run --rm --add-host host.docker.internal:host-gateway curlimages/curl -s http://host.docker.internal:8180/realms/rjst/.well-known/openid-configuration
+docker run --rm --network shared curlimages/curl -s http://keycloak:8080/realms/rjst/.well-known/openid-configuration
 ```
 
-- If the call hangs, the firewall blocks the Docker network: `firewall_rules` entry like `ufw allow from 172.16.0.0/12 to any port 8180 proto tcp`
 - Policies come from the claim `roles`; the root login (`RUSTFS_ACCESS_KEY`) stays as emergency login
 - **Not verified:** whether `/rustfs/admin/v3/oidc/callback/default` is served on console port 9001 or API port 9000. On a 404 after Keycloak let the reverse proxy route `/rustfs/admin/` to 9000
 
