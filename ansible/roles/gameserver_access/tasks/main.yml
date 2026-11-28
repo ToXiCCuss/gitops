@@ -1,0 +1,116 @@
+---
+# SFTP access to the game server folders with SSH keys, one group per game server (docs/ansible.md: Game server access).
+# In check mode on a new host the groups and users do not exist yet, so the tasks that need them ignore errors there.
+
+- name: Ensure the group of all SFTP users
+  ansible.builtin.group:
+    name: "{{ gameserver_access_sftp_group }}"
+    gid: "{{ gameserver_access_sftp_gid }}"
+
+- name: Ensure one group per game server
+  ansible.builtin.group:
+    name: "gs-{{ item.name }}"
+    gid: "{{ item.gid }}"
+  loop: "{{ gameserver_access_servers }}"
+  loop_control:
+    label: "gs-{{ item.name }}"
+
+# The primary group has the UID as GID, so no user shares a group with the others
+- name: Ensure the primary group of every SFTP user
+  ansible.builtin.group:
+    name: "{{ item.name }}"
+    gid: "{{ item.uid }}"
+  loop: "{{ gameserver_access_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# Home is "/" inside the chroot. No shell: the only thing the account can do is SFTP.
+# groups without append: the user is in exactly the groups of its servers
+- name: Ensure the SFTP users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    uid: "{{ item.uid }}"
+    group: "{{ item.name }}"
+    groups: "{{ [gameserver_access_sftp_group] + (item.servers | map('regex_replace', '^', 'gs-') | list) }}"
+    append: false
+    home: /
+    create_home: false
+    shell: /usr/sbin/nologin
+  loop: "{{ gameserver_access_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Ensure the folder of the authorized_keys files
+  ansible.builtin.file:
+    path: "{{ gameserver_access_keys_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# exclusive: only the keys listed in Git work, a key removed from the list stops working
+- name: Ensure the SSH keys of the SFTP users
+  ansible.posix.authorized_key:
+    user: "{{ item.name }}"
+    path: "{{ gameserver_access_keys_dir }}/{{ item.name }}"
+    manage_dir: false
+    key: "{{ item.ssh_keys | join('\n') }}"
+    exclusive: true
+  loop: "{{ gameserver_access_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.ssh_keys | length > 0
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Ensure the removed SFTP users are gone
+  ansible.builtin.user:
+    name: "{{ item }}"
+    state: absent
+  loop: "{{ gameserver_access_removed_users }}"
+
+- name: Ensure the keys of the removed SFTP users are gone
+  ansible.builtin.file:
+    path: "{{ gameserver_access_keys_dir }}/{{ item }}"
+    state: absent
+  loop: "{{ gameserver_access_removed_users }}"
+
+# The chroot: owned by root, not writable by anyone else
+- name: Ensure the folder of the game servers
+  ansible.builtin.file:
+    path: "{{ gameserver_access_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# 2770: the group of the server writes, setgid keeps new files in that group, everyone else sees nothing
+- name: Ensure the folder of every game server
+  ansible.builtin.file:
+    path: "{{ gameserver_access_root }}/{{ item.name }}"
+    state: directory
+    owner: "{{ gameserver_access_container_uid }}"
+    group: "gs-{{ item.name }}"
+    mode: "2770"
+  loop: "{{ gameserver_access_servers }}"
+  loop_control:
+    label: "{{ item.name }}"
+  ignore_errors: "{{ ansible_check_mode }}"
+
+# -u 0002: uploaded files are writable for the group. The 60- prefix sorts after 00-hardening.conf of the base role
+- name: Restrict the SFTP users to the game server folders
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/60-gameserver-sftp.conf
+    content: |
+      Match Group {{ gameserver_access_sftp_group }}
+          ChrootDirectory {{ gameserver_access_root }}
+          ForceCommand internal-sftp -u 0002
+          AuthorizedKeysFile {{ gameserver_access_keys_dir }}/%u
+          AllowTcpForwarding no
+          X11Forwarding no
+          PermitTTY no
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: reload sshd

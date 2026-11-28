@@ -35,6 +35,27 @@ node_exporter_pvc_usage_hosts:
 gitops_deploy_hosts:
    - docker01
 
+# SFTP access to /srv/gameservers with SSH keys (role gameserver_access, docs/ansible.md: Game server access)
+gameserver_access_hosts:
+   - docker01
+
+# One folder /srv/gameservers/<name> and one group gs-<name> per game server. GIDs from 20000 on
+# (on docker01 only "debian" 1000 and "nobody" 65534 are taken). The container of docker/vhserver uses this GID (default.env)
+gameserver_access_servers:
+   - { name: vhserver, gid: 20000 }
+
+# One entry per person. UIDs from 2000 on, the GID of the primary group is the UID. servers: names from the list above.
+# ssh_keys: public keys (no secret). A key or a person removed here loses access on the next run:
+# add removed people to gameserver_access_removed_users so the account is deleted too.
+gameserver_access_users:
+   - name: example-person
+     uid: 2000
+     servers:
+        - vhserver
+     ssh_keys: []
+
+gameserver_access_removed_users: []
+
 # Hosts with a UFW policy (default deny incoming, rules from host_config).
 # k8sdev01 only allows the k3s pod and service CIDRs: it is reached through NetBird, everything else is denied.
 firewall_hosts:

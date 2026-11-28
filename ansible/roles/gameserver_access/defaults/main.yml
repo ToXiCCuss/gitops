@@ -1,0 +1,26 @@
+---
+# Folder with one subfolder per game server. It is the SFTP chroot, so it has to belong to root and
+# must not be writable by anyone else (sshd refuses the login otherwise)
+gameserver_access_root: /srv/gameservers
+
+# UID of the user inside the game server containers (LinuxGSM). On docker01 this is the user "debian".
+# It owns the server folders; the containers get the group of the folder through group_add
+gameserver_access_container_uid: 1000
+
+# Every SFTP user is a member of this group, sshd matches on it
+gameserver_access_sftp_group: gameserver-sftp
+gameserver_access_sftp_gid: 19000
+
+# Directory of the authorized_keys files of the SFTP users (outside the chroot, owned by root)
+gameserver_access_keys_dir: /etc/ssh/authorized_keys.d
+
+# Game servers: name (folder under gameserver_access_root, group gs-<name>) and the GID of that group.
+# Set in group_vars/all/main.yml
+gameserver_access_servers: []
+
+# SFTP users: name, uid, servers (names from gameserver_access_servers) and ssh_keys (SSH public keys).
+# Set in group_vars/all/main.yml
+gameserver_access_users: []
+
+# Users who lose their access: the account, its group and its keys are deleted. Their files stay
+gameserver_access_removed_users: []

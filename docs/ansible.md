@@ -28,6 +28,7 @@ Host lists are in `group_vars/all/main.yml`; per-host settings under `host_confi
 | `node_exporter` | `docker01`, `k8sdev01` | exporter + textfile collector + update status |
 | `docker` | `docker01` | Docker CE, `daemon.json`, restart of socket containers |
 | `gitops_deploy` | `docker01` | timer that runs `deploy.sh` |
+| `gameserver_access` | `docker01` | SFTP users with SSH keys for the game server folders in `/srv/gameservers` |
 | `postgresql`, `postgres_exporter` | `docker01` | PostgreSQL 18 (`pg_cron`, `pg_partman`), exporter on 9187 |
 | `postgresql_apply` | `docker01` | timer that runs `apply_declared.sh` |
 | `mariadb`, `mariadb_exporter` | `docker01` | MariaDB, exporter on 9104 |
@@ -161,3 +162,15 @@ Included at the end of `postgresql` and `mariadb`, per database:
 - THP via `/etc/tmpfiles.d/transparent-hugepage.conf`: `madvise` (host-wide)
 - `limits.conf` is not used (systemd ignores it); service restarts once when the drop-in changes
 - Values: role `defaults/main.yml`
+
+## Game server access
+
+Role `gameserver_access`: people upload to the game server folders over SFTP with their own SSH key. The compose projects of the game servers are deployed by `deploy.sh` as usual; this role only handles the files.
+
+- Folders: `/srv/gameservers/<server>` (`gameserver_access_servers`), owner UID 1000 (the user in the LinuxGSM container, `debian` on docker01), group `gs-<server>` (GID from 20000), mode `2770` (setgid: new files stay in the group, others see nothing). `/srv/gameservers` itself belongs to root: it is the SFTP chroot and sshd refuses the login otherwise. `/root` is not used, it is `0700`.
+- Users: `gameserver_access_users` in `group_vars/all/main.yml` (name, UID from 2000, servers, `ssh_keys`). The account has no shell and is in exactly the groups of its servers. The keys are in `/etc/ssh/authorized_keys.d/<name>` and `exclusive`: only what is in Git works. A person who leaves goes into `gameserver_access_removed_users` (account, group and keys are deleted, their files stay).
+- sshd: drop-in `60-gameserver-sftp.conf` with `Match Group gameserver-sftp`: chroot, `internal-sftp -u 0002` (uploads are group-writable), no forwarding, no TTY. The key-only settings of `base` still apply.
+- Containers: the LinuxGSM image sets its user to `UID`/`GID` (`default.env`) and takes ownership of `/data` on every start. Set `GID` to the GID of `gs-<server>` (`UID=1000`), so the group of the folder survives and the people with SFTP access keep their rights. Other images that do not change the owner need `group_add: ["<gid>"]` instead.
+- Adding a server or person: extend the lists, merge, run the playbook (`--tags gameserver_access`, dry run first, see [Run](#run)).
+- The entry `example-person` (no key, so nobody can log in) is a placeholder: replace it. The only server so far is `vhserver` ([docker/vhserver](../docker/vhserver/docker-compose.yml)).
+- To be checked after the first run: `sshd -T -C user=<name>,host=x,addr=127.0.0.1 | grep -iE 'chroot|forcecommand'` shows the Match block, and an `sftp` login sees only `/<server>` folders. The `Match` block must end with its file (it is the last one in the drop-in and nothing else in the main `sshd_config` may fall under it).
