@@ -1,7 +1,7 @@
 services:
   vhserver:
     # LinuxGSM Valheim server. The tag is vh (not vhserver), see https://linuxgsm.com/servers/vhserver/
-    image: ghcr.io/gameservermanagers/gameserver:vh
+    image: ghcr.io/gameservermanagers/gameserver:vh@sha256:ebce91810b7ba2c9361e0c18188967569eed31d44e2564e2eaf1da093b858871
     container_name: vhserver
     labels:
       gitops.type: "gameserver"
