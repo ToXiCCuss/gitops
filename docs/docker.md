@@ -25,7 +25,7 @@ Compose projects in `docker/`, deployed by `scripts/docker/deploy.sh` on `docker
 
 ## Arcane
 
-Arcane can inspect running containers and work with named Docker volumes through the Docker socket. Its own database lives in the `arcane_arcane_data` volume. Docker deployments continue through `deploy.sh`. The Git checkout is outside the Arcane container.
+Arcane can inspect running containers and work with named Docker volumes through the Docker socket. Its own database lives in the `arcane_data` volume. Docker deployments continue through `deploy.sh`. The Git checkout is outside the Arcane container.
 
 1. Before merging, run `scripts/vault/Generate-Secrets.ps1` ([vault.md](vault.md#secrets)): it creates `ARCANE_ENCRYPTION_KEY` and `ARCANE_OIDC_CLIENT_SECRET` in `docker/arcane` and `ARCANE_CLIENT_SECRET` (the same value as the OIDC client secret) in `docker/keycloak-config`.
 2. From `/root/gitops` on `docker01`, run `sudo scripts/docker/deploy.sh keycloak-config` and check `docker logs keycloak-config` for a successful import. Arcane is part of `ALL_PROJECTS`: the deploy timer starts it within 3 hours of the merge, or run `sudo scripts/docker/deploy.sh arcane` at once. Without the two Vault secrets the timer fails on `arcane` (see `DockerDeployNeverReported`).

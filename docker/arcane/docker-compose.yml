@@ -29,6 +29,8 @@ services:
 
 volumes:
   arcane_data:
+    # Without name Compose prefixes the project (arcane_arcane_data)
+    name: arcane_data
 
 # The shared network of the single-container projects (created by scripts/docker/deploy.sh, docs/docker.md: Network):
 # Arcane reaches Keycloak by its container name, http://keycloak:8080
